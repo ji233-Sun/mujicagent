@@ -124,7 +124,7 @@ func TestServiceTierRequests(t *testing.T) {
 	defer c.Close()
 	c.Connection = "Connected"
 	c.Models = []codex.Model{{Model: "speed-model", ServiceTiers: []codex.ServiceTier{{ID: "priority"}, {ID: "ultrafast"}}}, {Model: "plain-model"}}
-	c.NewThread("")
+	c.AddProject(t.TempDir())
 	thread := c.State.Thread(c.State.Selected)
 	for _, tc := range []struct{ model, selected, sent string }{
 		{"speed-model", "priority", "priority"},
@@ -178,7 +178,7 @@ func TestServiceTierRequests(t *testing.T) {
 		thread.PermissionProfile = tc.profile
 		if tc.profile == ":danger-full-access" {
 			c.State.Settings.DefaultPermissionProfile = tc.profile
-			c.NewThread("")
+			c.AddProject(t.TempDir())
 			thread = c.State.Thread(c.State.Selected)
 		}
 		// Exercise resume as well as updates to an already loaded conversation.
@@ -257,7 +257,7 @@ func notify(c *Controller, method, params string) {
 func TestStreamingAndManualSettle(t *testing.T) {
 	dir := t.TempDir()
 	c := New(dir, model.New(), nil)
-	c.NewThread("")
+	c.AddProject(t.TempDir())
 	thread := c.State.Thread(c.State.Selected)
 	thread.ServerID = "server1"
 	thread.Turns = []model.Turn{{ID: "turn1", Prompt: "hello", Status: "inProgress"}}
@@ -312,11 +312,6 @@ func TestProjectsAndInterruptedRecovery(t *testing.T) {
 	}
 	if thread.Cwd != canonical {
 		t.Fatal("wrong project cwd")
-	}
-	c.NewThread("")
-	thread = c.State.Thread(c.State.Selected)
-	if !strings.HasPrefix(thread.Cwd, filepath.Join(c.Dir, "chats")) {
-		t.Fatal("unscoped thread not isolated")
 	}
 	thread.Turns = []model.Turn{{Status: "inProgress"}}
 	c.Save()
@@ -402,7 +397,7 @@ func TestLiveCodex(t *testing.T) {
 	if len(c.Models) == 0 {
 		t.Fatal("no models")
 	}
-	c.NewThread("")
+	c.AddProject(t.TempDir())
 	if !c.Send("Reply with exactly MUJIC_OK. Do not call tools or read or modify any files.", false) {
 		t.Fatal(c.Error)
 	}
@@ -455,7 +450,7 @@ func TestLiveAsk(t *testing.T) {
 	if c.Connection != "Connected" {
 		t.Fatal(c.Error)
 	}
-	c.NewThread("")
+	c.AddProject(t.TempDir())
 	if !c.Send("Use request_user_input to ask me exactly one question: Native or Web UI? Offer Native (recommended) and Web. Do not call any other tool. After I answer, reply with ASK_OK and my choice. This is a UI protocol test, so ask the question even though Native is recommended.", true) {
 		t.Fatal(c.Error)
 	}
@@ -480,5 +475,33 @@ func TestLiveAsk(t *testing.T) {
 	}
 	if turn.Status != "completed" || !strings.Contains(text, "ASK_OK") {
 		t.Fatalf("Ask did not resume: %s, %s, %s", turn.Status, text, turn.Error)
+	}
+}
+
+func TestProjectRequiredForSessions(t *testing.T) {
+	c := New(t.TempDir(), model.New(), nil)
+	for _, id := range []string{"", "missing"} {
+		c.NewThread(id)
+		if len(c.State.Threads) != 0 || c.State.Selected != "" {
+			t.Fatal("invalid project created a conversation")
+		}
+	}
+	c.Permissions = []codex.PermissionProfile{{ID: ":read-only", Allowed: true}}
+	c.SetPermission(":read-only")
+	if len(c.State.Threads) != 0 {
+		t.Fatal("changing permissions created a projectless conversation")
+	}
+	// A connected client must not bypass the project requirement.
+	c.client, c.Connection = &codex.Client{}, "Connected"
+	if c.Send("hello", false) || len(c.State.Threads) != 0 {
+		t.Fatal("sending without a selection created a conversation")
+	}
+	legacy := c.State.AddThread("", filepath.Join(c.Dir, "chats", "legacy"))
+	legacy.Draft = "preserve draft"
+	if c.Send(legacy.Draft, false) || len(legacy.Turns) != 0 || legacy.Draft != "preserve draft" || c.Running[legacy.ID] {
+		t.Fatal("projectless history must remain unchanged and cannot start a turn")
+	}
+	if _, err := os.Stat(legacy.Cwd); !os.IsNotExist(err) {
+		t.Fatal("projectless sending created a working directory")
 	}
 }

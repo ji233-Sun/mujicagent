@@ -58,9 +58,6 @@ func (c *Controller) SetPermission(id string) {
 		if profile.ID != id || !profile.Allowed {
 			continue
 		}
-		if c.State.Selected == "" {
-			c.NewThread("")
-		}
 		if t := c.State.Thread(c.State.Selected); t != nil {
 			t.PermissionProfile = id
 			c.Save()

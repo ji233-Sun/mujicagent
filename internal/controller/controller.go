@@ -217,20 +217,21 @@ func (c *Controller) AddProject(path string) {
 	c.NewThread(p.ID)
 }
 func (c *Controller) NewThread(projectID string) {
+	if projectID == "" {
+		c.ReportError("Choose a project directory.")
+		return
+	}
 	cwd := ""
 	for _, p := range c.State.Projects {
 		if p.ID == projectID {
 			cwd = p.Path
 		}
 	}
-	if projectID != "" && cwd == "" {
+	if cwd == "" {
 		c.ReportError("Project not found.")
 		return
 	}
-	t := c.State.AddThread(projectID, cwd)
-	if cwd == "" {
-		t.Cwd = filepath.Join(c.Dir, "chats", t.ID)
-	}
+	c.State.AddThread(projectID, cwd)
 	c.Save()
 }
 func (c *Controller) Select(id string) { c.State.Selected = id; c.Save() }
@@ -305,22 +306,17 @@ func (c *Controller) Send(text string, plan bool) bool {
 		c.ReportError("Connect Codex in Settings before sending.")
 		return false
 	}
-	if c.State.Selected == "" {
-		c.NewThread("")
-	}
 	t := c.State.Thread(c.State.Selected)
-	if t == nil || c.Running[t.ID] {
+	if t == nil || t.ProjectID == "" {
+		c.ReportError("Choose a project directory.")
 		return false
 	}
-	var directoryErr error
-	if t.ProjectID == "" {
-		directoryErr = os.MkdirAll(t.Cwd, 0700)
-	} else {
-		var info os.FileInfo
-		info, directoryErr = os.Stat(t.Cwd)
-		if directoryErr == nil && !info.IsDir() {
-			directoryErr = fmt.Errorf("project is not a directory: %s", t.Cwd)
-		}
+	if c.Running[t.ID] {
+		return false
+	}
+	info, directoryErr := os.Stat(t.Cwd)
+	if directoryErr == nil && !info.IsDir() {
+		directoryErr = fmt.Errorf("project is not a directory: %s", t.Cwd)
 	}
 	if directoryErr != nil {
 		c.ReportError(directoryErr.Error())

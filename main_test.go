@@ -38,9 +38,15 @@ func TestNativeView(t *testing.T) {
 	if tt.HasText("搜索会话") {
 		t.Fatal("conversation search should not be displayed")
 	}
-	if err := tt.Click("新对话"); err != nil {
-		t.Fatal(err)
+	// Clicking the remaining title text must not create a conversation.
+	_ = tt.Click("新对话")
+	tt.Key(ui.Cmd, ui.KeyN)
+	tt.Key(ui.Ctrl, ui.KeyN)
+	if len(state.Threads) != 0 {
+		t.Fatal("shortcuts must not create projectless conversations")
 	}
+	ctrl.AddProject(t.TempDir())
+	tt.Frame()
 	if len(state.Threads) != 1 {
 		t.Fatal("new thread missing")
 	}
@@ -124,7 +130,7 @@ func TestNativeView(t *testing.T) {
 func TestDiagnosticLogsAndErrorAlert(t *testing.T) {
 	s := model.New()
 	c := controller.New(t.TempDir(), s, nil)
-	c.NewThread("")
+	c.AddProject(t.TempDir())
 	v := view.New(c)
 	tt := ui.NewTester(v.Render, 840, 560)
 	composer, _ := tt.Find("消息")
@@ -245,7 +251,7 @@ func TestAppUpdatesView(t *testing.T) {
 func TestManualSettleFromHover(t *testing.T) {
 	s := model.New()
 	c := controller.New(t.TempDir(), s, nil)
-	c.NewThread("")
+	c.AddProject(t.TempDir())
 	thread := s.Thread(s.Selected)
 	thread.Title = "设计一个原生界面"
 	v := view.New(c)
@@ -327,7 +333,7 @@ func TestDefaultPermissionsSettings(t *testing.T) {
 	if loaded.Thread("old").PermissionProfile != ":read-only" {
 		t.Fatal("changing defaults changed an existing conversation")
 	}
-	c.NewThread("")
+	c.AddProject(t.TempDir())
 	if c.PermissionID() != ":danger-full-access" {
 		t.Fatal("new conversations must use the configured default")
 	}
@@ -844,12 +850,13 @@ func TestSidebarMotionAndVirtualSettledList(t *testing.T) {
 		thread := s.AddThread("", "")
 		thread.Title, thread.Settled = fmt.Sprintf("Settled row %04d", i), true
 	}
-	active := s.AddThread("", "")
+	s.Projects = []model.Project{{ID: "project", Name: "Project", Path: t.TempDir()}}
+	active := s.AddThread("project", s.Projects[0].Path)
 	active.Title = "Existing conversation"
 	c := controller.New(t.TempDir(), s, nil)
 	tt := ui.NewTester(view.New(c).Render, 1140, 780)
 	start, _ := tt.Find(active.Title)
-	if err := tt.Click("新对话"); err != nil {
+	if err := tt.Click("新建 · Project"); err != nil {
 		t.Fatal(err)
 	}
 	s.Thread(s.Selected).Title = "滑入的新对话"
@@ -1171,7 +1178,7 @@ func TestNativePreview(t *testing.T) {
 func TestConversationContextMenuAndDeleteConfirmation(t *testing.T) {
 	s := model.New()
 	c := controller.New(t.TempDir(), s, nil)
-	c.NewThread("")
+	c.AddProject(t.TempDir())
 	thread := s.Thread(s.Selected)
 	thread.Title = "等待确认的会话"
 	v := view.New(c)
