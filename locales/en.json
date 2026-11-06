@@ -175,7 +175,6 @@
   "annotationSidebar": "Toggle comments sidebar",
   "copyAttachmentPath": "Copy file path",
   "revealAttachment": "Show in folder",
-  "annotationOriginalKept": "Original preserved · Editable annotations",
   "annotationUnapplied": "Unapplied changes",
   "applyAnnotations": "Apply to draft",
   "discardAnnotationsTitle": "Discard unapplied annotations?",

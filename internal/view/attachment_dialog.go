@@ -117,11 +117,7 @@ func (v *View) attachmentDialog(c *ui.Context) {
 			if v.Window != nil {
 				ui.Button(c, tx.RevealAttachment()).FontSize(11).OnClick(func() { mygo.Shell.ShowItemInFolder(path) })
 			}
-			if width >= 1000 {
-				ui.Text(c, tx.AnnotationOriginalKept()).FontSize(11).TextColor(c.Theme().TextMuted).Grow(1)
-			} else {
-				ui.Box(c).Grow(1)
-			}
+			ui.Box(c).Grow(1)
 			if !model.ValidAnnotations(s.notes) {
 				ui.Text(c, tx.AnnotationLimit()).FontSize(11).TextColor(c.Theme().Danger)
 			} else if notesKey(s.notes) != s.baseline {

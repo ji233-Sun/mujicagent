@@ -1788,16 +1788,6 @@ func (msgs Messages) RevealAttachment() string {
 	return Catalog.Format(msgs.locale, "revealAttachment", nil)
 }
 
-// AnnotationOriginalKept says "保留原图 · 标注可再次编辑"
-// in the language the app shows.
-func AnnotationOriginalKept() string { return In(i18n.Locale()).AnnotationOriginalKept() }
-
-// AnnotationOriginalKept says "保留原图 · 标注可再次编辑"
-// in the language of msgs.
-func (msgs Messages) AnnotationOriginalKept() string {
-	return Catalog.Format(msgs.locale, "annotationOriginalKept", nil)
-}
-
 // AnnotationUnapplied says "有未应用的更改"
 // in the language the app shows.
 func AnnotationUnapplied() string { return In(i18n.Locale()).AnnotationUnapplied() }
