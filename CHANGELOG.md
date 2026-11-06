@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.2
+
+**Full Changelog**: https://github.com/ji233-Sun/mujicagent/compare/v0.1.1...v0.1.2
+
+### Commits
+
+- ci: notarize Developer ID signed macOS releases (aab4c1a)
+
 ## 0.1.1
 
 **Full Changelog**: https://github.com/ji233-Sun/mujicagent/commits/v0.1.1
