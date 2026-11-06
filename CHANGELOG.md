@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.1.4
+
+#### What's Changed
+* feat: 支持 Codex 默认权限配置 by @ji233-Sun in https://github.com/ji233-Sun/mujicagent/pull/1
+* docs: 强制交付流程并简化 Issue 管理 by @ji233-Sun in https://github.com/ji233-Sun/mujicagent/pull/2
+* feat: 添加开发者日志和浮动错误提示 by @ji233-Sun in https://github.com/ji233-Sun/mujicagent/pull/5
+* feat: 移除全局新建入口并要求会话关联项目 by @ji233-Sun in https://github.com/ji233-Sun/mujicagent/pull/6
+
+#### New Contributors
+* @ji233-Sun made their first contribution in https://github.com/ji233-Sun/mujicagent/pull/1
+
+**Full Changelog**: https://github.com/ji233-Sun/mujicagent/compare/v0.1.3...v0.1.4
+
+### Commits
+
+- feat: require a project to start sessions (11b6640)
+- feat: 添加开发者日志和浮动错误提示 (56cc6ef)
+- docs: 简化 Issue 分类与管理约定 (3d10358)
+- docs: 添加并强制遵循交付技能 (9cc60c8)
+- feat: configure default Codex permissions (0aad554)
+
 ## 0.1.3
 
 **Full Changelog**: https://github.com/ji233-Sun/mujicagent/compare/v0.1.2...v0.1.3
