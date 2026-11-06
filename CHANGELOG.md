@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.3
+
+**Full Changelog**: https://github.com/ji233-Sun/mujicagent/compare/v0.1.2...v0.1.3
+
+### Commits
+
+- ci: retry each macOS architecture independently (1c422dd)
+- ci: retry interrupted Apple ticket downloads (c63244d)
+- fix: discover Codex from the macOS login shell (495cfb7)
+
 ## 0.1.2
 
 **Full Changelog**: https://github.com/ji233-Sun/mujicagent/compare/v0.1.1...v0.1.2
