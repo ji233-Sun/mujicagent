@@ -254,6 +254,116 @@ func (msgs Messages) DismissNotice() string {
 	return Catalog.Format(msgs.locale, "dismissNotice", nil)
 }
 
+// ErrorAlert says "错误通知"
+// in the language the app shows.
+func ErrorAlert() string { return In(i18n.Locale()).ErrorAlert() }
+
+// ErrorAlert says "错误通知"
+// in the language of msgs.
+func (msgs Messages) ErrorAlert() string {
+	return Catalog.Format(msgs.locale, "errorAlert", nil)
+}
+
+// ErrorTitle says "发生错误"
+// in the language the app shows.
+func ErrorTitle() string { return In(i18n.Locale()).ErrorTitle() }
+
+// ErrorTitle says "发生错误"
+// in the language of msgs.
+func (msgs Messages) ErrorTitle() string {
+	return Catalog.Format(msgs.locale, "errorTitle", nil)
+}
+
+// Logs says "日志"
+// in the language the app shows.
+func Logs() string { return In(i18n.Locale()).Logs() }
+
+// Logs says "日志"
+// in the language of msgs.
+func (msgs Messages) Logs() string {
+	return Catalog.Format(msgs.locale, "logs", nil)
+}
+
+// DeveloperMode says "开发者模式"
+// in the language the app shows.
+func DeveloperMode() string { return In(i18n.Locale()).DeveloperMode() }
+
+// DeveloperMode says "开发者模式"
+// in the language of msgs.
+func (msgs Messages) DeveloperMode() string {
+	return Catalog.Format(msgs.locale, "developerMode", nil)
+}
+
+// ToggleDeveloperMode says "切换开发者模式"
+// in the language the app shows.
+func ToggleDeveloperMode() string { return In(i18n.Locale()).ToggleDeveloperMode() }
+
+// ToggleDeveloperMode says "切换开发者模式"
+// in the language of msgs.
+func (msgs Messages) ToggleDeveloperMode() string {
+	return Catalog.Format(msgs.locale, "toggleDeveloperMode", nil)
+}
+
+// DeveloperModeHint says "显示诊断日志，包括暂不支持的 Codex 请求。关闭时仍会显示重要错误。"
+// in the language the app shows.
+func DeveloperModeHint() string { return In(i18n.Locale()).DeveloperModeHint() }
+
+// DeveloperModeHint says "显示诊断日志，包括暂不支持的 Codex 请求。关闭时仍会显示重要错误。"
+// in the language of msgs.
+func (msgs Messages) DeveloperModeHint() string {
+	return Catalog.Format(msgs.locale, "developerModeHint", nil)
+}
+
+// LogsHint says "最新记录在前 · 保留本次运行最近 200 条 · 日志不写入磁盘"
+// in the language the app shows.
+func LogsHint() string { return In(i18n.Locale()).LogsHint() }
+
+// LogsHint says "最新记录在前 · 保留本次运行最近 200 条 · 日志不写入磁盘"
+// in the language of msgs.
+func (msgs Messages) LogsHint() string {
+	return Catalog.Format(msgs.locale, "logsHint", nil)
+}
+
+// NoLogs says "暂无可显示的日志"
+// in the language the app shows.
+func NoLogs() string { return In(i18n.Locale()).NoLogs() }
+
+// NoLogs says "暂无可显示的日志"
+// in the language of msgs.
+func (msgs Messages) NoLogs() string {
+	return Catalog.Format(msgs.locale, "noLogs", nil)
+}
+
+// LogInfo says "信息"
+// in the language the app shows.
+func LogInfo() string { return In(i18n.Locale()).LogInfo() }
+
+// LogInfo says "信息"
+// in the language of msgs.
+func (msgs Messages) LogInfo() string {
+	return Catalog.Format(msgs.locale, "logInfo", nil)
+}
+
+// LogError says "错误"
+// in the language the app shows.
+func LogError() string { return In(i18n.Locale()).LogError() }
+
+// LogError says "错误"
+// in the language of msgs.
+func (msgs Messages) LogError() string {
+	return Catalog.Format(msgs.locale, "logError", nil)
+}
+
+// LogDebug says "诊断"
+// in the language the app shows.
+func LogDebug() string { return In(i18n.Locale()).LogDebug() }
+
+// LogDebug says "诊断"
+// in the language of msgs.
+func (msgs Messages) LogDebug() string {
+	return Catalog.Format(msgs.locale, "logDebug", nil)
+}
+
 // Reasoning says "思考"
 // in the language the app shows.
 func Reasoning() string { return In(i18n.Locale()).Reasoning() }

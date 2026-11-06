@@ -26,7 +26,10 @@ type Thread struct {
 	Draft                               string
 	PermissionProfile                   string
 }
-type Settings struct{ CodexPath, Model, Effort, ServiceTier, Appearance, Language, DefaultPermissionProfile string }
+type Settings struct {
+	CodexPath, Model, Effort, ServiceTier, Appearance, Language, DefaultPermissionProfile string
+	DeveloperMode                                                                         bool
+}
 type State struct {
 	Version  int
 	Projects []Project

@@ -30,12 +30,14 @@ func (v *View) settingsDialog(c *ui.Context) {
 func (v *View) settingsSidebar(c *ui.Context) {
 	tx := v.texts()
 	ui.Text(c, tx.Settings()).FontSize(18).Bold().Padding(4, 10, 22)
-	for _, name := range []string{"Appearance", "Agents", "Updates"} {
+	for _, name := range []string{"Appearance", "Agents", "Updates", "Logs"} {
 		label := tx.Appearance()
 		if name == "Agents" {
 			label = tx.Agents()
 		} else if name == "Updates" {
 			label = tx.AppUpdates()
+		} else if name == "Logs" {
+			label = tx.Logs()
 		}
 		b := ui.ButtonBase(c.Key(name)).Height(44).Radius(10).Padding(0, 12).Gap(10).AlignItems(ui.Center).Justify(ui.Start).Label(label)
 		if v.section == name {
@@ -49,6 +51,8 @@ func (v *View) settingsSidebar(c *ui.Context) {
 				icon = agentIcon
 			} else if name == "Updates" {
 				icon = downloadIcon
+			} else if name == "Logs" {
+				icon = terminalIcon
 			}
 			ui.Icon(c, icon).Size(20, 20)
 			ui.Text(c, label).FontSize(14).Grow(1)
@@ -67,13 +71,18 @@ func (v *View) settingsPane(c *ui.Context) {
 		title = tx.Appearance()
 	} else if v.section == "Updates" {
 		title = tx.AppUpdates()
+	} else if v.section == "Logs" {
+		title = tx.Logs()
 	}
 	ui.Row(c).Height(62).Shrink(0).Padding(0, 20, 0, 24).AlignItems(ui.Center).Children(func() {
 		ui.Text(c, title).Bold().FontSize(20).Grow(1)
 		iconButton(c, tx.CloseSettings(), closeIcon, func() { v.Settings = false; v.C.Save() })
 	})
-	v.banner(c)
 	ui.Scroll(c).Grow(1).MinHeight(0).Padding(4, 24, 24).Gap(16).Children(func() {
+		if v.section == "Logs" {
+			v.logsPane(c)
+			return
+		}
 		if v.section == "Updates" {
 			v.appUpdates(c)
 			return
