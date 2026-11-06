@@ -314,7 +314,22 @@ func (c *Controller) Send(text string, plan bool) bool {
 		c.ReportError("Choose a project directory.")
 		return false
 	}
-	if c.Running[t.ID] || c.permissionUpdates[t.ID] {
+	if c.Running[t.ID] || len(t.Queue) > 0 {
+		t.Queue = append(t.Queue, model.QueuedMessage{ID: model.ID(), Text: text})
+		t.Draft = ""
+		c.Save()
+		return true
+	}
+	if !c.sendThread(t, text, plan, "") {
+		return false
+	}
+	t.Draft = ""
+	c.Save()
+	return true
+}
+
+func (c *Controller) sendThread(t *model.Thread, text string, plan bool, queuedID string) bool {
+	if c.client == nil || c.Connection != "Connected" || c.Running[t.ID] || c.permissionUpdates[t.ID] {
 		return false
 	}
 	info, directoryErr := os.Stat(t.Cwd)
@@ -340,7 +355,6 @@ func (c *Controller) Send(text string, plan bool) bool {
 		}
 		t.Title = string(title)
 	}
-	t.Draft = ""
 	t.Settled = false
 	t.Updated = time.Now()
 	t.Turns = append(t.Turns, model.Turn{Prompt: text, Status: "inProgress", Started: time.Now()})
@@ -351,7 +365,11 @@ func (c *Controller) Send(text string, plan bool) bool {
 	loaded := c.loaded[id]
 	settings := c.State.Settings
 	serviceTier := c.serviceTier()
-	permissionID := c.NextPermissionID()
+	permissionID := t.PermissionProfile
+	if permissionID == "" {
+		permissionID = c.State.Settings.DefaultPermissionProfile
+	}
+	turnIndex := len(t.Turns) - 1
 	c.turnPermissions[id] = permissionID
 	client, epoch := c.client, c.epoch
 	go func() {
@@ -431,11 +449,15 @@ func (c *Controller) Send(text string, plan bool) bool {
 		}
 		c.post(func() {
 			if epoch == c.epoch {
-				turn := &t.Turns[len(t.Turns)-1]
+				turn := &t.Turns[turnIndex]
+				c.removeQueued(t, queuedID)
 				if turn.ID == "" {
 					turn.ID = result.Turn.ID
 				}
 				c.Save()
+				if turn.Status == "completed" {
+					c.sendNext(t)
+				}
 			}
 		})
 	}()
@@ -452,6 +474,9 @@ func (c *Controller) fail(id string, epoch int, err error) {
 			turn := &t.Turns[len(t.Turns)-1]
 			turn.Status = "failed"
 			turn.Error = err.Error()
+			for i := range t.Queue {
+				t.Queue[i].Sending = false
+			}
 		}
 		c.Save()
 	})
@@ -550,6 +575,11 @@ func (c *Controller) handle(m codex.Message) {
 		if m.Error != nil {
 			c.ReportError(m.Error.Message)
 		}
+		for _, thread := range c.State.Threads {
+			for i := range thread.Queue {
+				thread.Queue[i].Sending = false
+			}
+		}
 		for id, b := range c.Running {
 			if b {
 				t := c.State.Thread(id)
@@ -623,6 +653,9 @@ func (c *Controller) handle(m codex.Message) {
 	case "turn/started":
 		turn.ID = p.Turn.ID
 	case "turn/completed":
+		if !c.Running[t.ID] || turn.ID == "" || p.Turn.ID != turn.ID {
+			return
+		}
 		turn.ID = p.Turn.ID
 		turn.Status = p.Turn.Status
 		if p.Turn.Error != nil {
@@ -635,6 +668,9 @@ func (c *Controller) handle(m codex.Message) {
 			}
 		}
 		c.Save()
+		if turn.Status == "completed" {
+			c.sendNext(t)
+		}
 	case "error":
 		if p.Error != nil {
 			turn.Error = p.Error.Message

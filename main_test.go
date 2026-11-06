@@ -1251,3 +1251,57 @@ func TestConversationContextMenuAndDeleteConfirmation(t *testing.T) {
 		t.Fatal("deleted conversation returned after reload")
 	}
 }
+
+func TestMessageQueueLayoutAndDrag(t *testing.T) {
+	for _, size := range [][2]int{{1140, 780}, {840, 560}} {
+		t.Run(fmt.Sprint(size), func(t *testing.T) {
+			state := model.New()
+			ctrl := controller.New(t.TempDir(), state, nil)
+			ctrl.AddProject(t.TempDir())
+			thread := state.Thread(state.Selected)
+			thread.Turns = []model.Turn{{ID: "turn", Prompt: "Active task", Status: "inProgress", Items: []model.Item{{ID: "steer", Kind: "steerMessage", Text: "Steered message"}}}}
+			thread.Queue = []model.QueuedMessage{{ID: "b", Text: "First queued message"}, {ID: "c", Text: "Second queued message"}}
+			ctrl.Running[thread.ID] = true
+			v := view.New(ctrl)
+			tt := ui.NewTester(v.Render, size[0], size[1])
+			tt.Frame()
+			if tt.HasText("接下来") || tt.HasText("本轮结束后，按顺序逐条发送") || tt.HasText("已插入当前对话") || !tt.HasText("Steered message") {
+				t.Fatal("explanatory labels remain or message content is missing")
+			}
+			editor, ok := tt.Find("消息")
+			send, sendOK := tt.Find("加入队列")
+			if !ok || !sendOK || editor.Y+editor.H > float32(size[1]) || send.Y+send.H > float32(size[1]) {
+				t.Fatal("composer clipped by queue")
+			}
+			handle, ok := tt.Find("⠿")
+			target, ok2 := tt.Find("Second queued message")
+			if !ok || !ok2 {
+				t.Fatal("queue rows missing")
+			}
+			x, y := handle.X+handle.W/2, handle.Y+handle.H/2
+			tt.Press(x, y)
+			tt.Move(x, y+8)
+			tt.Move(target.X+8, target.Y+target.H/2)
+			tt.Release(target.X+8, target.Y+target.H/2)
+			tt.Frame()
+			if thread.Queue[0].ID != "c" || thread.Queue[1].ID != "b" {
+				t.Fatalf("drag failed: %+v", thread.Queue)
+			}
+			thread.Queue[0].Sending = true
+			ctrl.Save()
+			restored, err := model.Load(filepath.Join(ctrl.Dir, "state.json"))
+			if err != nil || len(restored.Thread(thread.ID).Queue) != 2 || restored.Thread(thread.ID).Queue[0].ID != "c" || restored.Thread(thread.ID).Queue[0].Sending {
+				t.Fatal("queue order or transient state not restored correctly")
+			}
+			thread.Queue = nil
+			tt.Frame()
+			thread.Queue = []model.QueuedMessage{{ID: "b", Text: "Restored message"}}
+			tt.Frame()
+			state.Settings.Language = "en"
+			tt.Frame()
+			if tt.HasText("Up next") || tt.HasText("Inserted into this turn") || !tt.HasText("Steer") {
+				t.Fatal("queue localization missing")
+			}
+		})
+	}
+}

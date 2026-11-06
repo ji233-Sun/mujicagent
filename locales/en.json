@@ -147,5 +147,11 @@
   "mcpNo": "No",
   "mcpInputHint": "Complete required fields with valid values before accepting.",
   "mcpURLHint": "Open this URL in your browser, complete the request, then accept.",
-  "mcpUnsupported": "This request mode or form is not supported. You can decline or cancel."
+  "mcpUnsupported": "This request mode or form is not supported. You can decline or cancel.",
+  "queueAdd": "Add to queue",
+  "queueDrag": "Drag to reorder",
+  "queueSteer": "Steer",
+  "queueSteerHint": "Guide this turn after the tool call finishes",
+  "queueSending": "Sending…",
+  "queueResume": "Resume queue"
 }

@@ -248,13 +248,13 @@ func (v *View) timeline(c *ui.Context, t *model.Thread) {
 				ui.Column(c).Gap(14).Children(func() {
 					for j := 0; j < len(turn.Items); {
 						key := fmt.Sprintf("%s-%d-%d", t.ID, i, j)
-						if turn.Items[j].Kind == "agentMessage" {
+						if turn.Items[j].Kind == "agentMessage" || turn.Items[j].Kind == "steerMessage" {
 							v.item(c, &turn.Items[j], key, turn.Status == "inProgress")
 							j++
 							continue
 						}
 						start := j
-						for j < len(turn.Items) && turn.Items[j].Kind != "agentMessage" {
+						for j < len(turn.Items) && turn.Items[j].Kind != "agentMessage" && turn.Items[j].Kind != "steerMessage" {
 							j++
 						}
 						v.activityGroup(c, turn.Items[start:j], key, turn.Status == "inProgress")
@@ -275,6 +275,12 @@ func (v *View) timeline(c *ui.Context, t *model.Thread) {
 }
 func (v *View) item(c *ui.Context, item *model.Item, key string, running bool) {
 	tx := v.texts()
+	if item.Kind == "steerMessage" {
+		ui.Column(c.Key(key)).AlignSelf(ui.End).MaxWidth(740).Radius(12).Background(c.Theme().Surface).Padding(10, 14).Children(func() {
+			v.message(c, item.Text, v.C.State.Selected)
+		})
+		return
+	}
 	if item.Kind == "agentMessage" {
 		if running && item.Status != "completed" {
 			markdown.Stream(c.Key(key), item.Text, &v.md)
@@ -333,6 +339,7 @@ func (v *View) composer(c *ui.Context, t *model.Thread) {
 			draft = &t.Draft
 		}
 		busy := t != nil && v.C.Running[t.ID]
+		v.messageQueue(c, t)
 		ui.Column(c).Radius(14).Border(1, c.Theme().Border).Background(c.Theme().Surface).Padding(12, 14, 8).Gap(8).Children(func() {
 			v.composerInput(c, draft)
 			ui.Row(c).AlignItems(ui.Center).Gap(6).Children(func() {
@@ -342,8 +349,13 @@ func (v *View) composer(c *ui.Context, t *model.Thread) {
 				iconButton(c, tx.AttachFile(), plus, v.pickAttachments).Disabled(t == nil || t.ProjectID == "")
 				if busy {
 					iconButton(c, tx.Stop(), stopIcon, v.C.Interrupt)
-				} else {
-					ui.PrimaryButton(c, "").Label(tx.Send()).Tooltip(tx.SendHint()).Size(30, 30).Padding(0).Gap(0).Center().Radius(15).Disabled(t == nil || t.ProjectID == "" || strings.TrimSpace(*draft) == "" || v.C.Connection != "Connected").Children(func() { ui.Icon(c, arrow).Size(16, 16).Shrink(0) }).OnClick(func() {
+				}
+				{
+					label := tx.Send()
+					if busy {
+						label = tx.QueueAdd()
+					}
+					ui.PrimaryButton(c, "").Label(label).Tooltip(label).Size(30, 30).Padding(0).Gap(0).Center().Radius(15).Disabled(t == nil || t.ProjectID == "" || strings.TrimSpace(*draft) == "" || v.C.Connection != "Connected").Children(func() { ui.Icon(c, arrow).Size(16, 16).Shrink(0) }).OnClick(func() {
 						if v.C.Send(*draft, false) {
 							v.draft = ""
 						}

@@ -147,5 +147,11 @@
   "mcpNo": "否",
   "mcpInputHint": "请正确填写必填项后再同意。",
   "mcpURLHint": "请在浏览器中打开此链接，完成操作后再同意。",
-  "mcpUnsupported": "暂不支持此请求模式或表单。你可以拒绝或取消。"
+  "mcpUnsupported": "暂不支持此请求模式或表单。你可以拒绝或取消。",
+  "queueAdd": "加入队列",
+  "queueDrag": "拖动调整顺序",
+  "queueSteer": "插入对话",
+  "queueSteerHint": "引导当前对话，在工具调用完成后生效",
+  "queueSending": "提交中…",
+  "queueResume": "继续发送"
 }
