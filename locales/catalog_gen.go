@@ -724,6 +724,48 @@ func (msgs Messages) Permissions() string {
 	return Catalog.Format(msgs.locale, "permissions", nil)
 }
 
+// PermissionTiming says "调整从下一轮生效。当前轮次、正在执行的操作和待处理审批保持原权限。"
+// in the language the app shows.
+func PermissionTiming() string { return In(i18n.Locale()).PermissionTiming() }
+
+// PermissionTiming says "调整从下一轮生效。当前轮次、正在执行的操作和待处理审批保持原权限。"
+// in the language of msgs.
+func (msgs Messages) PermissionTiming() string {
+	return Catalog.Format(msgs.locale, "permissionTiming", nil)
+}
+
+// PermissionNextTurn says "下一轮：{name}"
+// in the language the app shows.
+func PermissionNextTurn(name string) string { return In(i18n.Locale()).PermissionNextTurn(name) }
+
+// PermissionNextTurn says "下一轮：{name}"
+// in the language of msgs.
+func (msgs Messages) PermissionNextTurn(name string) string {
+	return Catalog.Format(msgs.locale, "permissionNextTurn", map[string]any{"name": name})
+}
+
+// PermissionStarting says "当前轮次正在启动，请稍后再调整权限。"
+// in the language the app shows.
+func PermissionStarting() string { return In(i18n.Locale()).PermissionStarting() }
+
+// PermissionStarting says "当前轮次正在启动，请稍后再调整权限。"
+// in the language of msgs.
+func (msgs Messages) PermissionStarting() string {
+	return Catalog.Format(msgs.locale, "permissionStarting", nil)
+}
+
+// PermissionUpdateFailed says "未能确认权限更新，保留原选择：{detail}"
+// in the language the app shows.
+func PermissionUpdateFailed(detail string) string {
+	return In(i18n.Locale()).PermissionUpdateFailed(detail)
+}
+
+// PermissionUpdateFailed says "未能确认权限更新，保留原选择：{detail}"
+// in the language of msgs.
+func (msgs Messages) PermissionUpdateFailed(detail string) string {
+	return Catalog.Format(msgs.locale, "permissionUpdateFailed", map[string]any{"detail": detail})
+}
+
 // PermissionPicker says "权限选择"
 // in the language the app shows.
 func PermissionPicker() string { return In(i18n.Locale()).PermissionPicker() }

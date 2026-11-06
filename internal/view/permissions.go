@@ -42,9 +42,12 @@ func (v *View) permissionSelector(c *ui.Context) {
 		v.permissionPicker = false
 	}
 	label := v.permissionName(v.C.PermissionID())
+	if v.C.NextPermissionID() != v.C.PermissionID() {
+		label += " → " + v.permissionName(v.C.NextPermissionID())
+	}
 	button := pickerOption(c.Key("permission-selector"), tx.Permissions(), v.permissionPicker).
 		Height(30).MaxWidth(170).Shrink(1).Tooltip(label).
-		Disabled(v.C.Connection != "Connected" || v.C.Running[v.C.State.Selected])
+		Disabled(v.C.Connection != "Connected" || v.C.PermissionUpdating())
 	button.Children(func() {
 		ui.Icon(c, permissionIcon(v.C.PermissionID())).Size(15, 15).Shrink(0)
 		ui.Text(c, label).FontSize(12).SingleLine().Shrink(1).MinWidth(0)
@@ -60,6 +63,10 @@ func (v *View) permissionSelector(c *ui.Context) {
 	pickerPopover(c.Key("permission-picker"), button, &v.permissionPicker, tx.PermissionPicker(), 290, func() {
 		ui.Column(c).Gap(4).Children(func() {
 			ui.Text(c, tx.Permissions()).FontSize(11).TextColor(c.Theme().TextMuted).Padding(6, 8)
+			ui.Text(c, tx.PermissionTiming()).FontSize(11).TextColor(c.Theme().TextMuted).Padding(6, 8)
+			if v.C.NextPermissionID() != v.C.PermissionID() {
+				ui.Text(c, tx.PermissionNextTurn(v.permissionName(v.C.NextPermissionID()))).FontSize(12).Padding(6, 8)
+			}
 			if v.C.PermissionsLoading {
 				ui.Spinner(c).Size(18, 18).Margin(12)
 				return
@@ -78,7 +85,7 @@ func (v *View) permissionSelector(c *ui.Context) {
 				if !profile.Allowed {
 					detail = tx.PermissionRestricted()
 				}
-				selected := profile.ID == v.C.PermissionID()
+				selected := profile.ID == v.C.NextPermissionID()
 				b := pickerOption(c.Key(profile.ID), label, selected).Tooltip(detail).Disabled(!profile.Allowed)
 				b.Children(func() {
 					ui.Icon(c, permissionIcon(profile.ID)).Size(17, 17).Shrink(0)
