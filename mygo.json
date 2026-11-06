@@ -1,0 +1,12 @@
+{
+  "name": "MujicAgent",
+  "identifier": "dev.ji233.mujicagent",
+  "version": "0.1.0",
+  "out": "build",
+  "updates": {
+    "github": "ji233-Sun/mujicagent",
+    "publicKey": "muf37Koz9ajnJjdKNMDxGradJu2/Ukqt7RszE1NziWE=",
+    "deltas": 0
+  },
+  "i18n": { "dir": "locales", "source": "zh-Hans" }
+}

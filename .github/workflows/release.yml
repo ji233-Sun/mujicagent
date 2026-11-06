@@ -1,0 +1,106 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version increment
+        required: true
+        default: patch
+        type: choice
+        options: [patch, minor, major]
+      dry_run:
+        description: Build and sign without publishing or changing main
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Prepare version and release notes
+        id: version
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: |
+          version="$(go run ./scripts/release next "$BUMP")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          previous="$(gh api "repos/$GITHUB_REPOSITORY/releases" --jq '[.[] | select(.draft == false and .prerelease == false)][0].tag_name // empty')"
+          args=(-f "tag_name=v$version" -f "target_commitish=$(git rev-parse HEAD)")
+          range=HEAD
+          if [[ -n "$previous" ]]; then
+            args+=(-f "previous_tag_name=$previous")
+            range="$previous..HEAD"
+          fi
+          gh api --method POST "repos/$GITHUB_REPOSITORY/releases/generate-notes" "${args[@]}" --jq .body > "$RUNNER_TEMP/release-notes.md"
+          printf '\n### Commits\n\n' >> "$RUNNER_TEMP/release-notes.md"
+          git log "$range" --pretty=format:'- %s (%h)' --no-merges --invert-grep --grep='^chore(release):' >> "$RUNNER_TEMP/release-notes.md"
+          printf '\n' >> "$RUNNER_TEMP/release-notes.md"
+          go run ./scripts/release prepare "$version" "$RUNNER_TEMP/release-notes.md"
+      - name: Verify
+        run: |
+          go tool mygo generate
+          git diff --exit-code -- locales/catalog_gen.go
+          go tool mygo vet .
+          CGO_ENABLED=0 go test ./... -count=1
+          go test -race ./internal/codex ./internal/controller -count=1
+          go vet ./...
+          go tool mygo i18n check
+      - name: Build signed macOS updates
+        env:
+          MYGO_UPDATER_PRIVATE_KEY: ${{ secrets.MYGO_UPDATER_PRIVATE_KEY }}
+        run: |
+          test -n "$MYGO_UPDATER_PRIVATE_KEY" || { echo 'Missing MYGO_UPDATER_PRIVATE_KEY secret'; exit 1; }
+          go tool mygo build -platform "darwin/arm64,darwin/amd64"
+          for arch in arm64 amd64; do
+            test -s "build/darwin-$arch/update-darwin-$arch.json"
+          done
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: release-${{ steps.version.outputs.version }}
+          path: |
+            build/**/*.dmg
+            build/**/*.tar.gz
+            build/**/update-*.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Publish
+        if: ${{ !inputs.dry_run }}
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add mygo.json CHANGELOG.md
+          git commit -m "chore(release): v$VERSION"
+          git tag -a "v$VERSION" -m "MujicAgent $VERSION"
+          git push --atomic origin HEAD:main "refs/tags/v$VERSION"
+          gh release create "v$VERSION" --verify-tag --draft --title "MujicAgent $VERSION" --notes-file "$RUNNER_TEMP/release-notes.md"
+          gh release upload "v$VERSION" build/darwin-*/*.dmg build/darwin-*/*.tar.gz build/darwin-*/update-*.json
+          gh release edit "v$VERSION" --draft=false --latest
+      - name: Summary
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          echo "MujicAgent $VERSION · dry run: $DRY_RUN" >> "$GITHUB_STEP_SUMMARY"
+          cat "$RUNNER_TEMP/release-notes.md" >> "$GITHUB_STEP_SUMMARY"
