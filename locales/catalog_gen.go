@@ -1336,16 +1336,6 @@ func (msgs Messages) AttachFile() string {
 	return Catalog.Format(msgs.locale, "attachFile", nil)
 }
 
-// RemoveAttachment says "移除附件"
-// in the language the app shows.
-func RemoveAttachment() string { return In(i18n.Locale()).RemoveAttachment() }
-
-// RemoveAttachment says "移除附件"
-// in the language of msgs.
-func (msgs Messages) RemoveAttachment() string {
-	return Catalog.Format(msgs.locale, "removeAttachment", nil)
-}
-
 // PreviewUnavailable says "无法预览"
 // in the language the app shows.
 func PreviewUnavailable() string { return In(i18n.Locale()).PreviewUnavailable() }
@@ -1354,6 +1344,36 @@ func PreviewUnavailable() string { return In(i18n.Locale()).PreviewUnavailable()
 // in the language of msgs.
 func (msgs Messages) PreviewUnavailable() string {
 	return Catalog.Format(msgs.locale, "previewUnavailable", nil)
+}
+
+// Copy says "复制"
+// in the language the app shows.
+func Copy() string { return In(i18n.Locale()).Copy() }
+
+// Copy says "复制"
+// in the language of msgs.
+func (msgs Messages) Copy() string {
+	return Catalog.Format(msgs.locale, "copy", nil)
+}
+
+// Cut says "剪切"
+// in the language the app shows.
+func Cut() string { return In(i18n.Locale()).Cut() }
+
+// Cut says "剪切"
+// in the language of msgs.
+func (msgs Messages) Cut() string {
+	return Catalog.Format(msgs.locale, "cut", nil)
+}
+
+// Paste says "粘贴"
+// in the language the app shows.
+func Paste() string { return In(i18n.Locale()).Paste() }
+
+// Paste says "粘贴"
+// in the language of msgs.
+func (msgs Messages) Paste() string {
+	return Catalog.Format(msgs.locale, "paste", nil)
 }
 
 // AnnotationHint says "点击图片选择位置，填写说明后插入当前草稿。"

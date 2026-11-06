@@ -63,8 +63,33 @@ func TestImageAnnotation(t *testing.T) {
 	tt.Frame()
 	tt.Frame()
 	parts := model.MessageParts(thread.Draft)
-	if len(parts) != 2 || parts[0].Text != "keep this\n" || parts[1].Attachment.Tip != "改成绿色" || parts[1].Attachment.X != 25 || parts[1].Attachment.Y != 75 {
+	if len(parts) != 2 || parts[0].Text != "keep this" || parts[1].Attachment.Tip != "改成绿色" || parts[1].Attachment.X != 25 || parts[1].Attachment.Y != 75 {
 		t.Fatalf("draft: %s", thread.Draft)
+	}
+	// Editing a draft annotation replaces the same inline attachment, and undo
+	// restores it without losing the text on either side.
+	original := thread.Draft + " after"
+	thread.Draft = original
+	v.openAttachment(*parts[1].Attachment, thread.ID)
+	tt.Frame()
+	if err := tt.Click("标记说明"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Key(ui.Cmd, ui.KeyA)
+	tt.Type("改成蓝色")
+	if err := tt.Click("插入标记"); err != nil {
+		t.Fatal(err)
+	}
+	updated := model.MessageParts(thread.Draft)
+	if len(updated) != 3 || updated[0].Text != "keep this" || updated[1].Attachment.Tip != "改成蓝色" || updated[2].Text != " after" {
+		t.Fatalf("annotation split or duplicated attachment: %s", thread.Draft)
+	}
+	if err := tt.Click("消息"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Key(ui.Cmd, ui.KeyZ)
+	if thread.Draft != original {
+		t.Fatalf("annotation undo: %s", thread.Draft)
 	}
 	if strings.Contains(thread.Turns[0].Prompt, "tip=") {
 		t.Fatal("sent message mutated")
@@ -120,29 +145,43 @@ func TestAttachmentComposer(t *testing.T) {
 	if err := tt.Click("消息"); err != nil {
 		t.Fatal(err)
 	}
-	tt.Key(ui.Cmd, ui.KeyA)
+	// Replace only the text before the inline object.
+	v.editor.SetSelection(0, 2)
+	tt.Frame()
 	tt.Type("前文")
 	if thread.Draft != "前文"+a.Link()+"后文" {
 		t.Fatalf("edit lost attachments: %s", thread.Draft)
 	}
-	if v.draftStart != 2 || v.draftEnd != 2 {
-		t.Fatalf("incorrect Unicode insertion offset: %d,%d", v.draftStart, v.draftEnd)
+	// A single editor selects and copies text and attachments together.
+	tt.Key(ui.Cmd, ui.KeyA)
+	tt.Key(ui.Cmd, ui.KeyC)
+	if tt.Clipboard() != thread.Draft {
+		t.Fatalf("copy: %s", tt.Clipboard())
 	}
+	tt.Key(0, ui.KeyRight)
 	tt.Key(0, ui.KeyEnter)
 	if thread.Draft != "前文"+a.Link()+"后文" {
 		t.Fatal("failed send lost draft")
 	}
-	if err := tt.Click("移除附件"); err != nil {
-		t.Fatal(err)
-	}
+	v.editor.SetSelection(3, 3)
 	tt.Frame()
-	tt.Frame()
+	tt.Key(0, ui.KeyBackspace)
 	if thread.Draft != "前文后文" {
-		t.Fatalf("remove lost text: %s", thread.Draft)
+		t.Fatalf("delete split text: %s", thread.Draft)
+	}
+	tt.Key(ui.Cmd, ui.KeyZ)
+	if thread.Draft != "前文"+a.Link()+"后文" {
+		t.Fatalf("undo: %s", thread.Draft)
+	}
+	tt.Key(ui.Cmd, ui.KeyA)
+	tt.SetClipboard("粘贴" + a.Link() + "末尾")
+	tt.Key(ui.Cmd, ui.KeyV)
+	if thread.Draft != "粘贴"+a.Link()+"末尾" || v.editor.Text().Len() != 5 {
+		t.Fatalf("paste: %s", thread.Draft)
 	}
 	c.NewThread(thread.ProjectID)
 	tt.Frame()
-	if len(v.editorParts) != 1 || v.editorParts[0].Text != "" {
+	if v.editor.Text().Len() != 0 {
 		t.Fatal("attachment leaked to new conversation")
 	}
 }
