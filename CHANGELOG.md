@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.1.10
+
+#### What's Changed
+* fix: 恢复虚拟列表中的会话收纳动画 by @ji233-Sun in https://github.com/ji233-Sun/mujicagent/pull/48
+* feat: 重设计附件预览，组合图形标注与右侧评论 by @ji233-Sun in https://github.com/ji233-Sun/mujicagent/pull/50
+
+
+**Full Changelog**: https://github.com/ji233-Sun/mujicagent/compare/v0.1.9...v0.1.10
+
+### Commits
+
+- fix: 移除附件预览底部说明文字 (f5da244)
+- feat: 重设计附件预览并组合图形标注与评论 (a9f77ee)
+- fix: 恢复虚拟列表中的会话收纳动画 (c763877)
+
 ## 0.1.9
 
 #### What's Changed
