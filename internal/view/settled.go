@@ -8,6 +8,17 @@ import (
 )
 
 const threadHeight = 34
+const settleDuration = 220 * time.Millisecond
+
+// Keep outgoing rows in the virtual list until their visual exit completes.
+func (v *View) settleProgress(c *ui.Context, id string) float32 {
+	end, ok := v.settling[id]
+	if !ok {
+		return 1
+	}
+	remaining := max(0, min(1, float32(end.Sub(c.Now()))/float32(settleDuration)))
+	return remaining * remaining * remaining
+}
 
 func (v *View) settledShelf(c *ui.Context) {
 	tx := v.texts()

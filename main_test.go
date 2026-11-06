@@ -291,6 +291,15 @@ func TestManualSettleFromHover(t *testing.T) {
 	if !thread.Settled {
 		t.Fatal("manual settle not applied")
 	}
+	tt.Advance(80 * time.Millisecond)
+	leaving, ok := tt.Find(thread.Title)
+	if !ok || leaving.X >= box.X {
+		t.Fatalf("settled row should slide out before disappearing: before=%+v during=%+v", box, leaving)
+	}
+	tt.Advance(180 * time.Millisecond)
+	if tt.HasText(thread.Title) {
+		t.Fatal("settled row should leave the active list after its animation")
+	}
 	next := s.Thread(s.Selected)
 	if next == nil || next.ID == thread.ID || next.ProjectID != thread.ProjectID || next.Draft != "" || len(next.Turns) != 0 {
 		t.Fatal("settle did not open a blank conversation in the same project")
@@ -322,6 +331,25 @@ func TestManualSettleFromHover(t *testing.T) {
 	}
 	if !thread.Settled {
 		t.Fatal("context-menu settle failed")
+	}
+	tt.Advance(300 * time.Millisecond)
+	// Close the shelf before checking that reduced motion removes the active row.
+	tt.Move(500, 100)
+	if err := tt.Click("收纳"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Advance(300 * time.Millisecond)
+	c.Settle(thread.ID, false)
+	tt.SetPreferences(ui.Preferences{ReduceMotion: true})
+	tt.Frame()
+	if err := tt.RightClick(thread.Title); err != nil {
+		t.Fatal(err)
+	}
+	if err := tt.ChooseMenuItem("收纳"); err != nil {
+		t.Fatal(err)
+	}
+	if tt.HasText(thread.Title) {
+		t.Fatal("reduce-motion preference must remove the active row immediately")
 	}
 }
 

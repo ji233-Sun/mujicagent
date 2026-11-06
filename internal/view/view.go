@@ -24,6 +24,7 @@ type View struct {
 	draft                      string
 	shelf                      bool
 	settledList                ui.ListState
+	settling                   map[string]time.Time
 	projectLists               map[string]*ui.ListState
 	modelPicker                bool
 	modelSearch                string
@@ -76,6 +77,14 @@ func (v *View) theme(c *ui.Context) {
 func (v *View) Render(c *ui.Context) {
 	tx := v.texts()
 	v.C.Drain()
+	for id, end := range v.settling {
+		thread := v.C.State.Thread(id)
+		if thread == nil || !thread.Settled || !c.Now().Before(end) || c.Preferences().ReduceMotion {
+			delete(v.settling, id)
+		} else {
+			c.AnimationFrame()
+		}
+	}
 	for key := range v.answers {
 		pending := false
 		for _, r := range v.C.Requests {
@@ -176,9 +185,12 @@ func (v *View) group(c *ui.Context, p model.Project) {
 			return
 		}
 		threads := make([]*model.Thread, 0)
+		height := float32(0)
 		for _, t := range v.C.State.Threads {
-			if !t.Settled && t.ProjectID == p.ID {
+			_, leaving := v.settling[t.ID]
+			if (!t.Settled || leaving) && t.ProjectID == p.ID {
 				threads = append(threads, t)
+				height += threadHeight * v.settleProgress(c, t.ID)
 			}
 		}
 		if len(threads) == 0 {
@@ -189,19 +201,31 @@ func (v *View) group(c *ui.Context, p model.Project) {
 			list = &ui.ListState{}
 			v.projectLists[p.ID] = list
 		}
-		ui.List(c.Key("threads"), list, len(threads)).Height(float32(min(10, len(threads))*threadHeight)).Shrink(0).Margin(0, 0, 0, 14).Label(p.Name).
-			ItemKey(func(i int) any { return threads[i].ID }).Rows(func(row ui.ListRow) { v.threadRow(row.Context, threads[row.Index], false) })
+		ui.List(c.Key("threads"), list, len(threads)).Height(min(10*threadHeight, height)).Shrink(0).Margin(0, 0, 0, 14).Label(p.Name).
+			ItemKey(func(i int) any { return threads[i].ID }).Rows(func(row ui.ListRow) { v.threadRow(row.Context, threads[row.Index], true) })
 	})
 }
-func (v *View) threadRow(c *ui.Context, t *model.Thread, animate bool) {
+func (v *View) threadRow(c *ui.Context, t *model.Thread, activeList bool) {
 	tx := v.texts()
 	title := v.threadTitle(t)
 	row := ui.Row(c.Key(t.ID)).Height(34).Shrink(0).Radius(9).Padding(0, 4).Gap(3).AlignItems(ui.Center)
-	if animate {
-		row.Transition(ui.ElementTransition{Duration: 220 * time.Millisecond, Position: true, Colors: true,
-			Enter: &ui.Motion{X: -24, Collapse: true}, Exit: &ui.Motion{X: -16}})
-	} else {
-		row.Transition(hoverTransition)
+	row.Transition(hoverTransition)
+	if activeList {
+		progress := v.settleProgress(c, t.ID)
+		row.Height(threadHeight*progress).Opacity(progress).Translate(-16*(1-progress), 0).Clip().Disabled(t.Settled)
+	}
+	now, reducedMotion := c.Now(), c.Preferences().ReduceMotion
+	toggleSettled := func() {
+		wasSettled := t.Settled
+		v.C.Settle(t.ID, !wasSettled)
+		if activeList && !wasSettled && t.Settled && !reducedMotion {
+			if v.settling == nil {
+				v.settling = make(map[string]time.Time)
+			}
+			v.settling[t.ID] = now.Add(settleDuration)
+		} else {
+			delete(v.settling, t.ID)
+		}
 	}
 	row.ContextMenu(func(m *ui.Menu) {
 		label := tx.Settle()
@@ -209,7 +233,7 @@ func (v *View) threadRow(c *ui.Context, t *model.Thread, animate bool) {
 			label = tx.RestoreConversation()
 		}
 		if m.Item(label).Disabled(v.C.Running[t.ID]).Chosen() {
-			v.C.Settle(t.ID, !t.Settled)
+			toggleSettled()
 		}
 		m.Separator()
 		if m.Item(tx.Delete()).Disabled(v.C.Running[t.ID]).Chosen() {
@@ -242,7 +266,7 @@ func (v *View) threadRow(c *ui.Context, t *model.Thread, animate bool) {
 				label = tx.RestoreConversation()
 				icon = restore
 			}
-			iconButton(c, label, icon, func() { v.C.Settle(t.ID, !t.Settled) })
+			iconButton(c, label, icon, toggleSettled)
 		}
 	})
 }
