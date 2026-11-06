@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.1.9
+
+#### What's Changed
+* feat: 展示 MCP 工具调用参数、结果与错误详情 by @ji233-Sun in https://github.com/ji233-Sun/mujicagent/pull/37
+* feat: 无项目会话使用独立分组与工作目录 by @ji233-Sun in https://github.com/ji233-Sun/mujicagent/pull/40
+* feat: 恢复上次项目并在收纳后打开新对话 by @ji233-Sun in https://github.com/ji233-Sun/mujicagent/pull/42
+* feat: 为执行输出添加高性能高亮和渐隐展开 by @ji233-Sun in https://github.com/ji233-Sun/mujicagent/pull/43
+* docs: 明确 PR 必要验收截图要求 by @ji233-Sun in https://github.com/ji233-Sun/mujicagent/pull/44
+* feat: 支持队列原位编辑删除并改进拖动反馈 by @ji233-Sun in https://github.com/ji233-Sun/mujicagent/pull/45
+* docs: 交付优先使用 gh 并补充截图上传流程 by @ji233-Sun in https://github.com/ji233-Sun/mujicagent/pull/46
+
+
+**Full Changelog**: https://github.com/ji233-Sun/mujicagent/compare/v0.1.8...v0.1.9
+
+### Commits
+
+- docs: 交付优先使用 gh 并补充截图上传流程 (5433b5d)
+- feat: 支持队列原位编辑删除与整卡拖动 (eeebefd)
+- docs: 明确 PR 必要验收截图要求 (6b57cdc)
+- feat: 为执行输出添加高性能高亮和渐隐展开 (b304a42)
+- feat: 恢复上次项目并在收纳后打开新对话 (d09c22f)
+- feat: 添加无项目分组与独立会话工作目录 (b799c05)
+- feat: 展示 MCP 工具调用参数结果与错误详情 (0209be3)
+
 ## 0.1.8
 
 #### What's Changed
