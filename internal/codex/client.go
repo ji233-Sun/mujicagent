@@ -188,6 +188,14 @@ type Question struct {
 	} `json:"options"`
 }
 type Request struct {
+	ServerName                      string          `json:"serverName"`
+	Mode                            string          `json:"mode"`
+	Message                         string          `json:"message"`
+	URL                             string          `json:"url"`
+	Title                           string          `json:"title"`
+	Description                     string          `json:"description"`
+	RequestedSchema                 json.RawMessage `json:"requestedSchema"`
+	Meta                            json.RawMessage `json:"_meta"`
 	ID                              json.RawMessage
 	Method                          string
 	ThreadID                        string     `json:"threadId"`

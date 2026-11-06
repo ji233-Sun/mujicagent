@@ -1405,3 +1405,73 @@ func CloseAttachment() string { return In(i18n.Locale()).CloseAttachment() }
 func (msgs Messages) CloseAttachment() string {
 	return Catalog.Format(msgs.locale, "closeAttachment", nil)
 }
+
+// McpRequest says "MCP 请求"
+// in the language the app shows.
+func McpRequest() string { return In(i18n.Locale()).McpRequest() }
+
+// McpRequest says "MCP 请求"
+// in the language of msgs.
+func (msgs Messages) McpRequest() string {
+	return Catalog.Format(msgs.locale, "mcpRequest", nil)
+}
+
+// McpAccept says "同意"
+// in the language the app shows.
+func McpAccept() string { return In(i18n.Locale()).McpAccept() }
+
+// McpAccept says "同意"
+// in the language of msgs.
+func (msgs Messages) McpAccept() string {
+	return Catalog.Format(msgs.locale, "mcpAccept", nil)
+}
+
+// McpYes says "是"
+// in the language the app shows.
+func McpYes() string { return In(i18n.Locale()).McpYes() }
+
+// McpYes says "是"
+// in the language of msgs.
+func (msgs Messages) McpYes() string {
+	return Catalog.Format(msgs.locale, "mcpYes", nil)
+}
+
+// McpNo says "否"
+// in the language the app shows.
+func McpNo() string { return In(i18n.Locale()).McpNo() }
+
+// McpNo says "否"
+// in the language of msgs.
+func (msgs Messages) McpNo() string {
+	return Catalog.Format(msgs.locale, "mcpNo", nil)
+}
+
+// McpInputHint says "请正确填写必填项后再同意。"
+// in the language the app shows.
+func McpInputHint() string { return In(i18n.Locale()).McpInputHint() }
+
+// McpInputHint says "请正确填写必填项后再同意。"
+// in the language of msgs.
+func (msgs Messages) McpInputHint() string {
+	return Catalog.Format(msgs.locale, "mcpInputHint", nil)
+}
+
+// McpURLHint says "请在浏览器中打开此链接，完成操作后再同意。"
+// in the language the app shows.
+func McpURLHint() string { return In(i18n.Locale()).McpURLHint() }
+
+// McpURLHint says "请在浏览器中打开此链接，完成操作后再同意。"
+// in the language of msgs.
+func (msgs Messages) McpURLHint() string {
+	return Catalog.Format(msgs.locale, "mcpURLHint", nil)
+}
+
+// McpUnsupported says "暂不支持此请求模式或表单。你可以拒绝或取消。"
+// in the language the app shows.
+func McpUnsupported() string { return In(i18n.Locale()).McpUnsupported() }
+
+// McpUnsupported says "暂不支持此请求模式或表单。你可以拒绝或取消。"
+// in the language of msgs.
+func (msgs Messages) McpUnsupported() string {
+	return Catalog.Format(msgs.locale, "mcpUnsupported", nil)
+}

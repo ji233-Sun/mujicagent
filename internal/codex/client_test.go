@@ -283,3 +283,49 @@ func TestApprovalOptions(t *testing.T) {
 		})
 	}
 }
+
+func TestElicitationForm(t *testing.T) {
+	r := Request{Mode: "form", RequestedSchema: json.RawMessage(`{"type":"object","properties":{"choice":{"type":"string","oneOf":[{"const":"once","title":"Only once"}]},"enabled":{"type":"boolean"},"count":{"type":"integer","minimum":1,"maximum":5},"names":{"type":"array","minItems":1,"items":{"type":"string","enum":["a","b"]}},"text":{"type":"string","minLength":2}},"required":["choice","enabled","count","names","text"]}`)}
+	form, err := r.ElicitationForm()
+	if err != nil {
+		t.Fatal(err)
+	}
+	values := map[string]string{"choice": "once", "enabled": "false", "count": "3", "names": `["a","b"]`, "text": "中文"}
+	content, err := form.Content(values)
+	if err != nil || content["enabled"] != false || content["count"] != float64(3) {
+		t.Fatalf("%+v: %v", content, err)
+	}
+	if form.Properties["choice"].Options()[0].Title != "Only once" {
+		t.Fatal("server option label lost")
+	}
+	for _, tc := range []struct{ key, value string }{{"choice", "invented"}, {"enabled", "yes"}, {"count", "1.5"}, {"count", "6"}, {"names", `["a","a"]`}, {"names", `["c"]`}, {"text", "a"}} {
+		old := values[tc.key]
+		values[tc.key] = tc.value
+		if _, err := form.Content(values); err == nil {
+			t.Fatalf("accepted invalid %s=%s", tc.key, tc.value)
+		}
+		values[tc.key] = old
+	}
+	delete(values, "enabled")
+	if _, err := form.Content(values); err == nil {
+		t.Fatal("missing required boolean accepted")
+	}
+	for _, mode := range []string{"openai/form", "openai/userVerification", "unknown"} {
+		r.Mode = mode
+		if _, err := r.ElicitationForm(); err == nil {
+			t.Fatal("unsupported mode accepted")
+		}
+	}
+	for _, u := range []string{"javascript:alert(1)", "file:///tmp/file", "https://example.com/approve"} {
+		r.Mode = "url"
+		r.URL = u
+		if r.ElicitationURL() != strings.HasPrefix(u, "https://") {
+			t.Fatal(u)
+		}
+	}
+	response := ElicitationResponse{Action: "accept", Content: map[string]any{}, Meta: json.RawMessage(`{"client":"test"}`)}
+	data, err := json.Marshal(response)
+	if err != nil || !strings.Contains(string(data), `"_meta":{"client":"test"}`) {
+		t.Fatalf("%s: %v", data, err)
+	}
+}

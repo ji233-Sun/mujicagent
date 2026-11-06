@@ -136,5 +136,12 @@
   "markImage": "标记图片",
   "annotationTip": "标记说明",
   "insertAnnotation": "插入标记",
-  "closeAttachment": "关闭附件"
+  "closeAttachment": "关闭附件",
+  "mcpRequest": "MCP 请求",
+  "mcpAccept": "同意",
+  "mcpYes": "是",
+  "mcpNo": "否",
+  "mcpInputHint": "请正确填写必填项后再同意。",
+  "mcpURLHint": "请在浏览器中打开此链接，完成操作后再同意。",
+  "mcpUnsupported": "暂不支持此请求模式或表单。你可以拒绝或取消。"
 }

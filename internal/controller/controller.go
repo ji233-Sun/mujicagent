@@ -562,7 +562,7 @@ func (c *Controller) handle(m codex.Message) {
 	}
 	if len(m.ID) > 0 {
 		switch m.Method {
-		case "item/tool/requestUserInput", "item/commandExecution/requestApproval", "item/fileChange/requestApproval":
+		case "item/tool/requestUserInput", "item/commandExecution/requestApproval", "item/fileChange/requestApproval", "mcpServer/elicitation/request":
 			var r codex.Request
 			if err := json.Unmarshal(m.Params, &r); err != nil {
 				c.ReportError(err.Error())
