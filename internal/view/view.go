@@ -10,6 +10,7 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/markdown"
+	"github.com/egoist/mygo/ui/richtext"
 	"github.com/ji233-Sun/mujicagent/internal/codex"
 	"github.com/ji233-Sun/mujicagent/internal/controller"
 	"github.com/ji233-Sun/mujicagent/internal/model"
@@ -42,8 +43,10 @@ type View struct {
 	annotationTip              string
 	annotationX, annotationY   float64
 	annotationPoint            bool
-	draftStart, draftEnd       int
-	editorParts                []model.MessagePart
+	editor                     *richtext.Document
+	editorHandle               ui.Handle
+	composerMenu               *mygo.Menu
+	composerMenuLanguage       string
 	editorSource, editorThread string
 }
 
@@ -333,10 +336,10 @@ func (v *View) composer(c *ui.Context, t *model.Thread) {
 		ui.Column(c).Radius(14).Border(1, c.Theme().Border).Background(c.Theme().Surface).Padding(12, 14, 8).Gap(8).Children(func() {
 			v.composerInput(c, draft)
 			ui.Row(c).AlignItems(ui.Center).Gap(6).Children(func() {
-				ui.Button(c, tx.AttachFile()).Disabled(t == nil || t.ProjectID == "").OnClick(v.pickAttachments)
 				v.modelSelector(c)
 				v.permissionSelector(c)
 				ui.Box(c).Grow(1)
+				iconButton(c, tx.AttachFile(), plus, v.pickAttachments).Disabled(t == nil || t.ProjectID == "")
 				if busy {
 					iconButton(c, tx.Stop(), stopIcon, v.C.Interrupt)
 				} else {
@@ -445,11 +448,11 @@ func dot(c *ui.Context, connected bool) {
 
 var hoverTransition = ui.ElementTransition{Colors: true, Duration: 120 * time.Millisecond}
 
-func iconButton(c *ui.Context, label string, icon *ui.SVG, fn func()) {
+func iconButton(c *ui.Context, label string, icon *ui.SVG, fn func()) ui.Element {
 	b := ui.ButtonBase(c.Key(label)).Label(label).Tooltip(label).Size(26, 26).Radius(7).Center().TextColor(c.Theme().TextMuted)
 	b.Transition(hoverTransition)
 	if b.Hovered() {
 		b.Background(c.Theme().SurfaceHover).TextColor(c.Theme().Text)
 	}
-	b.Children(func() { ui.Icon(c, icon).Size(16, 16) }).OnClick(fn)
+	return b.Children(func() { ui.Icon(c, icon).Size(16, 16) }).OnClick(fn)
 }
