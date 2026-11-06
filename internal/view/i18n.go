@@ -42,6 +42,10 @@ func (v *View) statusText(message string) string {
 		return tx.ConnectBeforeSending()
 	case "The turn is starting. Try Stop again in a moment.":
 		return tx.TurnStarting()
+	case "The turn is starting. Try changing permissions again in a moment.":
+		return tx.PermissionStarting()
+	case "Connect Codex before changing permissions.":
+		return tx.ConnectBeforeSending()
 	case "Answer each question before continuing.":
 		return tx.AnswerEachQuestion()
 	case "Connection lost. Reconnect to continue.":
@@ -58,6 +62,9 @@ func (v *View) statusText(message string) string {
 	}
 	if profile, ok := strings.CutPrefix(message, "Permission profile is unavailable: "); ok {
 		return tx.PermissionUnavailable(profile)
+	}
+	if detail, ok := strings.CutPrefix(message, "Permission update was not confirmed; the previous selection is retained: "); ok {
+		return tx.PermissionUpdateFailed(detail)
 	}
 	return message
 }

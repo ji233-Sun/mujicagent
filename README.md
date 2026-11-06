@@ -64,7 +64,9 @@ MUJICAGENT_LIVE_TEST=1 go test ./internal/controller -run 'TestLiveCodex|TestLiv
 
 在**设置 → 外观 → 语言**选择简体中文或 English，立即生效并保存。空白会话在中文显示“新对话”，收纳入口显示“收纳”；切换英文后分别显示“New conversation”和“Settled”。模型名称、思考强度代码、用户标题、对话内容和外部错误详情保持原文。
 
-输入框旁的权限选择器通过 `permissionProfile/list` 按当前项目读取档位，结合 `configRequirements/read` 的审批策略限制禁用不可用选项。新建对话默认使用工作区权限；选择单独保存在该对话中，不影响其他对话。权限通过 `thread/start`、`thread/resume` 和每次 `turn/start` 的 `permissions`、`approvalPolicy` 传递，运行中的对话暂时不能切换。
+输入框旁的权限选择器通过 `permissionProfile/list` 按当前项目读取档位，结合 `configRequirements/read` 的审批策略限制禁用不可用选项。新建对话默认使用工作区权限；选择单独保存在该对话中，不影响其他对话。权限通过 `thread/start`、`thread/resume` 和每次 `turn/start` 的 `permissions`、`approvalPolicy` 传递。已加载的会话调整权限时，通过 `thread/settings/update` 提交后才保存新选择；失败时保留原选择并显示错误。
+
+运行期间也可以为下一轮调整权限，选择器显示“当前权限 → 下一轮权限”，面板说明生效边界。Codex CLI 0.167.0 的 `thread/settings/update` 仅更新后续轮次；`turn/settings/update` 不支持权限档位或审批策略，因此本轮尚未开始的操作也仍使用本轮原权限。正在执行的操作、待处理审批和子会话均不会因选择变化而自动获得授权。下一轮显式发送新权限，保留原会话上下文；无需新建会话或重启。轮次启动中暂不能修改，需稍后重试。完全访问仍需确认，不更改全局默认权限。
 
 自动审批沿用工作区权限和 `on-request` 策略，将 `approvalsReviewer` 设为 `auto_review`，由 Codex 审核审批请求。只有服务端启用 `guardian_approval` 时才显示，并遵循项目配置及 `allowedApprovalsReviewers` 限制；切回默认权限后由用户审批，不修改全局 Codex 配置。
 

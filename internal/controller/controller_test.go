@@ -156,6 +156,15 @@ func TestServiceTierRequests(t *testing.T) {
 					os.Exit(2)
 				}
 				result = map[string]any{"turn": map[string]string{"id": "speed-turn"}}
+			case "thread/settings/update":
+				path := os.Getenv("MUJICAGENT_SPEED_REQUEST")
+				if os.WriteFile(path+"-update", m.Params, 0600) != nil {
+					os.Exit(2)
+				}
+				if reject, _ := os.ReadFile(path + "-reject"); string(reject) == "yes" {
+					enc.Encode(map[string]any{"id": m.ID, "error": map[string]any{"code": -32601, "message": "unsupported settings update"}})
+					continue
+				}
 			case "":
 				data, _ := json.Marshal(m)
 				if os.WriteFile(os.Getenv("MUJICAGENT_SPEED_REQUEST"), data, 0600) != nil {
@@ -302,6 +311,92 @@ func TestServiceTierRequests(t *testing.T) {
 		}
 		notify(c, "turn/completed", `{"threadId":"speed-thread","turn":{"id":"speed-turn","status":"completed"}}`)
 	}
+	// Live selections are future-turn settings, never grants for pending approvals.
+	c.Permissions = []codex.PermissionProfile{{ID: ":read-only", Allowed: true}, {ID: ":workspace", Allowed: true}, {ID: ":danger-full-access", Allowed: true}, {ID: ":approve-for-me", Allowed: true}, {ID: "restricted"}}
+	c.permissionsTarget = thread.ID
+	pending := &codex.Request{ID: json.RawMessage(`"pending"`), ThreadID: thread.ServerID, Method: "item/commandExecution/requestApproval"}
+	c.Requests = []*codex.Request{pending}
+	if !c.Send("keep this context", false) {
+		t.Fatal(c.Error)
+	}
+	wait := func(done func() bool) {
+		t.Helper()
+		deadline := time.Now().Add(3 * time.Second)
+		for !done() && time.Now().Before(deadline) {
+			c.Drain()
+			time.Sleep(time.Millisecond)
+		}
+		if !done() {
+			t.Fatalf("timed out: %s", c.Error)
+		}
+	}
+	wait(func() bool { return thread.Turns[len(thread.Turns)-1].ID != "" })
+	current, defaults, turns := c.PermissionID(), c.State.Settings.DefaultPermissionProfile, len(thread.Turns)
+	for _, id := range []string{":danger-full-access", ":read-only", ":approve-for-me"} {
+		c.SetPermission(id)
+		if !c.PermissionUpdating() || c.NextPermissionID() == id {
+			t.Fatal("selection changed before server acknowledgement")
+		}
+		wait(func() bool { return !c.PermissionUpdating() })
+		if c.NextPermissionID() != id || c.PermissionID() != current || len(thread.Turns) != turns || !c.Running[thread.ID] {
+			t.Fatal("live change altered the active turn or lost future selection")
+		}
+		data, err := os.ReadFile(request + "-update")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var wire struct{ ThreadID, Permissions, ApprovalPolicy, ApprovalsReviewer string }
+		if err := json.Unmarshal(data, &wire); err != nil {
+			t.Fatal(err)
+		}
+		profile := codex.PermissionProfile{ID: id}
+		if wire.ThreadID != thread.ServerID || wire.Permissions != profile.WireID() || wire.ApprovalPolicy != profile.ApprovalPolicy() || wire.ApprovalsReviewer != profile.Reviewer() {
+			t.Fatalf("wrong settings payload: %s", data)
+		}
+		if len(c.Requests) != 1 || c.Requests[0] != pending || pending.Responding || c.State.Settings.DefaultPermissionProfile != defaults {
+			t.Fatal("selection affected pending approval or global defaults")
+		}
+	}
+	c.SetPermission("restricted")
+	if c.PermissionUpdating() || c.NextPermissionID() != ":approve-for-me" {
+		t.Fatal("managed restriction bypassed")
+	}
+	if err := os.WriteFile(request+"-reject", []byte("yes"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	c.SetPermission(":read-only")
+	wait(func() bool { return !c.PermissionUpdating() })
+	if c.NextPermissionID() != ":approve-for-me" || c.PermissionID() != current || !strings.Contains(c.Error, "not confirmed") {
+		t.Fatal("failed update changed selection or lacked visible error")
+	}
+	if err := os.WriteFile(request+"-reject", nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	notify(c, "turn/completed", `{"threadId":"speed-thread","turn":{"id":"speed-turn","status":"completed"}}`)
+	// The next turn explicitly carries the queued selection on the same thread.
+	if !c.Send("continue context", false) {
+		t.Fatal(c.Error)
+	}
+	wait(func() bool { return thread.Turns[len(thread.Turns)-1].ID != "" })
+	data, err := os.ReadFile(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var next struct{ ThreadID, Permissions, ApprovalsReviewer string }
+	if err := json.Unmarshal(data, &next); err != nil || next.ThreadID != thread.ServerID || next.Permissions != ":workspace" || next.ApprovalsReviewer != "auto_review" {
+		t.Fatalf("next turn did not carry selected permissions: %s (%v)", data, err)
+	}
+	notify(c, "turn/completed", `{"threadId":"speed-thread","turn":{"id":"speed-turn","status":"completed"}}`)
+	c.SetPermission(":read-only")
+	c.AddProject(t.TempDir())
+	other := c.State.Thread(c.State.Selected)
+	otherPermission := other.PermissionProfile
+	wait(func() bool { return !c.permissionUpdates[thread.ID] })
+	if thread.PermissionProfile != ":read-only" || other.PermissionProfile != otherPermission {
+		t.Fatal("background update targeted the newly selected conversation")
+	}
+	c.State.Selected = thread.ID
+	c.Requests = nil
 	for i, decision := range []string{`"acceptForSession"`, `{"acceptWithExecpolicyAmendment":{"execpolicy_amendment":["git","status"]}}`, `{"applyNetworkPolicyAmendment":{"network_policy_amendment":{"host":"example.com","action":"allow"}}}`, `"cancel"`} {
 		r := &codex.Request{ID: json.RawMessage(fmt.Sprintf(`"approval-%d"`, i)), Method: "item/commandExecution/requestApproval", AvailableDecisions: []json.RawMessage{json.RawMessage(decision)}}
 		c.Requests = append(c.Requests, r)

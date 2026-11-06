@@ -28,6 +28,8 @@ type Controller struct {
 	PermissionsError                    string
 	permissionsTarget                   string
 	permissionsRequest                  uint64
+	permissionUpdates                   map[string]bool
+	turnPermissions                     map[string]string
 	Requests                            []*codex.Request
 	Running                             map[string]bool
 	client                              *codex.Client
@@ -40,7 +42,7 @@ type Controller struct {
 }
 
 func New(dir string, s *model.State, wake func()) *Controller {
-	return &Controller{State: s, Dir: dir, Connection: "Disconnected", Running: map[string]bool{}, loaded: map[string]bool{}, events: make(chan func(), 1024), stop: make(chan struct{}), wake: wake}
+	return &Controller{State: s, Dir: dir, Connection: "Disconnected", Running: map[string]bool{}, loaded: map[string]bool{}, permissionUpdates: map[string]bool{}, turnPermissions: map[string]string{}, events: make(chan func(), 1024), stop: make(chan struct{}), wake: wake}
 }
 func (c *Controller) post(fn func()) {
 	select {
@@ -98,6 +100,7 @@ func (c *Controller) Connect() {
 	c.Error = ""
 	c.Requests = nil
 	c.loaded = map[string]bool{}
+	c.permissionUpdates = map[string]bool{}
 	binary := c.State.Settings.CodexPath
 	go func() {
 		ctx, cancel := codex.Timeout()
@@ -311,7 +314,7 @@ func (c *Controller) Send(text string, plan bool) bool {
 		c.ReportError("Choose a project directory.")
 		return false
 	}
-	if c.Running[t.ID] {
+	if c.Running[t.ID] || c.permissionUpdates[t.ID] {
 		return false
 	}
 	info, directoryErr := os.Stat(t.Cwd)
@@ -348,7 +351,8 @@ func (c *Controller) Send(text string, plan bool) bool {
 	loaded := c.loaded[id]
 	settings := c.State.Settings
 	serviceTier := c.serviceTier()
-	permissionID := c.PermissionID()
+	permissionID := c.NextPermissionID()
+	c.turnPermissions[id] = permissionID
 	client, epoch := c.client, c.epoch
 	go func() {
 		ctx, cancel := codex.Timeout()

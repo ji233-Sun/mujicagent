@@ -428,9 +428,13 @@ func TestNativePermissions(t *testing.T) {
 	}
 	c.Running[thread.ID] = true
 	tt.Frame()
-	_ = tt.Click("权限")
-	if tt.HasText("managed-profile") {
-		t.Fatal("permissions must not change during a running turn")
+	click("权限")
+	if !tt.HasText("managed-profile") || !tt.HasText("调整从下一轮生效。当前轮次、正在执行的操作和待处理审批保持原权限。") {
+		t.Fatal("running turn must allow opening permissions and explain the boundary")
+	}
+	click("只读")
+	if thread.PermissionProfile != ":danger-full-access" || !tt.HasText("当前轮次正在启动，请稍后再调整权限。") {
+		t.Fatal("startup update must retain permissions and show an error")
 	}
 	c.Running[thread.ID] = false
 	var r codex.Request
