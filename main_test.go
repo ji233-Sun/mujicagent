@@ -274,6 +274,9 @@ func TestManualSettleFromHover(t *testing.T) {
 	thread.Title = "设计一个原生界面"
 	v := view.New(c)
 	tt := ui.NewTester(v.Render, 1140, 780)
+	if err := tt.Click(s.Projects[0].Name); err != nil {
+		t.Fatal(err)
+	}
 	box, ok := tt.Find(thread.Title)
 	if !ok {
 		t.Fatal("thread not visible")
@@ -878,34 +881,146 @@ func TestModelEffortPopover(t *testing.T) {
 	}
 }
 
-func TestSidebarMotionAndVirtualSettledList(t *testing.T) {
+func TestProjectFoldersPersistExpandedState(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "state.json")
+	// Existing projects without an expansion preference start collapsed.
+	if err := os.WriteFile(path, []byte(`{"Version":1,"Projects":[{"ID":"one","Name":"First project","Path":"/first"},{"ID":"two","Name":"Second project","Path":"/second"}],"Threads":[{"ID":"thread","ProjectID":"one","Title":"Saved conversation","Draft":"Keep this draft"}]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := model.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := controller.New(dir, s, nil)
+	tt := ui.NewTester(view.New(c).Render, 1140, 780)
+	if tt.HasText("Saved conversation") || tt.HasText("新建 · ") {
+		t.Fatal("projects must start collapsed with their new-conversation buttons hidden")
+	}
+	header, _ := tt.Find("First project")
+	tt.Move(header.X+10, header.Y+header.H/2)
+	button, ok := tt.Find("新建 · First project")
+	if !ok || button.X < header.X+header.W-65 || tt.HasText("新建 · Second project") {
+		t.Fatal("only the hovered project's plus should appear beside its disclosure arrow")
+	}
+	if err := tt.Click("First project"); err != nil {
+		t.Fatal(err)
+	}
+	if !s.Projects[0].Expanded || s.Projects[1].Expanded || !tt.HasText("Saved conversation") {
+		t.Fatal("expanding a project must reveal only its conversations")
+	}
+	row, _ := tt.Find("Saved conversation")
+	tt.Move(row.X+10, row.Y+row.H/2)
+	if tt.HasText("新建 · ") {
+		t.Fatal("project plus must hide when the pointer leaves its header")
+	}
+	for _, expanded := range []bool{true, false} {
+		if !expanded {
+			if err := tt.Click("First project"); err != nil {
+				t.Fatal(err)
+			}
+		}
+		s, err = model.Load(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		c = controller.New(dir, s, nil)
+		tt = ui.NewTester(view.New(c).Render, 1140, 780)
+		tt.Frame()
+		if s.Projects[0].Expanded != expanded || s.Projects[1].Expanded || tt.HasText("Saved conversation") != expanded || s.Thread("thread").Draft != "Keep this draft" {
+			t.Fatalf("restarting did not preserve expansion=%v and conversation data", expanded)
+		}
+	}
+	header, _ = tt.Find("First project")
+	tt.Move(header.X+10, header.Y+header.H/2)
+	if err := tt.Click("新建 · First project"); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Threads) != 2 || s.Thread(s.Selected).ProjectID != "one" || !s.Projects[0].Expanded || s.Projects[1].Expanded {
+		t.Fatal("plus must create in and expand the hovered project without toggling another project")
+	}
+	if err := tt.Click("First project"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Key(0, ui.KeySpace)
+	tt.Frame()
+	if !s.Projects[0].Expanded {
+		t.Fatal("project disclosure must support keyboard activation")
+	}
+	if err := tt.Click("Second project"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if !s.Projects[1].Expanded || len(s.Threads) != 2 {
+		t.Fatal("expanding an empty folder must not create a conversation")
+	}
+}
+
+func TestSidebarVirtualProjectAndSettledLists(t *testing.T) {
 	s := model.New()
 	for i := 999; i >= 0; i-- {
 		thread := s.AddThread("", "")
 		thread.Title, thread.Settled = fmt.Sprintf("Settled row %04d", i), true
 	}
-	s.Projects = []model.Project{{ID: "project", Name: "Project", Path: t.TempDir()}}
-	active := s.AddThread("project", s.Projects[0].Path)
-	active.Title = "Existing conversation"
+	s.Projects = []model.Project{{ID: "project", Name: "Project", Path: t.TempDir()}, {ID: "other", Name: "Other project"}}
+	for i := 999; i >= 0; i-- {
+		s.AddThread("project", s.Projects[0].Path).Title = fmt.Sprintf("Active row %04d", i)
+	}
+	s.Selected = ""
 	c := controller.New(t.TempDir(), s, nil)
 	tt := ui.NewTester(view.New(c).Render, 1140, 780)
-	start, _ := tt.Find(active.Title)
+	if tt.HasText("Active row ") {
+		t.Fatal("collapsed folders must not build conversation rows")
+	}
+	if err := tt.Click("Project"); err != nil {
+		t.Fatal(err)
+	}
+	header, _ := tt.Find("Project")
+	next, _ := tt.Find("Other project")
+	if math.Abs(float64(next.Y-header.Y-header.H-10*34-14)) > 1 {
+		t.Fatalf("project viewport must be capped at ten rows: header=%+v next=%+v", header, next)
+	}
+	visibleActive := map[string]bool{}
+	for _, text := range tt.Texts() {
+		if strings.HasPrefix(text, "Active row ") {
+			visibleActive[text] = true
+		}
+	}
+	if len(visibleActive) < 10 || len(visibleActive) > 14 {
+		t.Fatalf("project must build ten visible rows and limited overscan, got %d", len(visibleActive))
+	}
+	first, _ := tt.Find("Active row 0000")
+	if first.X <= header.X {
+		t.Fatal("conversations should be indented beneath their folder")
+	}
+	tt.Wheel(first.X+10, first.Y+10, 0, 340)
+	tt.Advance(400 * time.Millisecond)
+	if tt.HasText("Active row 0000") || !tt.HasText("Active row 0010") {
+		t.Fatal("wheel must load further project conversations")
+	}
+	tt.Scroll(first.X+10, first.Y+10, 0, 100000)
+	if err := tt.Click("Active row 0999"); err != nil {
+		t.Fatal(err)
+	}
+	if s.Thread(s.Selected).Title != "Active row 0999" {
+		t.Fatal("virtual project row selected the wrong conversation")
+	}
+	tt.Move(header.X+10, header.Y+header.H/2)
 	if err := tt.Click("新建 · Project"); err != nil {
 		t.Fatal(err)
 	}
-	s.Thread(s.Selected).Title = "滑入的新对话"
+	s.Thread(s.Selected).Title = "Newest conversation"
 	tt.Frame()
-	tt.Advance(80 * time.Millisecond)
-	mid, _ := tt.Find(active.Title)
-	enter, ok := tt.Find("滑入的新对话")
-	if !ok {
-		t.Fatal("new conversation should be visible while entering")
+	newest, ok := tt.Find("Newest conversation")
+	if !ok || newest.X >= 246 || !tt.HasText("Active row 0000") {
+		t.Fatal("creating a conversation must scroll the project back to its new first row")
 	}
-	tt.Advance(250 * time.Millisecond)
-	end, _ := tt.Find(active.Title)
-	entered, _ := tt.Find("滑入的新对话")
-	if !(start.Y < mid.Y && mid.Y < end.Y && enter.X < entered.X) {
-		t.Fatalf("new row must slide in as the old row moves down: start=%+v mid=%+v end=%+v enter=%+v entered=%+v", start, mid, end, enter, entered)
+	if err := tt.Click("Project"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if tt.HasText("Active row ") {
+		t.Fatal("collapsing a project must release its virtual rows")
 	}
 	closed, _ := tt.Find("收纳")
 	footer, _ := tt.Find("设置")
@@ -1217,6 +1332,9 @@ func TestConversationContextMenuAndDeleteConfirmation(t *testing.T) {
 	thread.Title = "等待确认的会话"
 	v := view.New(c)
 	tt := ui.NewTester(v.Render, 1140, 780)
+	if err := tt.Click(s.Projects[0].Name); err != nil {
+		t.Fatal(err)
+	}
 	openDelete := func() {
 		t.Helper()
 		if err := tt.RightClick(thread.Title); err != nil {

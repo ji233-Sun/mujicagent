@@ -239,6 +239,17 @@ func (c *Controller) NewThread(projectID string) {
 }
 func (c *Controller) Select(id string) { c.State.Selected = id; c.Save() }
 
+func (c *Controller) SetProjectExpanded(id string, expanded bool) {
+	for i := range c.State.Projects {
+		p := &c.State.Projects[i]
+		if p.ID == id && p.Expanded != expanded {
+			p.Expanded = expanded
+			c.Save()
+			return
+		}
+	}
+}
+
 // DeleteThread removes only this app's record after the view confirms the action.
 func (c *Controller) DeleteThread(id string) {
 	if c.Running[id] {

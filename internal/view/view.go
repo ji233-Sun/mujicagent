@@ -24,6 +24,7 @@ type View struct {
 	draft                      string
 	shelf                      bool
 	settledList                ui.ListState
+	projectLists               map[string]*ui.ListState
 	modelPicker                bool
 	modelSearch                string
 	modelList                  ui.ListState
@@ -51,7 +52,7 @@ type View struct {
 }
 
 func New(c *controller.Controller) *View {
-	return &View{C: c, section: "Agents", expanded: map[string]*bool{}, answers: map[string]map[string]string{}, scroll: map[string]*ui.ScrollState{}, md: markdown.Options{Theme: &markdown.Theme{FontSize: 14, BlockSpacing: 0.9}}}
+	return &View{C: c, section: "Agents", projectLists: map[string]*ui.ListState{}, expanded: map[string]*bool{}, answers: map[string]map[string]string{}, scroll: map[string]*ui.ScrollState{}, md: markdown.Options{Theme: &markdown.Theme{FontSize: 14, BlockSpacing: 0.9}}}
 }
 
 func (v *View) theme(c *ui.Context) {
@@ -120,9 +121,15 @@ func (v *View) sidebar(c *ui.Context) {
 	tx := v.texts()
 	ui.Text(c, "MujicAgent").Bold().FontSize(14).Padding(10, 10, 18)
 	ui.Scroll(c.Key("active-threads")).Grow(1).MinHeight(0).Gap(12).Children(func() {
-		v.group(c, "", "")
+		ui.Column(c.Key("projectless-threads")).Gap(2).Children(func() {
+			for _, t := range v.C.State.Threads {
+				if !t.Settled && t.ProjectID == "" {
+					v.threadRow(c, t, true)
+				}
+			}
+		})
 		for _, p := range v.C.State.Projects {
-			v.group(c, p.ID, p.Name)
+			v.group(c, p)
 		}
 	})
 	v.settledShelf(c)
@@ -136,19 +143,55 @@ func (v *View) sidebar(c *ui.Context) {
 		iconButton(c, tx.AddProject(), folderPlus, func() { v.pickProject() })
 	})
 }
-func (v *View) group(c *ui.Context, id, title string) {
-	ui.Column(c.Key("group-" + id)).Gap(2).Transition(ui.ElementTransition{Position: true, Duration: 220 * time.Millisecond}).Children(func() {
-		if id != "" {
-			ui.Row(c).Height(27).Padding(0, 8).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, title).FontSize(11).TextColor(c.Theme().TextMuted).Grow(1).SingleLine()
-				iconButton(c, v.texts().NewInProject(title), plus, func() { v.C.NewThread(id) })
-			})
+func (v *View) group(c *ui.Context, p model.Project) {
+	ui.Column(c.Key("group-" + p.ID)).Shrink(0).Gap(2).Children(func() {
+		header := ui.Row(c.Key("header")).Height(32).Shrink(0).AlignItems(ui.Center).Radius(7).Transition(hoverTransition)
+		hovered := header.Hovered()
+		if hovered {
+			header.Background(c.Theme().SurfaceHover)
 		}
+		header.Children(func() {
+			ui.ButtonBase(c.Key("toggle")).Fill().Padding(0, 8).Gap(8).AlignItems(ui.Center).
+				Label(p.Name).Tooltip(p.Path).Expanded(p.Expanded).Children(func() {
+				ui.Icon(c, folder).Size(16, 16).Shrink(0).TextColor(c.Theme().TextMuted)
+				ui.Text(c, p.Name).FontSize(12).Grow(1).MinWidth(0).SingleLine()
+				ui.Box(c).Width(26).Shrink(0)
+				angle := float32(0)
+				if p.Expanded {
+					angle = 90
+				}
+				icon := ui.Icon(c, chevron).Size(14, 14).Shrink(0).TextColor(c.Theme().TextMuted)
+				icon.Rotate(icon.Animate("rotation", angle, 180*time.Millisecond))
+			}).OnClick(func() { v.C.SetProjectExpanded(p.ID, !p.Expanded) })
+			if hovered {
+				iconButton(c, v.texts().NewInProject(p.Name), plus, func() {
+					v.C.NewThread(p.ID)
+					v.C.SetProjectExpanded(p.ID, true)
+					if list := v.projectLists[p.ID]; list != nil {
+						list.ScrollTo(0, ui.Start)
+					}
+				}).Absolute().Top(3).Right(28)
+			}
+		})
+		if !p.Expanded {
+			return
+		}
+		threads := make([]*model.Thread, 0)
 		for _, t := range v.C.State.Threads {
-			if !t.Settled && t.ProjectID == id {
-				v.threadRow(c, t, true)
+			if !t.Settled && t.ProjectID == p.ID {
+				threads = append(threads, t)
 			}
 		}
+		if len(threads) == 0 {
+			return
+		}
+		list := v.projectLists[p.ID]
+		if list == nil {
+			list = &ui.ListState{}
+			v.projectLists[p.ID] = list
+		}
+		ui.List(c.Key("threads"), list, len(threads)).Height(float32(min(10, len(threads))*threadHeight)).Shrink(0).Margin(0, 0, 0, 14).Label(p.Name).
+			ItemKey(func(i int) any { return threads[i].ID }).Rows(func(row ui.ListRow) { v.threadRow(row.Context, threads[row.Index], false) })
 	})
 }
 func (v *View) threadRow(c *ui.Context, t *model.Thread, animate bool) {

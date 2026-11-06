@@ -11,7 +11,10 @@ import (
 	"time"
 )
 
-type Project struct{ ID, Name, Path string }
+type Project struct {
+	ID, Name, Path string
+	Expanded       bool `json:",omitempty"`
+}
 type Item struct{ ID, Kind, Text, Status string }
 type Turn struct {
 	ID, Prompt, Status, Error string
