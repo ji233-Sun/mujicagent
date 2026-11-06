@@ -156,6 +156,13 @@ func TestServiceTierRequests(t *testing.T) {
 					os.Exit(2)
 				}
 				result = map[string]any{"turn": map[string]string{"id": "speed-turn"}}
+			case "turn/steer":
+				path := os.Getenv("MUJICAGENT_SPEED_REQUEST")
+				os.WriteFile(path+"-steer", m.Params, 0600)
+				if reject, _ := os.ReadFile(path + "-reject"); string(reject) == "yes" {
+					enc.Encode(map[string]any{"id": m.ID, "error": map[string]any{"code": -32602, "message": "turn mismatch"}})
+					continue
+				}
 			case "thread/settings/update":
 				path := os.Getenv("MUJICAGENT_SPEED_REQUEST")
 				if os.WriteFile(path+"-update", m.Params, 0600) != nil {
@@ -396,6 +403,87 @@ func TestServiceTierRequests(t *testing.T) {
 		t.Fatal("background update targeted the newly selected conversation")
 	}
 	c.State.Selected = thread.ID
+	t.Run("queue and steer", func(t *testing.T) {
+		if !c.Send("A", false) {
+			t.Fatal(c.Error)
+		}
+		wait(func() bool { return thread.Turns[len(thread.Turns)-1].ID != "" })
+		initial := len(thread.Turns)
+		thread.Draft = "B"
+		if !c.Send(thread.Draft, false) || !c.Send("C", false) || thread.Draft != "" {
+			t.Fatal("enqueue failed")
+		}
+		b, cc := thread.Queue[0].ID, thread.Queue[1].ID
+		c.MoveQueued(thread.ID, cc, b)
+		if thread.Queue[0].Text != "C" {
+			t.Fatal("reorder failed")
+		}
+		notify(c, "item/completed", `{"threadId":"speed-thread","turnId":"speed-turn","item":{"id":"tool","type":"commandExecution","status":"completed"}}`)
+		if len(thread.Turns) != initial || len(thread.Queue) != 2 {
+			t.Fatal("tool completion advanced queue")
+		}
+		os.WriteFile(request+"-reject", []byte("yes"), 0600)
+		c.Steer(thread.ID, b)
+		wait(func() bool { return !thread.Queue[1].Sending })
+		if len(thread.Queue) != 2 || !strings.Contains(c.Error, "turn mismatch") {
+			t.Fatal("failed steer lost message")
+		}
+		os.WriteFile(request+"-reject", nil, 0600)
+		c.Steer(thread.ID, b)
+		wait(func() bool { return len(thread.Queue) == 1 })
+		data, _ := os.ReadFile(request + "-steer")
+		var wire struct {
+			ThreadID, ExpectedTurnID string
+			Input                    []struct{ Text string }
+		}
+		if json.Unmarshal(data, &wire) != nil || wire.ExpectedTurnID != "speed-turn" || wire.ThreadID != "speed-thread" || len(wire.Input) != 1 || wire.Input[0].Text != "B" {
+			t.Fatalf("invalid steer: %s", data)
+		}
+		if len(thread.Turns) != initial || thread.Queue[0].Text != "C" {
+			t.Fatal("steer started a new turn")
+		}
+		thread.Draft = "unsent draft"
+		c.State.Selected = other.ID
+		notify(c, "turn/completed", `{"threadId":"speed-thread","turn":{"id":"speed-turn","status":"completed"}}`)
+		wait(func() bool { return len(thread.Queue) == 0 })
+		if len(thread.Turns) != initial+1 || thread.Turns[initial].Prompt != "C" || thread.Draft != "unsent draft" || len(other.Turns) != 0 {
+			t.Fatal("queue targeted wrong thread or draft")
+		}
+		c.State.Selected = thread.ID
+		c.Send("D", false)
+		c.Send("E", false)
+		notify(c, "turn/completed", `{"threadId":"speed-thread","turn":{"id":"speed-turn","status":"completed"}}`)
+		wait(func() bool { return len(thread.Queue) == 1 })
+		if thread.Turns[len(thread.Turns)-1].Prompt != "D" || thread.Queue[0].Text != "E" {
+			t.Fatal("queue drained more than one message")
+		}
+		notify(c, "turn/completed", `{"threadId":"speed-thread","turn":{"id":"speed-turn","status":"interrupted"}}`)
+		if len(thread.Queue) != 1 || c.Running[thread.ID] {
+			t.Fatal("interrupted turn must pause queue")
+		}
+		c.ResumeQueue(thread.ID)
+		wait(func() bool { return len(thread.Queue) == 0 })
+		notify(c, "turn/completed", `{"threadId":"speed-thread","turn":{"id":"speed-turn","status":"completed"}}`)
+	})
+
+	t.Run("completion while steer is pending", func(t *testing.T) {
+		c.Send("A2", false)
+		wait(func() bool { return thread.Turns[len(thread.Turns)-1].ID != "" })
+		c.Send("B2", false)
+		c.Send("C2", false)
+		initial := len(thread.Turns)
+		c.Steer(thread.ID, thread.Queue[0].ID)
+		notify(c, "turn/completed", `{"threadId":"speed-thread","turn":{"id":"speed-turn","status":"completed"}}`)
+		if len(thread.Turns) != initial {
+			t.Fatal("advanced before steer resolved")
+		}
+		wait(func() bool { return len(thread.Queue) == 0 })
+		if len(thread.Turns) != initial+1 || thread.Turns[initial].Prompt != "C2" {
+			t.Fatal("steered message sent twice")
+		}
+		notify(c, "turn/completed", `{"threadId":"speed-thread","turn":{"id":"speed-turn","status":"completed"}}`)
+	})
+
 	c.Requests = nil
 	for i, decision := range []string{`"acceptForSession"`, `{"acceptWithExecpolicyAmendment":{"execpolicy_amendment":["git","status"]}}`, `{"applyNetworkPolicyAmendment":{"network_policy_amendment":{"host":"example.com","action":"allow"}}}`, `"cancel"`} {
 		r := &codex.Request{ID: json.RawMessage(fmt.Sprintf(`"approval-%d"`, i)), Method: "item/commandExecution/requestApproval", AvailableDecisions: []json.RawMessage{json.RawMessage(decision)}}

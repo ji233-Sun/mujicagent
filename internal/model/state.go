@@ -18,7 +18,13 @@ type Turn struct {
 	Started                   time.Time
 	Items                     []Item
 }
+type QueuedMessage struct {
+	ID, Text string
+	Sending  bool `json:"-"`
+}
+
 type Thread struct {
+	Queue                               []QueuedMessage `json:",omitempty"`
 	ID, ServerID, ProjectID, Title, Cwd string
 	Settled                             bool
 	Updated                             time.Time

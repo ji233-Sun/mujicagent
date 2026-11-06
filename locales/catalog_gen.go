@@ -1517,3 +1517,103 @@ func McpUnsupported() string { return In(i18n.Locale()).McpUnsupported() }
 func (msgs Messages) McpUnsupported() string {
 	return Catalog.Format(msgs.locale, "mcpUnsupported", nil)
 }
+
+// QueueTitle says "接下来"
+// in the language the app shows.
+func QueueTitle() string { return In(i18n.Locale()).QueueTitle() }
+
+// QueueTitle says "接下来"
+// in the language of msgs.
+func (msgs Messages) QueueTitle() string {
+	return Catalog.Format(msgs.locale, "queueTitle", nil)
+}
+
+// QueueHint says "本轮结束后，按顺序逐条发送"
+// in the language the app shows.
+func QueueHint() string { return In(i18n.Locale()).QueueHint() }
+
+// QueueHint says "本轮结束后，按顺序逐条发送"
+// in the language of msgs.
+func (msgs Messages) QueueHint() string {
+	return Catalog.Format(msgs.locale, "queueHint", nil)
+}
+
+// QueueAdd says "加入队列"
+// in the language the app shows.
+func QueueAdd() string { return In(i18n.Locale()).QueueAdd() }
+
+// QueueAdd says "加入队列"
+// in the language of msgs.
+func (msgs Messages) QueueAdd() string {
+	return Catalog.Format(msgs.locale, "queueAdd", nil)
+}
+
+// QueueDrag says "拖动调整顺序"
+// in the language the app shows.
+func QueueDrag() string { return In(i18n.Locale()).QueueDrag() }
+
+// QueueDrag says "拖动调整顺序"
+// in the language of msgs.
+func (msgs Messages) QueueDrag() string {
+	return Catalog.Format(msgs.locale, "queueDrag", nil)
+}
+
+// QueueSteer says "插入对话"
+// in the language the app shows.
+func QueueSteer() string { return In(i18n.Locale()).QueueSteer() }
+
+// QueueSteer says "插入对话"
+// in the language of msgs.
+func (msgs Messages) QueueSteer() string {
+	return Catalog.Format(msgs.locale, "queueSteer", nil)
+}
+
+// QueueSteerHint says "引导当前对话，在工具调用完成后生效"
+// in the language the app shows.
+func QueueSteerHint() string { return In(i18n.Locale()).QueueSteerHint() }
+
+// QueueSteerHint says "引导当前对话，在工具调用完成后生效"
+// in the language of msgs.
+func (msgs Messages) QueueSteerHint() string {
+	return Catalog.Format(msgs.locale, "queueSteerHint", nil)
+}
+
+// QueueSending says "提交中…"
+// in the language the app shows.
+func QueueSending() string { return In(i18n.Locale()).QueueSending() }
+
+// QueueSending says "提交中…"
+// in the language of msgs.
+func (msgs Messages) QueueSending() string {
+	return Catalog.Format(msgs.locale, "queueSending", nil)
+}
+
+// QueueResume says "继续发送"
+// in the language the app shows.
+func QueueResume() string { return In(i18n.Locale()).QueueResume() }
+
+// QueueResume says "继续发送"
+// in the language of msgs.
+func (msgs Messages) QueueResume() string {
+	return Catalog.Format(msgs.locale, "queueResume", nil)
+}
+
+// QueuePaused says "队列已暂停，准备好后继续发送"
+// in the language the app shows.
+func QueuePaused() string { return In(i18n.Locale()).QueuePaused() }
+
+// QueuePaused says "队列已暂停，准备好后继续发送"
+// in the language of msgs.
+func (msgs Messages) QueuePaused() string {
+	return Catalog.Format(msgs.locale, "queuePaused", nil)
+}
+
+// QueueInserted says "已插入当前对话"
+// in the language the app shows.
+func QueueInserted() string { return In(i18n.Locale()).QueueInserted() }
+
+// QueueInserted says "已插入当前对话"
+// in the language of msgs.
+func (msgs Messages) QueueInserted() string {
+	return Catalog.Format(msgs.locale, "queueInserted", nil)
+}
