@@ -1259,14 +1259,14 @@ func TestMessageQueueLayoutAndDrag(t *testing.T) {
 			ctrl := controller.New(t.TempDir(), state, nil)
 			ctrl.AddProject(t.TempDir())
 			thread := state.Thread(state.Selected)
-			thread.Turns = []model.Turn{{ID: "turn", Prompt: "Active task", Status: "inProgress"}}
+			thread.Turns = []model.Turn{{ID: "turn", Prompt: "Active task", Status: "inProgress", Items: []model.Item{{ID: "steer", Kind: "steerMessage", Text: "Steered message"}}}}
 			thread.Queue = []model.QueuedMessage{{ID: "b", Text: "First queued message"}, {ID: "c", Text: "Second queued message"}}
 			ctrl.Running[thread.ID] = true
 			v := view.New(ctrl)
 			tt := ui.NewTester(v.Render, size[0], size[1])
 			tt.Frame()
-			if !tt.HasText("接下来") {
-				t.Fatal("queue missing")
+			if tt.HasText("接下来") || tt.HasText("本轮结束后，按顺序逐条发送") || tt.HasText("已插入当前对话") || !tt.HasText("Steered message") {
+				t.Fatal("explanatory labels remain or message content is missing")
 			}
 			editor, ok := tt.Find("消息")
 			send, sendOK := tt.Find("加入队列")
@@ -1299,7 +1299,7 @@ func TestMessageQueueLayoutAndDrag(t *testing.T) {
 			tt.Frame()
 			state.Settings.Language = "en"
 			tt.Frame()
-			if !tt.HasText("Up next") {
+			if tt.HasText("Up next") || tt.HasText("Inserted into this turn") || !tt.HasText("Steer") {
 				t.Fatal("queue localization missing")
 			}
 		})

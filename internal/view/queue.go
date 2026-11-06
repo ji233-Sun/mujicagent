@@ -18,20 +18,9 @@ func (v *View) messageQueue(c *ui.Context, t *model.Thread) {
 	tx := v.texts()
 	var moved, target string
 	ui.Column(c.Key("queue-"+t.ID)).Radius(12).Border(1, c.Theme().Border).Background(ui.Hex("#f0f5f2")).Padding(12).Gap(8).Children(func() {
-		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-			ui.Icon(c, spark).Size(14, 14).TextColor(c.Theme().Accent)
-			ui.Text(c, tx.QueueTitle()).Bold().FontSize(12)
-			ui.Text(c, fmt.Sprint(len(t.Queue))).FontSize(10).TextColor(c.Theme().Accent).Background(ui.Hex("#dcebe3")).Padding(2, 6).Radius(8)
-			ui.Box(c).Grow(1)
-			if !v.C.Running[t.ID] {
-				ui.Button(c, tx.QueueResume()).FontSize(11).OnClick(func() { v.C.ResumeQueue(t.ID) })
-			}
-		})
-		hint := tx.QueueHint()
 		if !v.C.Running[t.ID] {
-			hint = tx.QueuePaused()
+			ui.Button(c, tx.QueueResume()).AlignSelf(ui.End).FontSize(11).OnClick(func() { v.C.ResumeQueue(t.ID) })
 		}
-		ui.Text(c, hint).FontSize(10).TextColor(c.Theme().TextMuted)
 		ui.Scroll(c.Key("queue-list")).MaxHeight(156).Gap(5).Children(func() {
 			for i, q := range t.Queue {
 				row := ui.Row(c.Key(q.ID)).Height(44).Shrink(0).Radius(8).Border(1, c.Theme().Border).Background(ui.Hex("#ffffff")).Padding(0, 8).Gap(8).AlignItems(ui.Center)

@@ -276,8 +276,7 @@ func (v *View) timeline(c *ui.Context, t *model.Thread) {
 func (v *View) item(c *ui.Context, item *model.Item, key string, running bool) {
 	tx := v.texts()
 	if item.Kind == "steerMessage" {
-		ui.Column(c.Key(key)).AlignSelf(ui.End).MaxWidth(740).Radius(12).Background(c.Theme().Surface).Padding(10, 14).Gap(6).Children(func() {
-			ui.Text(c, tx.QueueInserted()).FontSize(10).TextColor(c.Theme().Accent)
+		ui.Column(c.Key(key)).AlignSelf(ui.End).MaxWidth(740).Radius(12).Background(c.Theme().Surface).Padding(10, 14).Children(func() {
 			v.message(c, item.Text, v.C.State.Selected)
 		})
 		return
