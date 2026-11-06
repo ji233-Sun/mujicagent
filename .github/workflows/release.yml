@@ -25,7 +25,7 @@ jobs:
   release:
     if: github.ref == 'refs/heads/main'
     runs-on: macos-15
-    timeout-minutes: 30
+    timeout-minutes: 60
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -65,14 +65,63 @@ jobs:
           go test -race ./internal/codex ./internal/controller -count=1
           go vet ./...
           go tool mygo i18n check
-      - name: Build signed macOS updates
+      - name: Configure Developer ID and Apple notarization
+        env:
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+        run: |
+          for name in MACOS_CERTIFICATE_P12 MACOS_CERTIFICATE_PASSWORD APPLE_API_KEY_ID APPLE_API_ISSUER_ID APPLE_API_PRIVATE_KEY; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Missing required secret: $name. See README: Apple notarization."
+              exit 1
+            fi
+          done
+          umask 077
+          keychain="$RUNNER_TEMP/mujicagent-signing.keychain-db"
+          password="$(openssl rand -hex 32)"
+          echo "::add-mask::$password"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          printf '%s' "$MACOS_CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$keychain" -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain"
+          security list-keychains -d user -s "$keychain" login.keychain-db
+          identity="$(security find-identity -v -p codesigning "$keychain" | awk '/"Developer ID Application:/ {print $2}')"
+          if [[ ! "$identity" =~ ^[0-9A-Fa-f]{40}$ ]]; then
+            echo '::error::The P12 must contain exactly one valid Developer ID Application identity, including its private key.'
+            exit 1
+          fi
+          printf '%s' "$APPLE_API_PRIVATE_KEY" > "$RUNNER_TEMP/notary-key.p8"
+          xcrun notarytool store-credentials mujicagent-notary --keychain "$keychain" \
+            --key "$RUNNER_TEMP/notary-key.p8" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER_ID"
+          rm -f "$RUNNER_TEMP/certificate.p12" "$RUNNER_TEMP/notary-key.p8"
+          printf '%s\n' "MACOS_SIGNING_IDENTITY=$identity" "NOTARY_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+      - name: Build and notarize macOS updates
         env:
           MYGO_UPDATER_PRIVATE_KEY: ${{ secrets.MYGO_UPDATER_PRIVATE_KEY }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           test -n "$MYGO_UPDATER_PRIVATE_KEY" || { echo 'Missing MYGO_UPDATER_PRIVATE_KEY secret'; exit 1; }
+          cp "mygo.json" "$RUNNER_TEMP/mygo-version.json"
+          trap 'cp "$RUNNER_TEMP/mygo-version.json" "mygo.json"' EXIT
+          jq --arg identity "$MACOS_SIGNING_IDENTITY" --arg keychain "$NOTARY_KEYCHAIN" \
+            '.macos = ((.macos // {}) + {signingIdentity: $identity, notarize: {keychainProfile: "mujicagent-notary", keychain: $keychain}})' \
+            "mygo.json" > "$RUNNER_TEMP/mygo-notarized.json"
+          cp "$RUNNER_TEMP/mygo-notarized.json" "mygo.json"
           go tool mygo build -platform "darwin/arm64,darwin/amd64"
           for arch in arm64 amd64; do
             test -s "build/darwin-$arch/update-darwin-$arch.json"
+            codesign --verify --deep --strict "build/darwin-$arch/MujicAgent.app"
+            xcrun stapler validate "build/darwin-$arch/MujicAgent.app"
+            xcrun stapler validate "build/darwin-$arch/mujicagent-$VERSION-$arch.dmg"
+            mkdir -p "$RUNNER_TEMP/verify-$arch"
+            tar -xzf "build/darwin-$arch/mujicagent-$VERSION-darwin-$arch.tar.gz" -C "$RUNNER_TEMP/verify-$arch"
+            codesign --verify --deep --strict "$RUNNER_TEMP/verify-$arch/MujicAgent.app"
+            xcrun stapler validate "$RUNNER_TEMP/verify-$arch/MujicAgent.app"
           done
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
@@ -104,3 +153,10 @@ jobs:
         run: |
           echo "MujicAgent $VERSION · dry run: $DRY_RUN" >> "$GITHUB_STEP_SUMMARY"
           cat "$RUNNER_TEMP/release-notes.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove signing credentials
+        if: always()
+        run: |
+          if [[ -f "$RUNNER_TEMP/mujicagent-signing.keychain-db" ]]; then
+            security delete-keychain "$RUNNER_TEMP/mujicagent-signing.keychain-db"
+          fi
+          rm -f "$RUNNER_TEMP/certificate.p12" "$RUNNER_TEMP/notary-key.p8"

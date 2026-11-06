@@ -2,4 +2,6 @@
 /.mygo/
 mygo_windows_*.syso
 *.key
+*.p12
+*.p8
 .DS_Store

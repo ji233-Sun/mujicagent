@@ -36,7 +36,7 @@ go tool mygo i18n check
 go tool mygo build
 ```
 
-macOS 构建输出位于 `build/darwin-arm64/`，包含 `.app` 和 `.dmg`。构建目前使用 ad-hoc 签名，尚未配置 Apple Developer ID 签名和公证；首次打开可能需要在系统设置中允许。更新包另有独立的 Ed25519 签名校验。
+macOS 构建输出位于 `build/darwin-arm64/`，包含 `.app` 和 `.dmg`。本地和普通 CI 构建使用 ad-hoc 签名。Release 工作流使用 Developer ID 签名和 Apple 公证，更新包另外使用独立的 Ed25519 签名校验。已发布的 `v0.1.1` 使用 ad-hoc 签名，自动公证从后续发版开始启用。
 
 可选的真实连接测试会使用当前 Codex 登录，发送简短的测试消息并产生模型用量；不要求读取或修改项目文件：
 
@@ -91,9 +91,37 @@ locales/                       MyGo 中英文语言目录及生成的类型安�
 
 1. 选择 **Run workflow → main**。
 2. 选择 `patch`、`minor` 或 `major`，分别递增修订号、次版本或主版本；低位版本号自动清零。初始版本 `0.1.0`，第一次 patch 发布为 `0.1.1`。
-3. 正式发版保留 `dry_run=false`。试运行勾选 `dry_run`：执行相同的校验、双架构构建和签名，只上传 Actions 构建产物，不修改版本、标签或 Release。
+3. 正式发版保留 `dry_run=false`。试运行勾选 `dry_run`：执行相同的校验、双架构构建、签名和 Apple 公证，只上传 Actions 构建产物，不修改版本、标签或 Release。
 
 工作流根据 GitHub 自动生成的说明和上次发布以来的提交记录生成日志，更新 `mygo.json` 与 `CHANGELOG.md`。测试通过后构建 macOS arm64/amd64，提交版本变更、创建 `vX.Y.Z` 标签；全部安装包与更新清单上传完成后才将草稿发布为正式 Release。普通 push 和 PR 仅运行 [CI](https://github.com/ji233-Sun/mujicagent/actions/workflows/ci.yml)，不会发版。发布期间若 main 已前进，原子推送会拒绝覆盖，重新运行即可。
+
+### Apple notarization
+
+在[仓库 Actions Secrets](https://github.com/ji233-Sun/mujicagent/settings/secrets/actions) 中配置以下五项：
+
+| Secret | 内容 |
+| --- | --- |
+| `MACOS_CERTIFICATE_P12` | 包含私钥的 **Developer ID Application** `.p12` 文件的 Base64 编码 |
+| `MACOS_CERTIFICATE_PASSWORD` | `.p12` 导出密码 |
+| `APPLE_API_KEY_ID` | App Store Connect 团队 API Key ID |
+| `APPLE_API_ISSUER_ID` | 团队 API Issuer ID |
+| `APPLE_API_PRIVATE_KEY` | `.p8` 文件的完整原文，保留 BEGIN/END 行与换行 |
+
+证书必须是用于 Mac App Store 之外分发的 **Developer ID Application**，不能使用 Apple Development、Apple Distribution 或 Developer ID Installer。证书需要同时导出私钥，`.p12` 中只放一个有效的 Developer ID Application 身份。证书与 API 密钥应属于同一开发者团队。参见 [Apple 证书说明](https://developer.apple.com/help/account/certificates/create-developer-id-certificates/)和[团队 API 密钥说明](https://developer.apple.com/help/app-store-connect/get-started/app-store-connect-api/)。
+
+可以在本地直接上传文件内容，避免把私钥打印到终端或写进仓库：
+
+```sh
+base64 -i "/path/to/DeveloperID.p12" | gh secret set MACOS_CERTIFICATE_P12 --repo ji233-Sun/mujicagent
+gh secret set MACOS_CERTIFICATE_PASSWORD --repo ji233-Sun/mujicagent
+gh secret set APPLE_API_KEY_ID --repo ji233-Sun/mujicagent
+gh secret set APPLE_API_ISSUER_ID --repo ji233-Sun/mujicagent
+gh secret set APPLE_API_PRIVATE_KEY --repo ji233-Sun/mujicagent < "/path/to/AuthKey.p8"
+```
+
+工作流创建临时 Keychain，导入证书并验证公证凭据。MyGo 对两个架构的应用和 DMG 签名，提交 Apple 公证并等待 Accepted，将票据附加到 DMG 和用于自动更新的应用，再生成 Ed25519 更新签名。发布前会检查代码签名、DMG 的公证票据，并解压自动更新包验证其中应用的票据。任何一步失败都不发布；凭据缺失时也不会降级为 ad-hoc 发布。任务结束时清理临时 Keychain 和私钥文件。
+
+签名配置只在 CI 构建期间注入，发布提交不包含证书身份和 runner 路径。首次配置完成后，建议运行一次 `dry_run=true`，确认签名、公证、票据与更新归档检查全部通过，再正式发布。
 
 仓库 Actions Secret `MYGO_UPDATER_PRIVATE_KEY` 存储更新签名私钥的**内容**。公钥固定在 `mygo.json`；私钥不进仓库、不进入应用。维护者须安全备份私钥，丢失或随意替换会让旧客户端无法验证后续更新。只有签名构建会生成 `update-darwin-*.json` 和对应 `.tar.gz`；两者必须与 `.dmg` 一起保留在 Release 中。此签名不能替代 Apple Developer ID 公证。
 
