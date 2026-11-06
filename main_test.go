@@ -121,6 +121,76 @@ func TestNativeView(t *testing.T) {
 	}
 }
 
+func TestDiagnosticLogsAndErrorAlert(t *testing.T) {
+	s := model.New()
+	c := controller.New(t.TempDir(), s, nil)
+	c.NewThread("")
+	v := view.New(c)
+	tt := ui.NewTester(v.Render, 840, 560)
+	composer, _ := tt.Find("消息")
+	diagnostic := "Codex requested an unsupported action: mcpServer/elicitation/request"
+	c.LogDiagnostic(diagnostic)
+	c.LogNotice("The turn is starting. Try Stop again in a moment.")
+	tt.Frame()
+	if tt.HasText("mcpServer/elicitation/request") || tt.HasText("正在开始对话") {
+		t.Fatal("general and diagnostic logs must not appear on the conversation")
+	}
+	c.ReportError("Codex executable not found")
+	tt.Frame()
+	alert, ok := tt.Find("错误通知")
+	close, closeOK := tt.Find("关闭提示")
+	after, _ := tt.Find("消息")
+	if !ok || !closeOK || composer != after || alert.X < 246 || alert.X+alert.W > 840 || alert.Y+alert.H > 560 || close.X < alert.X+alert.W-60 {
+		t.Fatalf("error must float over the main pane with a top-right close: alert=%+v close=%+v", alert, close)
+	}
+	if !tt.HasText("发生错误") || !tt.HasText("Codex executable not found") {
+		t.Fatal("important errors must be visible without developer mode")
+	}
+	click := func(label string) {
+		t.Helper()
+		if err := tt.Click(label); err != nil {
+			t.Fatal(err)
+		}
+		tt.Advance(250 * time.Millisecond)
+	}
+	click("设置")
+	if _, ok := tt.Find("错误通知"); ok {
+		t.Fatal("error alert must not cover settings")
+	}
+	click("日志")
+	if tt.HasText("mcpServer/elicitation/request") || !tt.HasText("Codex executable not found") {
+		t.Fatal("logs must hide diagnostics by default while preserving important errors")
+	}
+	click("切换开发者模式")
+	if !s.Settings.DeveloperMode || !tt.HasText("mcpServer/elicitation/request") {
+		t.Fatal("developer mode must reveal diagnostic logs")
+	}
+	loaded, err := model.Load(filepath.Join(c.Dir, "state.json"))
+	if err != nil || !loaded.Settings.DeveloperMode {
+		t.Fatalf("developer mode not saved: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(c.Dir, "state.json"))
+	if err != nil || bytes.Contains(data, []byte("mcpServer/elicitation/request")) {
+		t.Fatal("logs must not be persisted with conversations")
+	}
+	click("切换开发者模式")
+	if tt.HasText("mcpServer/elicitation/request") {
+		t.Fatal("turning developer mode off must hide existing diagnostic logs")
+	}
+	click("关闭设置")
+	click("关闭提示")
+	if _, ok := tt.Find("错误通知"); ok || c.Error != "" || len(c.Logs) != 3 {
+		t.Fatal("dismissal must clear only the floating error")
+	}
+	click("设置")
+	s.Settings.Language = "en"
+	tt.SetLocale("en")
+	tt.Frame()
+	if !tt.HasText("Developer mode") || !tt.HasText("Codex executable not found") {
+		t.Fatal("logs must remain available and localized after dismissal")
+	}
+}
+
 func TestAppUpdatesView(t *testing.T) {
 	s := model.New()
 	c := controller.New(t.TempDir(), s, nil)
@@ -930,6 +1000,37 @@ func TestNativePreview(t *testing.T) {
 		}
 	}
 	save("conversation.png")
+	c.LogNotice("The turn is starting. Try Stop again in a moment.")
+	c.LogDiagnostic("Codex requested an unsupported action: mcpServer/elicitation/request")
+	c.ReportError("找不到 Codex 可执行文件。请在设置 → 智能体中检查 Codex 路径，然后重新连接。")
+	tt.Frame()
+	save("error-alert.png")
+	for _, label := range []string{"设置", "日志"} {
+		if err := tt.Click(label); err != nil {
+			t.Fatal(err)
+		}
+		tt.Advance(250 * time.Millisecond)
+	}
+	save("logs.png")
+	if err := tt.Click("切换开发者模式"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Advance(250 * time.Millisecond)
+	save("developer-logs.png")
+	tt.SetSize(840, 560)
+	tt.Advance(250 * time.Millisecond)
+	save("developer-logs-compact.png")
+	if err := tt.Click("关闭设置"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Advance(250 * time.Millisecond)
+	save("error-alert-compact.png")
+	if err := tt.Click("关闭提示"); err != nil {
+		t.Fatal(err)
+	}
+	s.Settings.DeveloperMode = false
+	tt.SetSize(1140, 780)
+	tt.Frame()
 	if err := tt.Click("思考 × 1 · 命令执行 × 3 · 文件更改 × 2"); err != nil {
 		t.Fatal(err)
 	}
@@ -988,6 +1089,9 @@ func TestNativePreview(t *testing.T) {
 	tt.SetSize(1140, 780)
 	v.Settings = true
 	tt.Frame()
+	if err := tt.Click("智能体"); err != nil {
+		t.Fatal(err)
+	}
 	tt.Advance(220 * time.Millisecond)
 	save("settings.png")
 	c.AppUpdates = controller.AppUpdateState{Version: "0.1.0", Enabled: true, AvailableVersion: "0.1.1", Releases: []model.Release{

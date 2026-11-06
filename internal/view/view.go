@@ -94,6 +94,7 @@ func (v *View) Render(c *ui.Context) {
 			v.conversation(c)
 		})
 	})
+	v.errorAlert(c)
 	v.settingsDialog(c)
 	if ui.AlertDialog(c, &v.confirmFullAccess, tx.FullAccessQuestion(), tx.FullAccessWarning(), tx.Cancel(), tx.EnableFullAccess()) == 1 && v.permissionTarget == v.C.State.Selected {
 		v.C.SetPermission(":danger-full-access")
@@ -206,7 +207,6 @@ func (v *View) conversation(c *ui.Context) {
 		}
 	})
 	ui.Divider(c)
-	v.banner(c)
 	if t == nil || len(t.Turns) == 0 {
 		ui.Column(c).Grow(1).Center().Gap(14).Children(func() {
 			ui.Icon(c, spark).Size(36, 36).TextColor(c.Theme().TextMuted)
@@ -221,21 +221,6 @@ func (v *View) conversation(c *ui.Context) {
 	v.composer(c, t)
 }
 
-func (v *View) banner(c *ui.Context) {
-	message := v.C.Error
-	color := c.Theme().Danger
-	if message == "" {
-		message = v.C.Notice
-		color = c.Theme().TextMuted
-	}
-	if message == "" {
-		return
-	}
-	ui.Row(c).Padding(8, 16).Gap(10).AlignItems(ui.Center).Children(func() {
-		ui.Text(c, v.statusText(message)).FontSize(12).TextColor(color).Grow(1)
-		iconButton(c, v.texts().DismissNotice(), closeIcon, func() { v.C.Error = ""; v.C.Notice = "" })
-	})
-}
 func (v *View) timeline(c *ui.Context, t *model.Thread) {
 	s := v.scroll[t.ID]
 	if s == nil {
@@ -442,7 +427,7 @@ func (v *View) pickProject() {
 		if v.Window != nil {
 			v.Window.Update(func() {
 				if err != nil {
-					v.C.Error = err.Error()
+					v.C.ReportError(err.Error())
 				} else if len(paths) > 0 {
 					v.C.AddProject(paths[0])
 					v.Settings = false

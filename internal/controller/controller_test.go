@@ -339,6 +339,40 @@ func TestApprovalAndRequestResolution(t *testing.T) {
 	if len(c.Requests) != 0 {
 		t.Fatal("resolved ask retained")
 	}
+	c.handle(codex.Message{ID: json.RawMessage(`"mcp"`), Method: "mcpServer/elicitation/request", Params: json.RawMessage(`{"threadId":"t1"}`)})
+	if len(c.Logs) != 1 || c.Logs[0].Level != "debug" || !strings.Contains(c.Logs[0].Message, "mcpServer/elicitation/request") || c.Error != "" {
+		t.Fatal("unsupported requests must be diagnostic logs, not error alerts")
+	}
+}
+
+func TestLogRetentionAndErrors(t *testing.T) {
+	c := New(t.TempDir(), model.New(), nil)
+	for i := 0; i < maxLogEntries+1; i++ {
+		c.LogNotice(fmt.Sprint(i))
+	}
+	if len(c.Logs) != maxLogEntries || c.Logs[0].Message != "1" || c.Logs[len(c.Logs)-1].Message != fmt.Sprint(maxLogEntries) {
+		t.Fatal("logs must retain only the most recent entries")
+	}
+	c.ReportError("Codex missing")
+	last := c.Logs[len(c.Logs)-1]
+	if c.Error != last.Message || last.Level != "error" || last.Time.IsZero() {
+		t.Fatal("important errors must be both logged and surfaced without developer mode")
+	}
+}
+
+func TestMissingCodexIsAlwaysReported(t *testing.T) {
+	c := New(t.TempDir(), model.New(), nil)
+	defer c.Close()
+	c.State.Settings.CodexPath = filepath.Join(t.TempDir(), "missing-codex")
+	c.Connect()
+	deadline := time.Now().Add(8 * time.Second)
+	for c.Connection == "Connecting" && time.Now().Before(deadline) {
+		c.Drain()
+		time.Sleep(time.Millisecond)
+	}
+	if c.Connection != "Disconnected" || c.Error == "" || len(c.Logs) == 0 || c.Logs[len(c.Logs)-1].Level != "error" {
+		t.Fatalf("missing Codex must show an error with developer mode off: %s / %s", c.Connection, c.Error)
+	}
 }
 
 // This test uses the installed CLI only when explicitly requested. Its prompt cannot modify files.

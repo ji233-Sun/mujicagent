@@ -16,25 +16,27 @@ import (
 )
 
 type Controller struct {
-	AppUpdates                                  AppUpdateState
-	State                                       *model.State
-	Dir                                         string
-	Error, Notice, Connection, Version, Account string
-	Models                                      []codex.Model
-	Permissions                                 []codex.PermissionProfile
-	PermissionsLoading                          bool
-	PermissionsError                            string
-	permissionsTarget                           string
-	permissionsRequest                          uint64
-	Requests                                    []*codex.Request
-	Running                                     map[string]bool
-	client                                      *codex.Client
-	loaded                                      map[string]bool
-	events                                      chan func()
-	stop                                        chan struct{}
-	once                                        sync.Once
-	wake                                        func()
-	epoch                                       int
+	AppUpdates                          AppUpdateState
+	State                               *model.State
+	Dir                                 string
+	Error, Connection, Version, Account string
+	Logs                                []LogEntry
+	logSequence                         uint64
+	Models                              []codex.Model
+	Permissions                         []codex.PermissionProfile
+	PermissionsLoading                  bool
+	PermissionsError                    string
+	permissionsTarget                   string
+	permissionsRequest                  uint64
+	Requests                            []*codex.Request
+	Running                             map[string]bool
+	client                              *codex.Client
+	loaded                              map[string]bool
+	events                              chan func()
+	stop                                chan struct{}
+	once                                sync.Once
+	wake                                func()
+	epoch                               int
 }
 
 func New(dir string, s *model.State, wake func()) *Controller {
@@ -61,7 +63,7 @@ func (c *Controller) Drain() {
 }
 func (c *Controller) Save() {
 	if err := model.Save(filepath.Join(c.Dir, "state.json"), c.State); err != nil {
-		c.Error = err.Error()
+		c.ReportError(err.Error())
 	}
 }
 func (c *Controller) Close() {
@@ -111,7 +113,7 @@ func (c *Controller) Connect() {
 			c.post(func() {
 				if epoch == c.epoch {
 					c.Connection = "Disconnected"
-					c.Error = err.Error()
+					c.ReportError(err.Error())
 				}
 			})
 			return
@@ -156,7 +158,7 @@ func (c *Controller) Connect() {
 			c.Models = models
 			c.Version = version
 			if err != nil {
-				c.Error = err.Error()
+				c.ReportError(err.Error())
 			}
 			c.Account = "Sign in with codex login"
 			if accountErr != nil {
@@ -187,21 +189,21 @@ func (c *Controller) Connect() {
 func (c *Controller) AddProject(path string) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
-		c.Error = err.Error()
+		c.ReportError(err.Error())
 		return
 	}
 	abs, err = filepath.EvalSymlinks(abs)
 	if err != nil {
-		c.Error = err.Error()
+		c.ReportError(err.Error())
 		return
 	}
 	info, err := os.Stat(abs)
 	if err != nil {
-		c.Error = err.Error()
+		c.ReportError(err.Error())
 		return
 	}
 	if !info.IsDir() {
-		c.Error = "Choose a project directory."
+		c.ReportError("Choose a project directory.")
 		return
 	}
 	for _, p := range c.State.Projects {
@@ -222,7 +224,7 @@ func (c *Controller) NewThread(projectID string) {
 		}
 	}
 	if projectID != "" && cwd == "" {
-		c.Error = "Project not found."
+		c.ReportError("Project not found.")
 		return
 	}
 	t := c.State.AddThread(projectID, cwd)
@@ -257,7 +259,7 @@ func (c *Controller) DeleteThread(id string) {
 		if err := model.Save(filepath.Join(c.Dir, "state.json"), c.State); err != nil {
 			c.State.Threads = old
 			c.State.Selected = selected
-			c.Error = err.Error()
+			c.ReportError(err.Error())
 			return
 		}
 		delete(c.loaded, id)
@@ -300,7 +302,7 @@ func (c *Controller) Send(text string, plan bool) bool {
 		return false
 	}
 	if c.client == nil || c.Connection != "Connected" {
-		c.Error = "Connect Codex in Settings before sending."
+		c.ReportError("Connect Codex in Settings before sending.")
 		return false
 	}
 	if c.State.Selected == "" {
@@ -321,7 +323,7 @@ func (c *Controller) Send(text string, plan bool) bool {
 		}
 	}
 	if directoryErr != nil {
-		c.Error = directoryErr.Error()
+		c.ReportError(directoryErr.Error())
 		return false
 	}
 	if len(t.Turns) == 0 {
@@ -431,7 +433,7 @@ func (c *Controller) fail(id string, epoch int, err error) {
 		if epoch != c.epoch {
 			return
 		}
-		c.Error = err.Error()
+		c.ReportError(err.Error())
 		c.Running[id] = false
 		if t := c.State.Thread(id); t != nil && len(t.Turns) > 0 {
 			turn := &t.Turns[len(t.Turns)-1]
@@ -448,7 +450,7 @@ func (c *Controller) Interrupt() {
 	}
 	turnID := t.Turns[len(t.Turns)-1].ID
 	if turnID == "" {
-		c.Notice = "The turn is starting. Try Stop again in a moment."
+		c.LogNotice("The turn is starting. Try Stop again in a moment.")
 		return
 	}
 	client := c.client
@@ -457,7 +459,7 @@ func (c *Controller) Interrupt() {
 		ctx, cancel := codex.Timeout()
 		defer cancel()
 		if err := client.Call(ctx, "turn/interrupt", map[string]string{"threadId": serverID, "turnId": turnID}, nil); err != nil {
-			c.post(func() { c.Error = err.Error() })
+			c.post(func() { c.ReportError(err.Error()) })
 		}
 	}()
 }
@@ -470,7 +472,7 @@ func (c *Controller) AnswerQuestions(r *codex.Request, answers map[string]string
 	for _, q := range r.Questions {
 		answer := strings.TrimSpace(answers[q.ID])
 		if answer == "" {
-			c.Error = "Answer each question before continuing."
+			c.ReportError("Answer each question before continuing.")
 			return
 		}
 		values[q.ID] = map[string]any{"answers": []string{answer}}
@@ -511,7 +513,7 @@ func (c *Controller) replyRequest(r *codex.Request, result any) {
 			}
 			if err != nil {
 				r.Responding = false
-				c.Error = err.Error()
+				c.ReportError(err.Error())
 				return
 			}
 			c.removeRequest(r.ID)
@@ -533,7 +535,7 @@ func (c *Controller) handle(m codex.Message) {
 		c.client = nil
 		c.Requests = nil
 		if m.Error != nil {
-			c.Error = m.Error.Message
+			c.ReportError(m.Error.Message)
 		}
 		for id, b := range c.Running {
 			if b {
@@ -554,7 +556,7 @@ func (c *Controller) handle(m codex.Message) {
 		case "item/tool/requestUserInput", "item/commandExecution/requestApproval", "item/fileChange/requestApproval":
 			var r codex.Request
 			if err := json.Unmarshal(m.Params, &r); err != nil {
-				c.Error = err.Error()
+				c.ReportError(err.Error())
 				return
 			}
 			r.ID = m.ID
@@ -564,7 +566,7 @@ func (c *Controller) handle(m codex.Message) {
 			if c.client != nil {
 				go c.client.Reject(m.ID, "Unsupported request: "+m.Method)
 			}
-			c.Notice = "Codex requested an unsupported action: " + m.Method
+			c.LogDiagnostic("Codex requested an unsupported action: " + m.Method)
 		}
 		return
 	}
