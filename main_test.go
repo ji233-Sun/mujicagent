@@ -556,6 +556,90 @@ func TestGroupedActivity(t *testing.T) {
 	}
 }
 
+func TestMCPCallDetailsView(t *testing.T) {
+	s := model.New()
+	thread := s.AddThread("", "")
+	thread.Turns = []model.Turn{{Status: "inProgress", Items: []model.Item{
+		{ID: "search", Kind: "mcpToolCall", Status: "completed", MCP: &model.MCPCall{Server: "github", Tool: "search_issues", Arguments: `{"query":"layout bug","token":"[REDACTED]"}`, Result: `{"content":[{"type":"text","text":"Issue 16 found"}]}`}},
+		{ID: "fetch", Kind: "mcpToolCall", Status: "failed", MCP: &model.MCPCall{Server: "github", Tool: "get_issue", Arguments: `{"number":16}`, Error: "Access denied to issue 16"}},
+		{ID: "old", Kind: "mcpToolCall", Status: "failed"},
+	}}}
+	tt := ui.NewTester(view.New(controller.New(t.TempDir(), s, nil)).Render, 1140, 900)
+	click := func(label string) {
+		t.Helper()
+		if err := tt.Click(label); err != nil {
+			t.Fatal(err)
+		}
+		tt.Advance(250 * time.Millisecond)
+	}
+	if tt.HasText("mcpToolCall") || !tt.HasText("MCP 工具 × 3") || tt.HasText("search_issues") {
+		t.Fatal("MCP calls should use a localized, initially collapsed group")
+	}
+	click("MCP 工具 × 3")
+	for _, text := range []string{"search_issues · github", "get_issue · github", "未知 MCP 工具", "layout bug", "Access denied to issue 16", "已完成", "失败", "调用失败，但 Codex 未提供错误详情。"} {
+		if !tt.HasText(text) {
+			t.Fatalf("collapsed call is missing %q", text)
+		}
+	}
+	if tt.HasText("Issue 16 found") {
+		t.Fatal("collapsed call should not show full results")
+	}
+	click("search_issues · github")
+	for _, text := range []string{"调用参数", "返回结果", "Issue 16 found", "[REDACTED]"} {
+		if !tt.HasText(text) {
+			t.Fatalf("expanded call is missing %q", text)
+		}
+	}
+	longResult := strings.Repeat("Result line\n", 100) + "Last result line"
+	thread.Turns[0].Items[0].MCP.Result = longResult
+	tt.Frame()
+	resultHeading, _ := tt.Find("返回结果")
+	beforeScroll, _ := tt.Find(longResult)
+	tt.Scroll(resultHeading.X+30, resultHeading.Y+resultHeading.H+30, 0, 10000)
+	afterScroll, _ := tt.Find(longResult)
+	afterHeading, _ := tt.Find("返回结果")
+	if afterScroll.Y >= beforeScroll.Y || afterHeading != resultHeading {
+		t.Fatalf("long results must scroll within their own viewport: before=%+v after=%+v heading=%+v afterHeading=%+v", beforeScroll, afterScroll, resultHeading, afterHeading)
+	}
+	click("search_issues · github")
+	click("get_issue · github")
+	if !tt.HasText("错误详情") || !tt.HasText("Access denied to issue 16") || !tt.HasText("Codex 未提供返回结果。") {
+		t.Fatal("failed call should show its error and missing-result explanation")
+	}
+	click("get_issue · github")
+	click("未知 MCP 工具")
+	for _, text := range []string{"Codex 未提供工具名称或 MCP 服务名称。", "Codex 未提供调用参数。", "Codex 未提供返回结果。", "调用失败，但 Codex 未提供错误详情。"} {
+		if !tt.HasText(text) {
+			t.Fatalf("legacy call is missing fallback %q", text)
+		}
+	}
+	thread.Turns[0].Items[2].Status = "inProgress"
+	tt.Frame()
+	if !tt.HasText("执行中") || !tt.HasText("等待工具返回结果…") {
+		t.Fatal("running calls should show a pending result")
+	}
+	thread.Turns[0].Status = "interrupted"
+	tt.Frame()
+	if tt.HasText("执行中") || tt.HasText("等待工具返回结果…") || !tt.HasText("已停止") {
+		t.Fatal("interrupted calls must not continue showing a running state")
+	}
+	s.Settings.Language = "en"
+	tt.SetLocale("en")
+	tt.Frame()
+	for _, text := range []string{"MCP tools × 3", "Unknown MCP tool", "Arguments", "Result", "Codex did not provide the tool name or MCP server name.", "Access denied to issue 16"} {
+		if !tt.HasText(text) {
+			t.Fatalf("English MCP detail is missing %q", text)
+		}
+	}
+	click("Unknown MCP tool")
+	click("MCP tools × 3")
+	tt.Frame()
+	click("MCP tools × 3")
+	if tt.HasText("Issue 16 found") {
+		t.Fatal("rebuilding the group reset individual disclosure state")
+	}
+}
+
 func pickerModels(t *testing.T) []codex.Model {
 	t.Helper()
 	var models []codex.Model

@@ -1458,6 +1458,136 @@ func (msgs Messages) McpRequest() string {
 	return Catalog.Format(msgs.locale, "mcpRequest", nil)
 }
 
+// McpToolCall says "MCP 工具"
+// in the language the app shows.
+func McpToolCall() string { return In(i18n.Locale()).McpToolCall() }
+
+// McpToolCall says "MCP 工具"
+// in the language of msgs.
+func (msgs Messages) McpToolCall() string {
+	return Catalog.Format(msgs.locale, "mcpToolCall", nil)
+}
+
+// McpUnknownTool says "未知 MCP 工具"
+// in the language the app shows.
+func McpUnknownTool() string { return In(i18n.Locale()).McpUnknownTool() }
+
+// McpUnknownTool says "未知 MCP 工具"
+// in the language of msgs.
+func (msgs Messages) McpUnknownTool() string {
+	return Catalog.Format(msgs.locale, "mcpUnknownTool", nil)
+}
+
+// McpUnknownStatus says "状态未提供"
+// in the language the app shows.
+func McpUnknownStatus() string { return In(i18n.Locale()).McpUnknownStatus() }
+
+// McpUnknownStatus says "状态未提供"
+// in the language of msgs.
+func (msgs Messages) McpUnknownStatus() string {
+	return Catalog.Format(msgs.locale, "mcpUnknownStatus", nil)
+}
+
+// McpMissingMetadata says "Codex 未提供工具名称或 MCP 服务名称。"
+// in the language the app shows.
+func McpMissingMetadata() string { return In(i18n.Locale()).McpMissingMetadata() }
+
+// McpMissingMetadata says "Codex 未提供工具名称或 MCP 服务名称。"
+// in the language of msgs.
+func (msgs Messages) McpMissingMetadata() string {
+	return Catalog.Format(msgs.locale, "mcpMissingMetadata", nil)
+}
+
+// McpRunning says "执行中"
+// in the language the app shows.
+func McpRunning() string { return In(i18n.Locale()).McpRunning() }
+
+// McpRunning says "执行中"
+// in the language of msgs.
+func (msgs Messages) McpRunning() string {
+	return Catalog.Format(msgs.locale, "mcpRunning", nil)
+}
+
+// McpCompleted says "已完成"
+// in the language the app shows.
+func McpCompleted() string { return In(i18n.Locale()).McpCompleted() }
+
+// McpCompleted says "已完成"
+// in the language of msgs.
+func (msgs Messages) McpCompleted() string {
+	return Catalog.Format(msgs.locale, "mcpCompleted", nil)
+}
+
+// McpArguments says "调用参数"
+// in the language the app shows.
+func McpArguments() string { return In(i18n.Locale()).McpArguments() }
+
+// McpArguments says "调用参数"
+// in the language of msgs.
+func (msgs Messages) McpArguments() string {
+	return Catalog.Format(msgs.locale, "mcpArguments", nil)
+}
+
+// McpResult says "返回结果"
+// in the language the app shows.
+func McpResult() string { return In(i18n.Locale()).McpResult() }
+
+// McpResult says "返回结果"
+// in the language of msgs.
+func (msgs Messages) McpResult() string {
+	return Catalog.Format(msgs.locale, "mcpResult", nil)
+}
+
+// McpError says "错误详情"
+// in the language the app shows.
+func McpError() string { return In(i18n.Locale()).McpError() }
+
+// McpError says "错误详情"
+// in the language of msgs.
+func (msgs Messages) McpError() string {
+	return Catalog.Format(msgs.locale, "mcpError", nil)
+}
+
+// McpNoArguments says "Codex 未提供调用参数。"
+// in the language the app shows.
+func McpNoArguments() string { return In(i18n.Locale()).McpNoArguments() }
+
+// McpNoArguments says "Codex 未提供调用参数。"
+// in the language of msgs.
+func (msgs Messages) McpNoArguments() string {
+	return Catalog.Format(msgs.locale, "mcpNoArguments", nil)
+}
+
+// McpNoResult says "Codex 未提供返回结果。"
+// in the language the app shows.
+func McpNoResult() string { return In(i18n.Locale()).McpNoResult() }
+
+// McpNoResult says "Codex 未提供返回结果。"
+// in the language of msgs.
+func (msgs Messages) McpNoResult() string {
+	return Catalog.Format(msgs.locale, "mcpNoResult", nil)
+}
+
+// McpWaitingResult says "等待工具返回结果…"
+// in the language the app shows.
+func McpWaitingResult() string { return In(i18n.Locale()).McpWaitingResult() }
+
+// McpWaitingResult says "等待工具返回结果…"
+// in the language of msgs.
+func (msgs Messages) McpWaitingResult() string {
+	return Catalog.Format(msgs.locale, "mcpWaitingResult", nil)
+}
+
+// McpNoError says "调用失败，但 Codex 未提供错误详情。"
+// in the language the app shows.
+func McpNoError() string { return In(i18n.Locale()).McpNoError() }
+
+// McpNoError says "调用失败，但 Codex 未提供错误详情。"
+// in the language of msgs.
+func (msgs Messages) McpNoError() string {
+	return Catalog.Format(msgs.locale, "mcpNoError", nil)
+}
+
 // McpAccept says "同意"
 // in the language the app shows.
 func McpAccept() string { return In(i18n.Locale()).McpAccept() }

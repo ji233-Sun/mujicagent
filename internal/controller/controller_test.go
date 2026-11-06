@@ -566,6 +566,81 @@ func notify(c *Controller, method, params string) {
 	c.handle(codex.Message{Method: method, Params: json.RawMessage(params)})
 }
 
+func TestMCPCallDetailsEvents(t *testing.T) {
+	dir := t.TempDir()
+	c := New(dir, model.New(), nil)
+	thread := c.State.AddThread("project", dir)
+	thread.ServerID = "server"
+	thread.Turns = []model.Turn{{ID: "turn", Status: "inProgress"}}
+	c.Running[thread.ID] = true
+	notify(c, "item/started", `{"threadId":"server","turnId":"turn","item":{"id":"search","type":"mcpToolCall","server":"github","tool":"search_issues","status":"inProgress","arguments":{"query":"layout bug","headers":{"Authorization":"Bearer fake-start-secret"},"limit":10}}}`)
+	started := thread.Turns[0].Items[0]
+	if started.Status != "inProgress" || started.MCP == nil || started.MCP.Tool != "search_issues" || !strings.Contains(started.MCP.Arguments, "layout bug") || strings.Contains(started.MCP.Arguments, "fake-start-secret") {
+		t.Fatal("MCP start metadata or redaction is incorrect")
+	}
+	// Completion can omit the metadata already supplied when the call started.
+	notify(c, "item/completed", `{"threadId":"server","turnId":"turn","item":{"id":"search","type":"mcpToolCall","status":"completed","result":{"content":[{"type":"text","text":"Found issue 16"}],"structuredContent":{"id":9007199254740993,"credentials":{"token":"fake-result-secret"}}}}}`)
+	notify(c, "item/completed", `{"threadId":"server","turnId":"turn","item":{"id":"fetch","type":"mcpToolCall","server":"github","tool":"get_issue","status":"failed","arguments":{"number":16,"api_key":"fake-api-secret"},"error":{"message":"Access denied: token=fake-error-secret"}}}`)
+	notify(c, "item/completed", `{"threadId":"server","turnId":"turn","item":{"id":"missing","type":"mcpToolCall"}}`)
+	notify(c, "turn/completed", `{"threadId":"server","turn":{"id":"turn","status":"completed"}}`)
+	loaded, err := model.Load(filepath.Join(dir, "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := loaded.Thread(thread.ID).Turns[0].Items
+	if len(items) != 3 || items[0].MCP == nil || items[1].MCP == nil || items[2].MCP == nil {
+		t.Fatal("MCP records were not preserved across save/load")
+	}
+	first, failed := items[0], items[1]
+	if first.Status != "completed" || first.MCP.Tool != "search_issues" || first.MCP.Server != "github" || first.MCP.Arguments != started.MCP.Arguments || !strings.Contains(first.MCP.Result, "Found issue 16") || !strings.Contains(first.MCP.Result, "9007199254740993") {
+		t.Fatal("completion lost call metadata, result, or JSON number precision")
+	}
+	if failed.Status != "failed" || failed.MCP.Tool != "get_issue" || !strings.Contains(failed.MCP.Error, "Access denied") || !strings.Contains(failed.MCP.Error, mcpRedacted) {
+		t.Fatal("failed call lost its readable error")
+	}
+	if items[2].Status != "completed" || *items[2].MCP != (model.MCPCall{}) {
+		t.Fatal("missing metadata must not be inferred from another call")
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, secret := range []string{"fake-start-secret", "fake-result-secret", "fake-api-secret", "fake-error-secret"} {
+		if strings.Contains(string(data), secret) {
+			t.Fatal("credential was persisted in the conversation snapshot")
+		}
+	}
+}
+
+func TestMCPCallRedaction(t *testing.T) {
+	for _, tc := range []struct {
+		name, raw, secret string
+	}{
+		{"nested arguments", `{"arguments":{"rows":[{"client_secret":"nested-secret"}],"max_tokens":42}}`, "nested-secret"},
+		{"JSON text result", `{"result":{"content":[{"type":"text","text":"{\"password\":\"embedded-secret\",\"count\":42}"}]}}`, "embedded-secret"},
+		{"authorization error", `{"error":{"message":"Denied: Authorization: Bearer auth-secret"}}`, "auth-secret"},
+		{"basic authorization", `{"result":{"content":[{"type":"text","text":"Basic dGVzdDpzZWNyZXQ="}]}}`, "dGVzdDpzZWNyZXQ="},
+		{"URL query", `{"arguments":{"url":"https://example.com/?access_token=query-secret&limit=42"}}`, "query-secret"},
+		{"URL password", `{"arguments":{"url":"https://user:url-secret@example.com/"}}`, "url-secret"},
+		{"cookie header", `{"error":{"message":"Cookie: session=cookie-secret; other=second-secret"}}`, "cookie-secret"},
+		{"private key", `{"result":{"content":[{"type":"text","text":"-----BEGIN PRIVATE KEY-----\nprivate-secret\n-----END PRIVATE KEY-----"}]}}`, "private-secret"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			call := decodeMCPCall(json.RawMessage(tc.raw))
+			if call == nil {
+				t.Fatal("valid MCP payload failed to decode")
+			}
+			data, err := json.Marshal(call)
+			if err != nil || strings.Contains(string(data), tc.secret) || !strings.Contains(string(data), mcpRedacted) {
+				t.Fatal("MCP credential redaction failed")
+			}
+			if strings.Contains(tc.raw, "42") && !strings.Contains(string(data), "42") {
+				t.Fatal("redaction removed unrelated call data")
+			}
+		})
+	}
+}
+
 func TestStreamingAndManualSettle(t *testing.T) {
 	dir := t.TempDir()
 	c := New(dir, model.New(), nil)
