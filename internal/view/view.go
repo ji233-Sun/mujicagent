@@ -363,7 +363,7 @@ func (v *View) item(c *ui.Context, item *model.Item, key string, running bool) {
 				}
 				ui.Text(c, label).FontSize(12).TextColor(c.Theme().TextMuted)
 			} else if item.Kind == "commandExecution" || item.Kind == "fileChange" {
-				ui.Text(c, item.Text).Font("monospace").FontSize(12).Selectable().Padding(10, 12).Background(c.Theme().Background).Radius(8)
+				v.activityOutput(c, item, key)
 			} else {
 				markdown.View(c, item.Text, &v.md)
 			}

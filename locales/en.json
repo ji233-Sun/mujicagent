@@ -1,5 +1,8 @@
 {
   "@@locale": "en",
+  "activityOutput": "Execution output",
+  "expandOutput": "Expand output",
+  "collapseOutput": "Collapse output",
   "newConversation": "New conversation",
   "conversations": "Conversations",
   "newInProject": "New in {name}",

@@ -1,5 +1,8 @@
 {
   "@@locale": "zh-Hans",
+  "activityOutput": "执行输出",
+  "expandOutput": "展开输出",
+  "collapseOutput": "收起输出",
   "newConversation": "新对话",
   "conversations": "对话",
   "newInProject": "新建 · {name}",
