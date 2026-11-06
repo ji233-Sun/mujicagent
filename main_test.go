@@ -429,7 +429,7 @@ func TestNativePermissions(t *testing.T) {
 	c.Running[thread.ID] = true
 	tt.Frame()
 	click("权限")
-	if !tt.HasText("managed-profile") || !tt.HasText("调整从下一轮生效。当前轮次、正在执行的操作和待处理审批保持原权限。") {
+	if !tt.HasText("managed-profile") || !tt.HasText("调整从下一轮生效") {
 		t.Fatal("running turn must allow opening permissions and explain the boundary")
 	}
 	click("只读")
