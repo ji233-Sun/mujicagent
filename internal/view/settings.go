@@ -131,7 +131,6 @@ func (v *View) settingsPane(c *ui.Context) {
 					{":danger-full-access", tx.FullAccess()},
 				}, v.C.Save)
 			})
-			ui.Text(c, tx.DefaultPermissionsHint()).FontSize(12).TextColor(c.Theme().TextMuted)
 		})
 		ui.Column(c).Radius(14).Background(c.Theme().Surface).Padding(18).Gap(14).Children(func() {
 			ui.Text(c, tx.Connection()).Bold()
