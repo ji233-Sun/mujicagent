@@ -42,9 +42,8 @@ type View struct {
 	attachmentOpen             bool
 	attachment                 model.Attachment
 	attachmentThread           string
-	annotationTip              string
-	annotationX, annotationY   float64
-	annotationPoint            bool
+	annotation                 *annotationEditor
+	attachmentQueue            string
 	editor                     *richtext.Document
 	editorHandle               ui.Handle
 	composerMenu               *mygo.Menu

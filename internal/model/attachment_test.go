@@ -45,3 +45,34 @@ func TestMalformedAttachmentIsText(t *testing.T) {
 		}
 	}
 }
+
+func TestCombinedAnnotationsRoundTrip(t *testing.T) {
+	a := Attachment{Kind: "image", Path: filepath.Join(t.TempDir(), "图.png"), Annotations: []Annotation{
+		{ID: "one", Comment: "Align these\n&<> 中文", Marks: []Mark{
+			{Kind: "rectangle", Color: "#07896d", Width: 3, Points: []ImagePoint{{10, 20}, {80, 90}}},
+			{Kind: "arrow", Color: "#e05263", Width: 4, Points: []ImagePoint{{25, 25}, {50, 50}}},
+		}},
+		{ID: "two", Comment: "Whole image"},
+	}}
+	parts := MessageParts(a.Link())
+	if len(parts) != 1 || !reflect.DeepEqual(parts[0].Attachment, &a) {
+		t.Fatalf("round trip: %+v", parts)
+	}
+	if !ValidAnnotations(a.Annotations) {
+		t.Fatal("valid annotations rejected")
+	}
+	a.Annotations[0].Marks[0].Points[0].X = 101
+	parts = MessageParts(a.Link())
+	if len(parts) != 1 || parts[0].Attachment != nil {
+		t.Fatal("out of bounds annotation accepted")
+	}
+	a.Annotations[0].Marks[0].Points[0].X = 10
+	a.Annotations[1].ID = "one"
+	if ValidAnnotations(a.Annotations) {
+		t.Fatal("duplicate annotation IDs accepted")
+	}
+	legacy := Attachment{Tip: "Old note", X: 25, Y: 75}
+	if len(legacy.Notes()) != 1 || legacy.Notes()[0].Marks[0].Points[0].Y != 75 {
+		t.Fatal("legacy note lost")
+	}
+}

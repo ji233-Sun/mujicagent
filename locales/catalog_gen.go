@@ -1428,16 +1428,6 @@ func (msgs Messages) Paste() string {
 	return Catalog.Format(msgs.locale, "paste", nil)
 }
 
-// AnnotationHint says "点击图片选择位置，填写说明后插入当前草稿。"
-// in the language the app shows.
-func AnnotationHint() string { return In(i18n.Locale()).AnnotationHint() }
-
-// AnnotationHint says "点击图片选择位置，填写说明后插入当前草稿。"
-// in the language of msgs.
-func (msgs Messages) AnnotationHint() string {
-	return Catalog.Format(msgs.locale, "annotationHint", nil)
-}
-
 // MarkImage says "标记图片"
 // in the language the app shows.
 func MarkImage() string { return In(i18n.Locale()).MarkImage() }
@@ -1456,16 +1446,6 @@ func AnnotationTip() string { return In(i18n.Locale()).AnnotationTip() }
 // in the language of msgs.
 func (msgs Messages) AnnotationTip() string {
 	return Catalog.Format(msgs.locale, "annotationTip", nil)
-}
-
-// InsertAnnotation says "插入标记"
-// in the language the app shows.
-func InsertAnnotation() string { return In(i18n.Locale()).InsertAnnotation() }
-
-// InsertAnnotation says "插入标记"
-// in the language of msgs.
-func (msgs Messages) InsertAnnotation() string {
-	return Catalog.Format(msgs.locale, "insertAnnotation", nil)
 }
 
 // CloseAttachment says "关闭附件"
@@ -1766,4 +1746,394 @@ func QueueSave() string { return In(i18n.Locale()).QueueSave() }
 // in the language of msgs.
 func (msgs Messages) QueueSave() string {
 	return Catalog.Format(msgs.locale, "queueSave", nil)
+}
+
+// AttachmentLoading says "正在加载附件…"
+// in the language the app shows.
+func AttachmentLoading() string { return In(i18n.Locale()).AttachmentLoading() }
+
+// AttachmentLoading says "正在加载附件…"
+// in the language of msgs.
+func (msgs Messages) AttachmentLoading() string {
+	return Catalog.Format(msgs.locale, "attachmentLoading", nil)
+}
+
+// AnnotationSidebar says "显示或收起评论栏"
+// in the language the app shows.
+func AnnotationSidebar() string { return In(i18n.Locale()).AnnotationSidebar() }
+
+// AnnotationSidebar says "显示或收起评论栏"
+// in the language of msgs.
+func (msgs Messages) AnnotationSidebar() string {
+	return Catalog.Format(msgs.locale, "annotationSidebar", nil)
+}
+
+// CopyAttachmentPath says "复制文件路径"
+// in the language the app shows.
+func CopyAttachmentPath() string { return In(i18n.Locale()).CopyAttachmentPath() }
+
+// CopyAttachmentPath says "复制文件路径"
+// in the language of msgs.
+func (msgs Messages) CopyAttachmentPath() string {
+	return Catalog.Format(msgs.locale, "copyAttachmentPath", nil)
+}
+
+// RevealAttachment says "在文件夹中显示"
+// in the language the app shows.
+func RevealAttachment() string { return In(i18n.Locale()).RevealAttachment() }
+
+// RevealAttachment says "在文件夹中显示"
+// in the language of msgs.
+func (msgs Messages) RevealAttachment() string {
+	return Catalog.Format(msgs.locale, "revealAttachment", nil)
+}
+
+// AnnotationUnapplied says "有未应用的更改"
+// in the language the app shows.
+func AnnotationUnapplied() string { return In(i18n.Locale()).AnnotationUnapplied() }
+
+// AnnotationUnapplied says "有未应用的更改"
+// in the language of msgs.
+func (msgs Messages) AnnotationUnapplied() string {
+	return Catalog.Format(msgs.locale, "annotationUnapplied", nil)
+}
+
+// ApplyAnnotations says "应用到当前草稿"
+// in the language the app shows.
+func ApplyAnnotations() string { return In(i18n.Locale()).ApplyAnnotations() }
+
+// ApplyAnnotations says "应用到当前草稿"
+// in the language of msgs.
+func (msgs Messages) ApplyAnnotations() string {
+	return Catalog.Format(msgs.locale, "applyAnnotations", nil)
+}
+
+// DiscardAnnotationsTitle says "放弃未应用的标注？"
+// in the language the app shows.
+func DiscardAnnotationsTitle() string { return In(i18n.Locale()).DiscardAnnotationsTitle() }
+
+// DiscardAnnotationsTitle says "放弃未应用的标注？"
+// in the language of msgs.
+func (msgs Messages) DiscardAnnotationsTitle() string {
+	return Catalog.Format(msgs.locale, "discardAnnotationsTitle", nil)
+}
+
+// DiscardAnnotationsMessage says "关闭后，本次尚未应用的标注修改将丢失。"
+// in the language the app shows.
+func DiscardAnnotationsMessage() string { return In(i18n.Locale()).DiscardAnnotationsMessage() }
+
+// DiscardAnnotationsMessage says "关闭后，本次尚未应用的标注修改将丢失。"
+// in the language of msgs.
+func (msgs Messages) DiscardAnnotationsMessage() string {
+	return Catalog.Format(msgs.locale, "discardAnnotationsMessage", nil)
+}
+
+// KeepEditing says "继续编辑"
+// in the language the app shows.
+func KeepEditing() string { return In(i18n.Locale()).KeepEditing() }
+
+// KeepEditing says "继续编辑"
+// in the language of msgs.
+func (msgs Messages) KeepEditing() string {
+	return Catalog.Format(msgs.locale, "keepEditing", nil)
+}
+
+// DiscardAnnotations says "放弃更改"
+// in the language the app shows.
+func DiscardAnnotations() string { return In(i18n.Locale()).DiscardAnnotations() }
+
+// DiscardAnnotations says "放弃更改"
+// in the language of msgs.
+func (msgs Messages) DiscardAnnotations() string {
+	return Catalog.Format(msgs.locale, "discardAnnotations", nil)
+}
+
+// ImagePreview says "图片预览"
+// in the language the app shows.
+func ImagePreview() string { return In(i18n.Locale()).ImagePreview() }
+
+// ImagePreview says "图片预览"
+// in the language of msgs.
+func (msgs Messages) ImagePreview() string {
+	return Catalog.Format(msgs.locale, "imagePreview", nil)
+}
+
+// FitImage says "适应窗口"
+// in the language the app shows.
+func FitImage() string { return In(i18n.Locale()).FitImage() }
+
+// FitImage says "适应窗口"
+// in the language of msgs.
+func (msgs Messages) FitImage() string {
+	return Catalog.Format(msgs.locale, "fitImage", nil)
+}
+
+// ZoomIn says "放大图片"
+// in the language the app shows.
+func ZoomIn() string { return In(i18n.Locale()).ZoomIn() }
+
+// ZoomIn says "放大图片"
+// in the language of msgs.
+func (msgs Messages) ZoomIn() string {
+	return Catalog.Format(msgs.locale, "zoomIn", nil)
+}
+
+// ZoomOut says "缩小图片"
+// in the language the app shows.
+func ZoomOut() string { return In(i18n.Locale()).ZoomOut() }
+
+// ZoomOut says "缩小图片"
+// in the language of msgs.
+func (msgs Messages) ZoomOut() string {
+	return Catalog.Format(msgs.locale, "zoomOut", nil)
+}
+
+// NoImagePreview says "此附件不支持图片预览"
+// in the language the app shows.
+func NoImagePreview() string { return In(i18n.Locale()).NoImagePreview() }
+
+// NoImagePreview says "此附件不支持图片预览"
+// in the language of msgs.
+func (msgs Messages) NoImagePreview() string {
+	return Catalog.Format(msgs.locale, "noImagePreview", nil)
+}
+
+// SelectAnnotation says "选择标注"
+// in the language the app shows.
+func SelectAnnotation() string { return In(i18n.Locale()).SelectAnnotation() }
+
+// SelectAnnotation says "选择标注"
+// in the language of msgs.
+func (msgs Messages) SelectAnnotation() string {
+	return Catalog.Format(msgs.locale, "selectAnnotation", nil)
+}
+
+// PanImage says "移动画布"
+// in the language the app shows.
+func PanImage() string { return In(i18n.Locale()).PanImage() }
+
+// PanImage says "移动画布"
+// in the language of msgs.
+func (msgs Messages) PanImage() string {
+	return Catalog.Format(msgs.locale, "panImage", nil)
+}
+
+// DrawPen says "画笔"
+// in the language the app shows.
+func DrawPen() string { return In(i18n.Locale()).DrawPen() }
+
+// DrawPen says "画笔"
+// in the language of msgs.
+func (msgs Messages) DrawPen() string {
+	return Catalog.Format(msgs.locale, "drawPen", nil)
+}
+
+// DrawRectangle says "矩形"
+// in the language the app shows.
+func DrawRectangle() string { return In(i18n.Locale()).DrawRectangle() }
+
+// DrawRectangle says "矩形"
+// in the language of msgs.
+func (msgs Messages) DrawRectangle() string {
+	return Catalog.Format(msgs.locale, "drawRectangle", nil)
+}
+
+// DrawArrow says "箭头"
+// in the language the app shows.
+func DrawArrow() string { return In(i18n.Locale()).DrawArrow() }
+
+// DrawArrow says "箭头"
+// in the language of msgs.
+func (msgs Messages) DrawArrow() string {
+	return Catalog.Format(msgs.locale, "drawArrow", nil)
+}
+
+// AddPointComment says "位置评论"
+// in the language the app shows.
+func AddPointComment() string { return In(i18n.Locale()).AddPointComment() }
+
+// AddPointComment says "位置评论"
+// in the language of msgs.
+func (msgs Messages) AddPointComment() string {
+	return Catalog.Format(msgs.locale, "addPointComment", nil)
+}
+
+// UndoAnnotation says "撤销标注"
+// in the language the app shows.
+func UndoAnnotation() string { return In(i18n.Locale()).UndoAnnotation() }
+
+// UndoAnnotation says "撤销标注"
+// in the language of msgs.
+func (msgs Messages) UndoAnnotation() string {
+	return Catalog.Format(msgs.locale, "undoAnnotation", nil)
+}
+
+// RedoAnnotation says "重做标注"
+// in the language the app shows.
+func RedoAnnotation() string { return In(i18n.Locale()).RedoAnnotation() }
+
+// RedoAnnotation says "重做标注"
+// in the language of msgs.
+func (msgs Messages) RedoAnnotation() string {
+	return Catalog.Format(msgs.locale, "redoAnnotation", nil)
+}
+
+// AnnotationCanvasHint says "画出重点，再在右侧补充说明"
+// in the language the app shows.
+func AnnotationCanvasHint() string { return In(i18n.Locale()).AnnotationCanvasHint() }
+
+// AnnotationCanvasHint says "画出重点，再在右侧补充说明"
+// in the language of msgs.
+func (msgs Messages) AnnotationCanvasHint() string {
+	return Catalog.Format(msgs.locale, "annotationCanvasHint", nil)
+}
+
+// AnnotationPanHint says "拖动或滚动平移 · 双指捏合缩放"
+// in the language the app shows.
+func AnnotationPanHint() string { return In(i18n.Locale()).AnnotationPanHint() }
+
+// AnnotationPanHint says "拖动或滚动平移 · 双指捏合缩放"
+// in the language of msgs.
+func (msgs Messages) AnnotationPanHint() string {
+	return Catalog.Format(msgs.locale, "annotationPanHint", nil)
+}
+
+// AnnotationLinkHint says "接下来绘制的图形将关联到当前评论"
+// in the language the app shows.
+func AnnotationLinkHint() string { return In(i18n.Locale()).AnnotationLinkHint() }
+
+// AnnotationLinkHint says "接下来绘制的图形将关联到当前评论"
+// in the language of msgs.
+func (msgs Messages) AnnotationLinkHint() string {
+	return Catalog.Format(msgs.locale, "annotationLinkHint", nil)
+}
+
+// AnnotationsAndComments says "标注与评论"
+// in the language the app shows.
+func AnnotationsAndComments() string { return In(i18n.Locale()).AnnotationsAndComments() }
+
+// AnnotationsAndComments says "标注与评论"
+// in the language of msgs.
+func (msgs Messages) AnnotationsAndComments() string {
+	return Catalog.Format(msgs.locale, "annotationsAndComments", nil)
+}
+
+// AddImageComment says "添加整体说明"
+// in the language the app shows.
+func AddImageComment() string { return In(i18n.Locale()).AddImageComment() }
+
+// AddImageComment says "添加整体说明"
+// in the language of msgs.
+func (msgs Messages) AddImageComment() string {
+	return Catalog.Format(msgs.locale, "addImageComment", nil)
+}
+
+// AnnotationEmptyTitle says "把想法标在图片上"
+// in the language the app shows.
+func AnnotationEmptyTitle() string { return In(i18n.Locale()).AnnotationEmptyTitle() }
+
+// AnnotationEmptyTitle says "把想法标在图片上"
+// in the language of msgs.
+func (msgs Messages) AnnotationEmptyTitle() string {
+	return Catalog.Format(msgs.locale, "annotationEmptyTitle", nil)
+}
+
+// AnnotationEmptyHint says "圈出范围、画出箭头，或点击图片添加评论。图形与说明可以自由组合。"
+// in the language the app shows.
+func AnnotationEmptyHint() string { return In(i18n.Locale()).AnnotationEmptyHint() }
+
+// AnnotationEmptyHint says "圈出范围、画出箭头，或点击图片添加评论。图形与说明可以自由组合。"
+// in the language of msgs.
+func (msgs Messages) AnnotationEmptyHint() string {
+	return Catalog.Format(msgs.locale, "annotationEmptyHint", nil)
+}
+
+// ImageComment says "整体说明"
+// in the language the app shows.
+func ImageComment() string { return In(i18n.Locale()).ImageComment() }
+
+// ImageComment says "整体说明"
+// in the language of msgs.
+func (msgs Messages) ImageComment() string {
+	return Catalog.Format(msgs.locale, "imageComment", nil)
+}
+
+// ImageMarkup says "图形标注"
+// in the language the app shows.
+func ImageMarkup() string { return In(i18n.Locale()).ImageMarkup() }
+
+// ImageMarkup says "图形标注"
+// in the language of msgs.
+func (msgs Messages) ImageMarkup() string {
+	return Catalog.Format(msgs.locale, "imageMarkup", nil)
+}
+
+// AnnotationPlaceholder says "这里有什么问题？希望怎样修改？"
+// in the language the app shows.
+func AnnotationPlaceholder() string { return In(i18n.Locale()).AnnotationPlaceholder() }
+
+// AnnotationPlaceholder says "这里有什么问题？希望怎样修改？"
+// in the language of msgs.
+func (msgs Messages) AnnotationPlaceholder() string {
+	return Catalog.Format(msgs.locale, "annotationPlaceholder", nil)
+}
+
+// DeleteAnnotation says "删除此条标注"
+// in the language the app shows.
+func DeleteAnnotation() string { return In(i18n.Locale()).DeleteAnnotation() }
+
+// DeleteAnnotation says "删除此条标注"
+// in the language of msgs.
+func (msgs Messages) DeleteAnnotation() string {
+	return Catalog.Format(msgs.locale, "deleteAnnotation", nil)
+}
+
+// LinkNextMarkup says "新图形关联到此评论"
+// in the language the app shows.
+func LinkNextMarkup() string { return In(i18n.Locale()).LinkNextMarkup() }
+
+// LinkNextMarkup says "新图形关联到此评论"
+// in the language of msgs.
+func (msgs Messages) LinkNextMarkup() string {
+	return Catalog.Format(msgs.locale, "linkNextMarkup", nil)
+}
+
+// AnnotationNoComment says "尚未添加说明"
+// in the language the app shows.
+func AnnotationNoComment() string { return In(i18n.Locale()).AnnotationNoComment() }
+
+// AnnotationNoComment says "尚未添加说明"
+// in the language of msgs.
+func (msgs Messages) AnnotationNoComment() string {
+	return Catalog.Format(msgs.locale, "annotationNoComment", nil)
+}
+
+// MarkupColor says "标注颜色"
+// in the language the app shows.
+func MarkupColor() string { return In(i18n.Locale()).MarkupColor() }
+
+// MarkupColor says "标注颜色"
+// in the language of msgs.
+func (msgs Messages) MarkupColor() string {
+	return Catalog.Format(msgs.locale, "markupColor", nil)
+}
+
+// MarkupWidth says "线条粗细"
+// in the language the app shows.
+func MarkupWidth() string { return In(i18n.Locale()).MarkupWidth() }
+
+// MarkupWidth says "线条粗细"
+// in the language of msgs.
+func (msgs Messages) MarkupWidth() string {
+	return Catalog.Format(msgs.locale, "markupWidth", nil)
+}
+
+// AnnotationLimit says "标注过多，请精简后应用"
+// in the language the app shows.
+func AnnotationLimit() string { return In(i18n.Locale()).AnnotationLimit() }
+
+// AnnotationLimit says "标注过多，请精简后应用"
+// in the language of msgs.
+func (msgs Messages) AnnotationLimit() string {
+	return Catalog.Format(msgs.locale, "annotationLimit", nil)
 }

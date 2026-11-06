@@ -1,9 +1,12 @@
 package controller
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/png"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -89,7 +92,7 @@ func TestFileAttachmentInput(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := model.Attachment{Kind: "file", Path: path}
-	input, err := messageInput("before " + a.Link() + " after")
+	input, err := messageInput("before "+a.Link()+" after", t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +104,7 @@ func TestFileAttachmentInput(t *testing.T) {
 		t.Fatalf("file input: %+v", item)
 	}
 	for _, path := range []string{path + "missing", filepath.Dir(path)} {
-		if _, err := messageInput((model.Attachment{Kind: "file", Path: path}).Link()); err == nil {
+		if _, err := messageInput((model.Attachment{Kind: "file", Path: path}).Link(), t.TempDir()); err == nil {
 			t.Fatalf("invalid attachment accepted: %s", path)
 		}
 	}
@@ -1139,5 +1142,53 @@ func TestQueueEditingAndDeletion(t *testing.T) {
 	loaded, err := model.Load(filepath.Join(c.Dir, "state.json"))
 	if err != nil || len(loaded.Thread(thread.ID).Queue) != 1 {
 		t.Fatal("queue deletion not persisted", err)
+	}
+}
+
+func TestAnnotatedImageInput(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "original.png")
+	var original bytes.Buffer
+	if err := png.Encode(&original, image.NewRGBA(image.Rect(0, 0, 320, 180))); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, original.Bytes(), 0600); err != nil {
+		t.Fatal(err)
+	}
+	a := model.Attachment{Kind: "image", Path: path, Annotations: []model.Annotation{{ID: "a", Comment: "Move this button", Marks: []model.Mark{{Kind: "arrow", Color: "#e05263", Width: 3, Points: []model.ImagePoint{{X: 10, Y: 20}, {X: 80, Y: 60}}}}}}}
+	input, err := messageInput(a.Link(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(input) != 3 {
+		t.Fatalf("expected text, original, markup: %+v", input)
+	}
+	prompt := input[0].(map[string]any)["text"].(string)
+	if !strings.Contains(prompt, "Annotation 1: Move this button") || !strings.Contains(prompt, "arrow at (10.00%, 20.00%)") {
+		t.Fatalf("lost correspondence: %s", prompt)
+	}
+	if input[1].(map[string]any)["path"] != path {
+		t.Fatal("original not included")
+	}
+	rendered := input[2].(map[string]any)["path"].(string)
+	data, err := os.ReadFile(rendered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	img, err := png.Decode(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The arrow midpoint must be colored in the actual export.
+	r, g, b, _ := img.At(144, 72).RGBA()
+	if !(r > g && r > b) {
+		t.Fatalf("arrow missing from export: %d %d %d", r, g, b)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil || !bytes.Equal(after, original.Bytes()) {
+		t.Fatal("original was overwritten")
+	}
+	if !strings.HasPrefix(rendered, filepath.Join(dir, "attachments")) {
+		t.Fatal("export outside application data")
 	}
 }

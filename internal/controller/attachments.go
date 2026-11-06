@@ -4,10 +4,11 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/ji233-Sun/mujicagent/internal/markup"
 	"github.com/ji233-Sun/mujicagent/internal/model"
 )
 
-func messageInput(text string) ([]any, error) {
+func messageInput(text, dir string) ([]any, error) {
 	var input []any
 	addText := func(s string) {
 		input = append(input, map[string]any{"type": "text", "text": s, "text_elements": []any{}})
@@ -28,6 +29,13 @@ func messageInput(text string) ([]any, error) {
 		addText(a.Prompt())
 		if a.Kind == "image" {
 			input = append(input, map[string]any{"type": "localImage", "path": a.Path})
+			if len(a.Annotations) > 0 {
+				path, err := markup.Export(*a, dir)
+				if err != nil {
+					return nil, fmt.Errorf("annotated image: %w", err)
+				}
+				input = append(input, map[string]any{"type": "localImage", "path": path})
+			}
 		}
 	}
 	return input, nil

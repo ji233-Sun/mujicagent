@@ -446,7 +446,7 @@ func (c *Controller) sendThread(t *model.Thread, text string, plan bool, queuedI
 				}
 			})
 		}
-		input, err := messageInput(text)
+		input, err := messageInput(text, c.Dir)
 		if err != nil {
 			c.fail(id, epoch, err)
 			return
