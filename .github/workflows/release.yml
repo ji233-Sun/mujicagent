@@ -10,52 +10,37 @@ on:
         type: choice
         options: [patch, minor, major]
       dry_run:
-        description: Build and sign without publishing or changing main
+        description: Build and notarize without publishing (also allowed on branches)
         default: false
         type: boolean
 
 permissions:
-  contents: write
+  contents: read
+  actions: read
 
 concurrency:
   group: release
   cancel-in-progress: false
 
+env:
+  GH_TOKEN: ${{ github.token }}
+
 jobs:
-  release:
-    if: github.ref == 'refs/heads/main'
+  build:
+    if: github.ref == 'refs/heads/main' || inputs.dry_run
     runs-on: macos-15
-    timeout-minutes: 60
-    env:
-      GH_TOKEN: ${{ github.token }}
+    timeout-minutes: 30
+    permissions:
+      contents: write # GitHub's generate-notes endpoint requires write access.
+      actions: read
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: main
+          ref: ${{ github.sha }}
           fetch-depth: 0
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
-          cache: true
-      - name: Prepare version and release notes
-        id: version
-        env:
-          BUMP: ${{ inputs.bump }}
-        run: |
-          version="$(go run ./scripts/release next "$BUMP")"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          previous="$(gh api "repos/$GITHUB_REPOSITORY/releases" --jq '[.[] | select(.draft == false and .prerelease == false)][0].tag_name // empty')"
-          args=(-f "tag_name=v$version" -f "target_commitish=$(git rev-parse HEAD)")
-          range=HEAD
-          if [[ -n "$previous" ]]; then
-            args+=(-f "previous_tag_name=$previous")
-            range="$previous..HEAD"
-          fi
-          gh api --method POST "repos/$GITHUB_REPOSITORY/releases/generate-notes" "${args[@]}" --jq .body > "$RUNNER_TEMP/release-notes.md"
-          printf '\n### Commits\n\n' >> "$RUNNER_TEMP/release-notes.md"
-          git log "$range" --pretty=format:'- %s (%h)' --no-merges --invert-grep --grep='^chore(release):' >> "$RUNNER_TEMP/release-notes.md"
-          printf '\n' >> "$RUNNER_TEMP/release-notes.md"
-          go run ./scripts/release prepare "$version" "$RUNNER_TEMP/release-notes.md"
       - name: Verify
         run: |
           go tool mygo generate
@@ -65,109 +50,118 @@ jobs:
           go test -race ./internal/codex ./internal/controller -count=1
           go vet ./...
           go tool mygo i18n check
-      - name: Configure Developer ID and Apple notarization
+      - name: Build or restore signed checkpoint
+        id: build
         env:
+          BUMP: ${{ inputs.bump }}
           MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
           MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
-          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
-          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
-        run: |
-          for name in MACOS_CERTIFICATE_P12 MACOS_CERTIFICATE_PASSWORD APPLE_API_KEY_ID APPLE_API_ISSUER_ID APPLE_API_PRIVATE_KEY; do
-            if [[ -z "${!name}" ]]; then
-              echo "::error::Missing required secret: $name. See README: Apple notarization."
-              exit 1
-            fi
-          done
-          umask 077
-          keychain="$RUNNER_TEMP/mujicagent-signing.keychain-db"
-          password="$(openssl rand -hex 32)"
-          echo "::add-mask::$password"
-          security create-keychain -p "$password" "$keychain"
-          security set-keychain-settings -lut 21600 "$keychain"
-          security unlock-keychain -p "$password" "$keychain"
-          printf '%s' "$MACOS_CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
-          security import "$RUNNER_TEMP/certificate.p12" -k "$keychain" -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain"
-          security list-keychains -d user -s "$keychain" login.keychain-db
-          identity="$(security find-identity -v -p codesigning "$keychain" | awk '/"Developer ID Application:/ {print $2}')"
-          if [[ ! "$identity" =~ ^[0-9A-Fa-f]{40}$ ]]; then
-            echo '::error::The P12 must contain exactly one valid Developer ID Application identity, including its private key.'
-            exit 1
-          fi
-          printf '%s' "$APPLE_API_PRIVATE_KEY" > "$RUNNER_TEMP/notary-key.p8"
-          xcrun notarytool store-credentials mujicagent-notary --keychain "$keychain" \
-            --key "$RUNNER_TEMP/notary-key.p8" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER_ID"
-          rm -f "$RUNNER_TEMP/certificate.p12" "$RUNNER_TEMP/notary-key.p8"
-          printf '%s\n' "MACOS_SIGNING_IDENTITY=$identity" "NOTARY_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
-      - name: Build and notarize macOS updates
-        env:
           MYGO_UPDATER_PRIVATE_KEY: ${{ secrets.MYGO_UPDATER_PRIVATE_KEY }}
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          test -n "$MYGO_UPDATER_PRIVATE_KEY" || { echo 'Missing MYGO_UPDATER_PRIVATE_KEY secret'; exit 1; }
-          cp "mygo.json" "$RUNNER_TEMP/mygo-version.json"
-          trap 'cp "$RUNNER_TEMP/mygo-version.json" "mygo.json"' EXIT
-          jq --arg identity "$MACOS_SIGNING_IDENTITY" --arg keychain "$NOTARY_KEYCHAIN" \
-            '.macos = ((.macos // {}) + {signingIdentity: $identity, notarize: {keychainProfile: "mujicagent-notary", keychain: $keychain}})' \
-            "mygo.json" > "$RUNNER_TEMP/mygo-notarized.json"
-          cp "$RUNNER_TEMP/mygo-notarized.json" "mygo.json"
-          set -o pipefail
-          for arch in arm64 amd64; do
-            for attempt in 1 2 3; do
-              if go tool mygo build -platform "darwin/$arch" 2>&1 | tee "$RUNNER_TEMP/macos-build.log"; then
-                break
-              fi
-              output="$(cat "$RUNNER_TEMP/macos-build.log")"
-              if [[ "$attempt" == 3 || "$output" != *'xcrun stapler staple '* || "$output" != *'NSURLErrorDomain Code=-1005'* ]]; then
-                exit 1
-              fi
-              echo "::warning::Apple ticket download lost its connection; retrying $arch ($attempt/3)."
-              sleep "$((attempt * 10))"
-            done
-            test -s "build/darwin-$arch/update-darwin-$arch.json"
-            codesign --verify --deep --strict "build/darwin-$arch/MujicAgent.app"
-            xcrun stapler validate "build/darwin-$arch/MujicAgent.app"
-            xcrun stapler validate "build/darwin-$arch/mujicagent-$VERSION-$arch.dmg"
-            mkdir -p "$RUNNER_TEMP/verify-$arch"
-            tar -xzf "build/darwin-$arch/mujicagent-$VERSION-darwin-$arch.tar.gz" -C "$RUNNER_TEMP/verify-$arch"
-            codesign --verify --deep --strict "$RUNNER_TEMP/verify-$arch/MujicAgent.app"
-            xcrun stapler validate "$RUNNER_TEMP/verify-$arch/MujicAgent.app"
-          done
+        run: bash scripts/release/macos.sh build
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        if: steps.build.outputs.cached != 'true'
         with:
-          name: release-${{ steps.version.outputs.version }}
-          path: |
-            build/**/*.dmg
-            build/**/*.tar.gz
-            build/**/update-*.json
+          name: release-build
+          path: build-state/
           if-no-files-found: error
-          retention-days: 14
-      - name: Publish
-        if: ${{ !inputs.dry_run }}
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add mygo.json CHANGELOG.md
-          git commit -m "chore(release): v$VERSION"
-          git tag -a "v$VERSION" -m "MujicAgent $VERSION"
-          git push --atomic origin HEAD:main "refs/tags/v$VERSION"
-          gh release create "v$VERSION" --verify-tag --draft --title "MujicAgent $VERSION" --notes-file "$RUNNER_TEMP/release-notes.md"
-          gh release upload "v$VERSION" build/darwin-*/*.dmg build/darwin-*/*.tar.gz build/darwin-*/update-*.json
-          gh release edit "v$VERSION" --draft=false --latest
-      - name: Summary
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-          DRY_RUN: ${{ inputs.dry_run }}
-        run: |
-          echo "MujicAgent $VERSION · dry run: $DRY_RUN" >> "$GITHUB_STEP_SUMMARY"
-          cat "$RUNNER_TEMP/release-notes.md" >> "$GITHUB_STEP_SUMMARY"
+          retention-days: 30
       - name: Remove signing credentials
         if: always()
         run: |
           if [[ -f "$RUNNER_TEMP/mujicagent-signing.keychain-db" ]]; then
             security delete-keychain "$RUNNER_TEMP/mujicagent-signing.keychain-db"
           fi
-          rm -f "$RUNNER_TEMP/certificate.p12" "$RUNNER_TEMP/notary-key.p8"
+          rm -f "$RUNNER_TEMP/certificate.p12"
+
+  submit:
+    needs: build
+    runs-on: macos-15
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, amd64]
+    env:
+      ARCH: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Submit or restore Apple submission
+        id: submit
+        env:
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+        run: bash scripts/release/macos.sh submit
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        if: always() && steps.submit.outputs.cached != 'true'
+        with:
+          name: release-submission-${{ matrix.arch }}
+          path: submit-state/submission.json
+          if-no-files-found: ignore
+          retention-days: 30
+      - name: Remove notarization key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/notary-key.p8"
+
+  finalize:
+    needs: submit
+    runs-on: macos-15
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, amd64]
+    env:
+      ARCH: ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+      - name: Wait, staple, and sign final update
+        id: finalize
+        env:
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+          MYGO_UPDATER_PRIVATE_KEY: ${{ secrets.MYGO_UPDATER_PRIVATE_KEY }}
+        run: bash scripts/release/macos.sh finalize
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        if: steps.finalize.outputs.cached != 'true'
+        with:
+          name: release-final-${{ matrix.arch }}
+          path: final-state/
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        if: always()
+        with:
+          name: notary-logs-${{ matrix.arch }}-${{ github.run_attempt }}
+          path: notary-logs/
+          if-no-files-found: ignore
+          retention-days: 30
+      - name: Remove notarization key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/notary-key.p8"
+
+  publish:
+    needs: finalize
+    if: github.ref == 'refs/heads/main' && !inputs.dry_run
+    runs-on: macos-15
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Publish verified checkpoints
+        run: bash scripts/release/macos.sh publish

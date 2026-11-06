@@ -1,4 +1,4 @@
-// Command release prepares versioned files; publishing is owned by GitHub Actions.
+// Command release prepares versioned files and signs finalized update archives.
 package main
 
 import (
@@ -20,6 +20,9 @@ func main() {
 }
 
 func run(args []string) error {
+	if len(args) == 3 && args[0] == "sign-update" {
+		return signUpdate(args[1], args[2])
+	}
 	config, err := os.ReadFile("mygo.json")
 	if err != nil {
 		return err
@@ -39,7 +42,7 @@ func run(args []string) error {
 		return nil
 	}
 	if len(args) != 3 || args[0] != "prepare" {
-		return fmt.Errorf("usage: release next patch|minor|major, or release prepare VERSION NOTES_FILE")
+		return fmt.Errorf("usage: release next patch|minor|major, release prepare VERSION NOTES_FILE, or release sign-update MANIFEST ARCHIVE")
 	}
 	notes, err := os.ReadFile(args[2])
 	if err != nil {
