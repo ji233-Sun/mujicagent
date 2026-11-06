@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -80,6 +81,23 @@ func (s *State) AddThread(projectID, cwd string) *Thread {
 	s.Threads = append([]*Thread{t}, s.Threads...)
 	s.Selected = t.ID
 	return t
+}
+
+// MessageTitle shares the same compact title for drafts and their first send.
+func MessageTitle(text string) string {
+	var titleText strings.Builder
+	for _, part := range MessageParts(strings.TrimSpace(text)) {
+		if part.Attachment != nil {
+			titleText.WriteString(filepath.Base(part.Attachment.Path))
+		} else {
+			titleText.WriteString(part.Text)
+		}
+	}
+	title := []rune(strings.ReplaceAll(titleText.String(), "\n", " "))
+	if len(title) > 48 {
+		title = append(title[:48], '…')
+	}
+	return string(title)
 }
 
 func Load(path string) (*State, error) {

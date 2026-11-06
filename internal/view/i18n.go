@@ -19,6 +19,9 @@ func (v *View) languageChanged() {
 
 // Localize only the placeholder; user titles and conversation contents stay verbatim.
 func (v *View) threadTitle(t *model.Thread) string {
+	if t != nil && len(t.Turns) == 0 && strings.TrimSpace(t.Draft) != "" {
+		return model.MessageTitle(t.Draft)
+	}
 	if t == nil || len(t.Turns) == 0 && (t.Title == "" || t.Title == "New conversation" || t.Title == "新对话") {
 		return v.texts().NewConversation()
 	}

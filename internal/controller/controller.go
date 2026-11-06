@@ -231,6 +231,14 @@ func (c *Controller) NewThread(projectID string) {
 		c.ReportError("Project not found.")
 		return
 	}
+	// Reuse only untouched conversations in this project; preserve all drafts.
+	for _, t := range c.State.Threads {
+		if t.ProjectID == projectID && !t.Settled && len(t.Turns) == 0 && len(t.Queue) == 0 && strings.TrimSpace(t.Draft) == "" {
+			c.Select(t.ID)
+			c.SetProjectExpanded(projectID, true)
+			return
+		}
+	}
 	c.State.AddThread(projectID, cwd)
 	if projectID == "" {
 		c.State.NoProjectExpanded = true
@@ -296,7 +304,7 @@ func (c *Controller) Settle(id string, settled bool) {
 	}
 	t.Settled = settled
 	if settled && c.State.Selected == id {
-		c.State.AddThread(t.ProjectID, t.Cwd)
+		c.NewThread(t.ProjectID)
 	}
 	c.Save()
 }
@@ -368,19 +376,7 @@ func (c *Controller) sendThread(t *model.Thread, text string, plan bool, queuedI
 		return false
 	}
 	if len(t.Turns) == 0 {
-		var titleText strings.Builder
-		for _, part := range model.MessageParts(text) {
-			if part.Attachment != nil {
-				titleText.WriteString(filepath.Base(part.Attachment.Path))
-			} else {
-				titleText.WriteString(part.Text)
-			}
-		}
-		title := []rune(strings.ReplaceAll(titleText.String(), "\n", " "))
-		if len(title) > 48 {
-			title = append(title[:48], '…')
-		}
-		t.Title = string(title)
+		t.Title = model.MessageTitle(text)
 	}
 	t.Settled = false
 	t.Updated = time.Now()

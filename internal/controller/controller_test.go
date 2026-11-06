@@ -991,6 +991,7 @@ func TestProjectlessWorkspace(t *testing.T) {
 		t.Fatal("draft allocated a directory")
 	}
 	thread.Created = time.Date(2025, 12, 31, 23, 59, 0, 0, time.FixedZone("local", -8*3600))
+	thread.Draft = "Organize 下载 / FILES"
 	if err := c.prepareWorkspace(thread, "Organize 下载 / FILES"); err != nil {
 		t.Fatal(err)
 	}
@@ -1068,6 +1069,7 @@ func TestWorkspaceFailuresAndAttachmentNames(t *testing.T) {
 	c := New(dir, model.New(), nil)
 	c.NewThread("")
 	thread := c.State.Thread(c.State.Selected)
+	thread.Draft = (model.Attachment{Kind: "file", Path: "/tmp/secret-filename.txt"}).Link()
 	if err := c.prepareWorkspace(thread, (model.Attachment{Kind: "file", Path: "/tmp/secret-filename.txt"}).Link()); err != nil {
 		t.Fatal(err)
 	}
@@ -1077,6 +1079,7 @@ func TestWorkspaceFailuresAndAttachmentNames(t *testing.T) {
 	c.NewThread("")
 	named := c.State.Thread(c.State.Selected)
 	named.Title = "Custom TITLE"
+	named.Draft = "ignored text"
 	if err := c.prepareWorkspace(named, "ignored text"); err != nil || !strings.HasPrefix(filepath.Base(named.Cwd), "custom-title-") {
 		t.Fatalf("%s %v", named.Cwd, err)
 	}
@@ -1190,5 +1193,37 @@ func TestAnnotatedImageInput(t *testing.T) {
 	}
 	if !strings.HasPrefix(rendered, filepath.Join(dir, "attachments")) {
 		t.Fatal("export outside application data")
+	}
+}
+
+func TestNewThreadReusesOnlyEmptyConversationInProject(t *testing.T) {
+	c := New(t.TempDir(), model.New(), nil)
+	c.NewThread("")
+	first := c.State.Thread(c.State.Selected)
+	first.Draft = " \n "
+	c.NewThread("")
+	if c.State.Selected != first.ID || len(c.State.Threads) != 1 {
+		t.Fatal("repeated creation duplicated an empty conversation")
+	}
+	first.Draft = "draft"
+	c.NewThread("")
+	blank := c.State.Thread(c.State.Selected)
+	if blank == first || first.Draft != "draft" {
+		t.Fatal("creation replaced a nonempty draft")
+	}
+	c.AddProject(t.TempDir())
+	projectThread := c.State.Thread(c.State.Selected)
+	if projectThread.ProjectID == "" || projectThread == blank {
+		t.Fatal("empty conversation reused across projects")
+	}
+	c.Select(first.ID)
+	c.Settle(first.ID, true)
+	if c.State.Selected != blank.ID || len(c.State.Threads) != 3 {
+		t.Fatal("settling did not reuse the existing blank conversation")
+	}
+	blank.Turns = []model.Turn{{Prompt: "sent", Status: "completed"}}
+	c.NewThread("")
+	if c.State.Selected == blank.ID {
+		t.Fatal("sent conversation reused as empty")
 	}
 }
