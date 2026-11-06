@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.1.8
+
+#### What's Changed
+* docs: 验证 MyGo BrowserUse 关键能力并记录采用边界 by @ji233-Sun in https://github.com/ji233-Sun/mujicagent/pull/32
+* feat: 约定 BrowserUse 最小工具接口与会话生命周期 by @ji233-Sun in https://github.com/ji233-Sun/mujicagent/pull/34
+* feat: 项目文件夹折叠与会话虚拟滚动 by @ji233-Sun in https://github.com/ji233-Sun/mujicagent/pull/36
+
+
+**Full Changelog**: https://github.com/ji233-Sun/mujicagent/compare/v0.1.7...v0.1.8
+
+### Commits
+
+- feat: 将项目会话改为可记忆折叠的文件夹列表 (473a7ba)
+- feat: 定义 BrowserUse 工具接口与会话生命周期 (099fcdf)
+- docs: 记录 MyGo BrowserUse 可行性验证与能力边界 (47bf083)
+
 ## 0.1.7
 
 #### What's Changed
