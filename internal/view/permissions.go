@@ -63,8 +63,8 @@ func (v *View) permissionSelector(c *ui.Context) {
 	pickerPopover(c.Key("permission-picker"), button, &v.permissionPicker, tx.PermissionPicker(), 290, func() {
 		ui.Column(c).Gap(4).Children(func() {
 			ui.Text(c, tx.Permissions()).FontSize(11).TextColor(c.Theme().TextMuted).Padding(6, 8)
-			ui.Text(c, tx.PermissionTiming()).FontSize(11).TextColor(c.Theme().TextMuted).Padding(6, 8)
 			if v.C.NextPermissionID() != v.C.PermissionID() {
+				ui.Text(c, tx.PermissionTiming()).FontSize(11).TextColor(c.Theme().TextMuted).Padding(6, 8)
 				ui.Text(c, tx.PermissionNextTurn(v.permissionName(v.C.NextPermissionID()))).FontSize(12).Padding(6, 8)
 			}
 			if v.C.PermissionsLoading {
