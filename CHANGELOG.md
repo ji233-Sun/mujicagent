@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.11
+
+#### What's Changed
+* fix: 优化未发送会话的排序、标题和新建行为 by @ji233-Sun in https://github.com/ji233-Sun/mujicagent/pull/51
+
+
+**Full Changelog**: https://github.com/ji233-Sun/mujicagent/compare/v0.1.10...v0.1.11
+
+### Commits
+
+- fix: 优化未发送会话的排序标题和新建行为 (8d07800)
+
 ## 0.1.10
 
 #### What's Changed
