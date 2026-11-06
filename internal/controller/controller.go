@@ -323,7 +323,15 @@ func (c *Controller) Send(text string, plan bool) bool {
 		return false
 	}
 	if len(t.Turns) == 0 {
-		title := []rune(strings.ReplaceAll(text, "\n", " "))
+		var titleText strings.Builder
+		for _, part := range model.MessageParts(text) {
+			if part.Attachment != nil {
+				titleText.WriteString(filepath.Base(part.Attachment.Path))
+			} else {
+				titleText.WriteString(part.Text)
+			}
+		}
+		title := []rune(strings.ReplaceAll(titleText.String(), "\n", " "))
 		if len(title) > 48 {
 			title = append(title[:48], '…')
 		}
@@ -389,7 +397,12 @@ func (c *Controller) Send(text string, plan bool) bool {
 				}
 			})
 		}
-		params := map[string]any{"threadId": serverID, "serviceTier": serviceTier, "permissions": permission.WireID(), "approvalPolicy": permission.ApprovalPolicy(), "approvalsReviewer": permission.Reviewer(), "summary": "auto", "input": []any{map[string]any{"type": "text", "text": text, "text_elements": []any{}}}}
+		input, err := messageInput(text)
+		if err != nil {
+			c.fail(id, epoch, err)
+			return
+		}
+		params := map[string]any{"threadId": serverID, "serviceTier": serviceTier, "permissions": permission.WireID(), "approvalPolicy": permission.ApprovalPolicy(), "approvalsReviewer": permission.Reviewer(), "summary": "auto", "input": input}
 		if settings.Model != "" {
 			params["model"] = settings.Model
 		}

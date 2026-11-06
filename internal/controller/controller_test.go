@@ -40,6 +40,30 @@ func TestReleaseHistory(t *testing.T) {
 	}
 }
 
+func TestFileAttachmentInput(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "未分类 file.xyz")
+	if err := os.WriteFile(path, []byte("file contents must not be inlined"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	a := model.Attachment{Kind: "file", Path: path}
+	input, err := messageInput("before " + a.Link() + " after")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(input) != 3 {
+		t.Fatalf("input: %+v", input)
+	}
+	item := input[1].(map[string]any)
+	if item["type"] != "text" || !strings.Contains(item["text"].(string), path) || strings.Contains(item["text"].(string), "file contents") {
+		t.Fatalf("file input: %+v", item)
+	}
+	for _, path := range []string{path + "missing", filepath.Dir(path)} {
+		if _, err := messageInput((model.Attachment{Kind: "file", Path: path}).Link()); err == nil {
+			t.Fatalf("invalid attachment accepted: %s", path)
+		}
+	}
+}
+
 func TestReleaseHistoryFailures(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
@@ -126,6 +150,11 @@ func TestServiceTierRequests(t *testing.T) {
 	c.Models = []codex.Model{{Model: "speed-model", ServiceTiers: []codex.ServiceTier{{ID: "priority"}, {ID: "ultrafast"}}}, {Model: "plain-model"}}
 	c.AddProject(t.TempDir())
 	thread := c.State.Thread(c.State.Selected)
+	imagePath := filepath.Join(dir, "图 片.png")
+	if err := os.WriteFile(imagePath, []byte("test image"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	attachment := model.Attachment{Kind: "image", Path: imagePath, X: 25, Y: 75, Tip: "change this"}
 	for _, tc := range []struct{ model, selected, sent string }{
 		{"speed-model", "priority", "priority"},
 		{"speed-model", "ultrafast", "ultrafast"},
@@ -135,7 +164,7 @@ func TestServiceTierRequests(t *testing.T) {
 		{"unknown-model", "ultrafast", "default"},
 	} {
 		c.State.Settings.Model, c.State.Settings.ServiceTier = tc.model, tc.selected
-		if !c.Send("speed test", false) {
+		if !c.Send("speed test "+attachment.Link()+" end", false) {
 			t.Fatal(c.Error)
 		}
 		deadline := time.Now().Add(3 * time.Second)
@@ -156,6 +185,15 @@ func TestServiceTierRequests(t *testing.T) {
 		}
 		if params.ServiceTier != tc.sent || params.Model != tc.model || params.ThreadID != "speed-thread" || params.Summary != "auto" {
 			t.Fatalf("selection %+v sent incorrect turn/start: %s", tc, data)
+		}
+		var wire struct {
+			Input []struct{ Type, Text, Path string }
+		}
+		if err := json.Unmarshal(data, &wire); err != nil {
+			t.Fatal(err)
+		}
+		if len(wire.Input) != 4 || wire.Input[0].Text != "speed test " || wire.Input[2].Type != "localImage" || wire.Input[2].Path != imagePath || wire.Input[3].Text != " end" || !strings.Contains(wire.Input[1].Text, "25.00%, 75.00%") {
+			t.Fatalf("incorrect attachment input: %s", data)
 		}
 		var permissions struct {
 			Permissions, ApprovalPolicy, ApprovalsReviewer string

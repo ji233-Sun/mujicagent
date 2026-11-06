@@ -128,5 +128,13 @@
   "downloadUpdate": "下载更新",
   "updateAfterConversation": "对话结束后可安装并重启",
   "releaseNotes": "更新日志",
-  "noReleaseNotes": "暂无更新说明"
+  "noReleaseNotes": "暂无更新说明",
+  "attachFile": "插入附件",
+  "removeAttachment": "移除附件",
+  "previewUnavailable": "无法预览",
+  "annotationHint": "点击图片选择位置，填写说明后插入当前草稿。",
+  "markImage": "标记图片",
+  "annotationTip": "标记说明",
+  "insertAnnotation": "插入标记",
+  "closeAttachment": "关闭附件"
 }
