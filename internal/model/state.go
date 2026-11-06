@@ -75,6 +75,8 @@ func Load(path string) (*State, error) {
 	if s.Version != 1 {
 		return nil, fmt.Errorf("unsupported data version %d", s.Version)
 	}
+	// Retain the field for older snapshots, but the app now uses light appearance only.
+	s.Settings.Appearance = "Light"
 	if s.Settings.Language != "en" {
 		s.Settings.Language = "zh-Hans"
 	}

@@ -13,6 +13,7 @@ import (
 )
 
 func main() {
+	mygo.Theme.SetSource(mygo.ThemeLight)
 	dir, err := os.UserConfigDir()
 	if err != nil {
 		log.Fatal(err)

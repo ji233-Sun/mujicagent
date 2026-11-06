@@ -43,28 +43,14 @@ func New(c *controller.Controller) *View {
 
 func (v *View) theme(c *ui.Context) {
 	t := ui.LightTheme()
-	if v.C.State.Settings.Appearance == "Dark" || (v.C.State.Settings.Appearance == "System" && c.Theme().Dark) {
-		t = ui.DarkTheme()
-	}
-	if t.Dark {
-		t.Background = ui.Hex("#191d1e")
-		t.Surface = ui.Hex("#252b2c")
-		t.SurfaceHover = ui.Hex("#303839")
-		t.Border = ui.Hex("#384142")
-		t.Text = ui.Hex("#e1e9e7")
-		t.TextMuted = ui.Hex("#93a5a0")
-		t.Accent = ui.Hex("#78cbb1")
-		t.AccentText = ui.Hex("#142620")
-	} else {
-		t.Background = ui.Hex("#f5f8f7")
-		t.Surface = ui.Hex("#e9efed")
-		t.SurfaceHover = ui.Hex("#dce7e3")
-		t.Border = ui.Hex("#d5dfdb")
-		t.Text = ui.Hex("#28413a")
-		t.TextMuted = ui.Hex("#74877f")
-		t.Accent = ui.Hex("#07896d")
-		t.AccentText = ui.Hex("#ffffff")
-	}
+	t.Background = ui.Hex("#f5f8f7")
+	t.Surface = ui.Hex("#e9efed")
+	t.SurfaceHover = ui.Hex("#dce7e3")
+	t.Border = ui.Hex("#d5dfdb")
+	t.Text = ui.Hex("#28413a")
+	t.TextMuted = ui.Hex("#74877f")
+	t.Accent = ui.Hex("#07896d")
+	t.AccentText = ui.Hex("#ffffff")
 	t.AccentHover = t.Accent
 	t.AccentPressed = t.Accent
 	t.Radius = 8

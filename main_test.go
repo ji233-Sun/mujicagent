@@ -23,7 +23,18 @@ func TestNativeView(t *testing.T) {
 	state := model.New()
 	ctrl := controller.New(t.TempDir(), state, nil)
 	v := view.New(ctrl)
-	tt := ui.NewTester(v.Render, 1140, 780)
+	tt := ui.NewTester(func(ctx *ui.Context) {
+		v.Render(ctx)
+		if ctx.Theme().Dark {
+			t.Error("app must remain light regardless of the system or saved appearance")
+		}
+	}, 1140, 780)
+	for _, saved := range []string{"Dark", "System", "Light"} {
+		state.Settings.Appearance = saved
+		tt.SetDark(true)
+		tt.Frame()
+	}
+	tt.SetDark(false)
 	if tt.HasText("搜索会话") {
 		t.Fatal("conversation search should not be displayed")
 	}
@@ -403,12 +414,12 @@ func TestLanguageSwitch(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "state.json")
 	// Snapshots from before language settings still open in Chinese.
-	if err := os.WriteFile(path, []byte(`{"Version":1,"Settings":{"Appearance":"Light"}}`), 0600); err != nil {
+	if err := os.WriteFile(path, []byte(`{"Version":1,"Settings":{"Appearance":"Dark"}}`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	s, err := model.Load(path)
-	if err != nil || s.Settings.Language != "zh-Hans" {
-		t.Fatalf("old snapshot did not default to Chinese: %v", err)
+	if err != nil || s.Settings.Language != "zh-Hans" || s.Settings.Appearance != "Light" {
+		t.Fatalf("old snapshot did not default to Chinese and light appearance: %v", err)
 	}
 	c := controller.New(dir, s, nil)
 	stored := s.AddThread("", "")
@@ -439,6 +450,9 @@ func TestLanguageSwitch(t *testing.T) {
 	}
 	click("设置")
 	click("外观")
+	if tt.HasText("主题") || tt.HasText("跟随系统") || tt.HasText("深色") {
+		t.Fatal("theme selector should be removed")
+	}
 	click("简体中文")
 	click("English")
 	tt.SetLocale(s.Settings.Language) // The real window receives App.SetLocale's locale event.
@@ -911,11 +925,10 @@ func TestNativePreview(t *testing.T) {
 		t.Fatal(err)
 	}
 	tt.Advance(250 * time.Millisecond)
-	s.Settings.Appearance = "Dark"
-	tt.Frame()
+	tt.SetDark(true)
 	tt.Advance(300 * time.Millisecond)
-	save("model-picker-dark.png")
-	s.Settings.Appearance = "Light"
+	save("model-picker-system-dark.png")
+	tt.SetDark(false)
 	tt.SetSize(840, 560)
 	tt.Advance(300 * time.Millisecond)
 	save("model-picker-compact.png")
@@ -934,19 +947,13 @@ func TestNativePreview(t *testing.T) {
 	}
 	tt.Advance(250 * time.Millisecond)
 	save("updates.png")
-	s.Settings.Appearance = "Dark"
-	tt.Frame()
+	tt.SetDark(true)
 	tt.Advance(300 * time.Millisecond)
-	save("updates-dark.png")
-	s.Settings.Appearance = "Light"
+	save("updates-system-dark.png")
+	tt.SetDark(false)
 	if err := tt.Click("智能体"); err != nil {
 		t.Fatal(err)
 	}
-	s.Settings.Appearance = "Dark"
-	tt.Frame()
-	tt.Advance(300 * time.Millisecond)
-	save("settings-dark.png")
-	s.Settings.Appearance = "Light"
 	tt.SetSize(840, 560)
 	tt.Advance(300 * time.Millisecond)
 	save("settings-compact.png")

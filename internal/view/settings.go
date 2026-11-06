@@ -81,13 +81,6 @@ func (v *View) settingsPane(c *ui.Context) {
 		if v.section == "Appearance" {
 			ui.Column(c).Radius(14).Background(c.Theme().Surface).Padding(18).Gap(18).Children(func() {
 				ui.Row(c).AlignItems(ui.Center).Children(func() {
-					ui.Text(c, tx.Theme()).Grow(1)
-					settingsSelect(c.Key("theme"), &v.C.State.Settings.Appearance, tx.Theme(), []settingOption{
-						{"System", tx.ThemeSystem()}, {"Light", tx.ThemeLight()}, {"Dark", tx.ThemeDark()},
-					}, v.C.Save)
-				})
-				ui.Divider(c)
-				ui.Row(c).AlignItems(ui.Center).Children(func() {
 					ui.Text(c, tx.Language()).Grow(1)
 					settingsSelect(c.Key("language"), &v.C.State.Settings.Language, tx.Language(), []settingOption{
 						{"zh-Hans", "简体中文"}, {"en", "English"},

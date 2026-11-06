@@ -244,9 +244,5 @@ func modelIcon(c *ui.Context, name string, size float32) {
 	if strings.HasPrefix(name, "gpt-") || strings.HasPrefix(name, "chatgpt-") || strings.HasPrefix(name, "o1") || strings.HasPrefix(name, "o3") || strings.HasPrefix(name, "o4") {
 		icon = openAIIcon
 	}
-	color := ui.Hex("#202524")
-	if c.Theme().Dark {
-		color = ui.Hex("#ffffff")
-	}
-	ui.Icon(c, icon).Size(size, size).Shrink(0).TextColor(color)
+	ui.Icon(c, icon).Size(size, size).Shrink(0).TextColor(ui.Hex("#202524"))
 }
