@@ -290,13 +290,7 @@ func (c *Controller) Settle(id string, settled bool) {
 	}
 	t.Settled = settled
 	if settled && c.State.Selected == id {
-		c.State.Selected = ""
-		for _, other := range c.State.Threads {
-			if !other.Settled {
-				c.State.Selected = other.ID
-				break
-			}
-		}
+		c.State.AddThread(t.ProjectID, t.Cwd)
 	}
 	c.Save()
 }
