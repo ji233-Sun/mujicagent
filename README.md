@@ -112,7 +112,7 @@ locales/                       MyGo 中英文语言目录及生成的类型安�
 - `release-final-arm64/amd64` 保存装订后验证通过的 DMG、更新包、更新清单与 SHA256 清单。
 - `notary-logs-*` 保存每次等待的状态和可获取的 Apple 公证日志。
 
-网络失败或等待超时后，在**原运行**选择 **Re-run failed jobs**。已保存的构建和 submission ID 会被复用，不会重新编译或重新提交公证；完整重跑也会检查并复用同一运行的检查点。`finalize` 等待同一 ID 最多 20 分钟，只有 `Accepted` 才装订；`staple` 和 `validate` 的临时网络错误最多尝试 5 次，间隔 10、20、40、60 秒。`Invalid/Rejected` 必须检查 Apple 日志并修复代码，重复等待不能修复拒绝原因。
+网络失败或等待超时后，在**原运行**选择 **Re-run failed jobs**，或仅重跑对应任务。已保存的构建和 submission ID 会被复用，不会重新编译或重新提交公证。**不要选择 Re-run all jobs**：GitHub 会清除上一轮 artifacts；脚本发现重试缺少构建检查点会停止，避免悄悄重新构建。若首次构建失败、尚未保存检查点，或检查点已丢失，需要新建 **Run workflow** 明确重新构建。`finalize` 等待同一 ID 最多 20 分钟，只有 `Accepted` 才装订；`staple` 和 `validate` 的临时网络错误最多尝试 5 次，间隔 10、20、40、60 秒。`Invalid/Rejected` 必须检查 Apple 日志并修复代码，重复等待不能修复拒绝原因。
 
 检查点过期或缺失时不能保证恢复。特别是 Apple 已接受上传、但客户端未收到 ID，或 ID 尚未成功上传为 Actions 产物时，需先检查 Apple 提交历史；重试可能再次提交。新建 **Run workflow** 是全新发布，不读取旧运行的检查点。
 

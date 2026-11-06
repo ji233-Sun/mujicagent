@@ -138,7 +138,7 @@ esac
 `)
 	writeTestFile(t, filepath.Join(bin, "codesign"), "#!/bin/bash\nexit 0\n")
 	goPath, _ := exec.LookPath("go")
-	writeTestFile(t, filepath.Join(bin, "go"), fmt.Sprintf("#!/bin/bash\nshift 2\nexec %q run %q %q \"$@\"\n", goPath, filepath.Join(source, "main.go"), filepath.Join(source, "sign.go")))
+	writeTestFile(t, filepath.Join(bin, "go"), fmt.Sprintf("#!/bin/bash\necho go >> \"$CALLS\"\nshift 2\nexec %q run %q %q \"$@\"\n", goPath, filepath.Join(source, "main.go"), filepath.Join(source, "sign.go")))
 	calls := filepath.Join(root, "calls")
 	runStage := func(stage string, extra ...string) (string, error) {
 		t.Helper()
@@ -231,6 +231,13 @@ esac
 	after, _ := os.ReadFile(calls)
 	if string(before) != string(after) {
 		t.Fatal("retried completed notarization")
+	}
+	if _, err := runStage("build", "GITHUB_RUN_ATTEMPT=2", "STORE="+t.TempDir(), "BUMP=patch"); err == nil {
+		t.Fatal("rebuilt after losing checkpoints on a full re-run")
+	}
+	after, _ = os.ReadFile(calls)
+	if string(before) != string(after) {
+		t.Fatal("called build tools after losing checkpoints")
 	}
 }
 

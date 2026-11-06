@@ -57,7 +57,11 @@ build)
   else
     [[ $? == 3 ]] || exit 1
   fi
-  # A re-run before this checkpoint exists still builds the original commit.
+  if [[ "${GITHUB_RUN_ATTEMPT:-1}" != 1 ]]; then
+    echo "::error::The build checkpoint is missing. Re-run all jobs can delete artifacts; start a new workflow run to rebuild explicitly. For recovery, use Re-run failed jobs."
+    exit 1
+  fi
+  # Build the original commit only when starting a new workflow run.
   version="$(go run ./scripts/release next "$BUMP")"
   previous="$(gh api "repos/$GITHUB_REPOSITORY/releases" --jq '[.[] | select(.draft == false and .prerelease == false)][0].tag_name // empty')"
   args=(-f "tag_name=v$version" -f "target_commitish=$GITHUB_SHA")
