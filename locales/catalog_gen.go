@@ -304,26 +304,6 @@ func (msgs Messages) ToggleDeveloperMode() string {
 	return Catalog.Format(msgs.locale, "toggleDeveloperMode", nil)
 }
 
-// DeveloperModeHint says "显示诊断日志，包括暂不支持的 Codex 请求。关闭时仍会显示重要错误。"
-// in the language the app shows.
-func DeveloperModeHint() string { return In(i18n.Locale()).DeveloperModeHint() }
-
-// DeveloperModeHint says "显示诊断日志，包括暂不支持的 Codex 请求。关闭时仍会显示重要错误。"
-// in the language of msgs.
-func (msgs Messages) DeveloperModeHint() string {
-	return Catalog.Format(msgs.locale, "developerModeHint", nil)
-}
-
-// LogsHint says "最新记录在前 · 保留本次运行最近 200 条 · 日志不写入磁盘"
-// in the language the app shows.
-func LogsHint() string { return In(i18n.Locale()).LogsHint() }
-
-// LogsHint says "最新记录在前 · 保留本次运行最近 200 条 · 日志不写入磁盘"
-// in the language of msgs.
-func (msgs Messages) LogsHint() string {
-	return Catalog.Format(msgs.locale, "logsHint", nil)
-}
-
 // NoLogs says "暂无可显示的日志"
 // in the language the app shows.
 func NoLogs() string { return In(i18n.Locale()).NoLogs() }
@@ -782,16 +762,6 @@ func CodexDefaultPermissions() string { return In(i18n.Locale()).CodexDefaultPer
 // in the language of msgs.
 func (msgs Messages) CodexDefaultPermissions() string {
 	return Catalog.Format(msgs.locale, "codexDefaultPermissions", nil)
-}
-
-// DefaultPermissionsHint says "应用于新对话，每个对话仍可单独调整权限。"
-// in the language the app shows.
-func DefaultPermissionsHint() string { return In(i18n.Locale()).DefaultPermissionsHint() }
-
-// DefaultPermissionsHint says "应用于新对话，每个对话仍可单独调整权限。"
-// in the language of msgs.
-func (msgs Messages) DefaultPermissionsHint() string {
-	return Catalog.Format(msgs.locale, "defaultPermissionsHint", nil)
 }
 
 // FullAccess says "完全访问"

@@ -34,9 +34,7 @@ func (v *View) logsPane(c *ui.Context) {
 			ui.Text(c, tx.DeveloperMode()).Bold().Grow(1)
 			ui.Switch(c.Key("developer-mode"), &v.C.State.Settings.DeveloperMode).Label(tx.ToggleDeveloperMode()).OnChange(v.C.Save)
 		})
-		ui.Text(c, tx.DeveloperModeHint()).FontSize(12).TextColor(c.Theme().TextMuted)
 	})
-	ui.Text(c, tx.LogsHint()).FontSize(12).TextColor(c.Theme().TextMuted)
 	visible := 0
 	for i := len(v.C.Logs) - 1; i >= 0; i-- {
 		entry := v.C.Logs[i]
