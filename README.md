@@ -101,9 +101,20 @@ locales/                       MyGo 中英文语言目录及生成的类型安�
 
 1. 选择 **Run workflow → main**。
 2. 选择 `patch`、`minor` 或 `major`，分别递增修订号、次版本或主版本；低位版本号自动清零。初始版本 `0.1.0`，第一次 patch 发布为 `0.1.1`。
-3. 正式发版保留 `dry_run=false`。试运行勾选 `dry_run`：执行相同的校验、双架构构建、签名和 Apple 公证，只上传 Actions 构建产物，不修改版本、标签或 Release。
+3. 正式发版保留 `dry_run=false`。试运行勾选 `dry_run`：执行相同的校验、双架构构建、签名和 Apple 公证，只上传 Actions 构建产物，不修改版本、标签或 Release。试运行也允许选择开发分支，用于验证工作流改动。
 
-工作流根据 GitHub 自动生成的说明和上次发布以来的提交记录生成日志，更新 `mygo.json` 与 `CHANGELOG.md`。测试通过后构建 macOS arm64/amd64，提交版本变更、创建 `vX.Y.Z` 标签；全部安装包与更新清单上传完成后才将草稿发布为正式 Release。普通 push 和 PR 仅运行 [CI](https://github.com/ji233-Sun/mujicagent/actions/workflows/ci.yml)，不会发版。发布期间若 main 已前进，原子推送会拒绝覆盖，重新运行即可。
+工作流固定使用触发时的提交，根据 GitHub 自动生成的说明和上次发布以来的提交记录生成日志，更新 `mygo.json` 与 `CHANGELOG.md`。测试、公证和最终产物验证通过后，提交版本变更、创建 `vX.Y.Z` 标签；全部安装包与更新清单上传完成后才将草稿发布为正式 Release。普通 push 和 PR 仅运行 [CI](https://github.com/ji233-Sun/mujicagent/actions/workflows/ci.yml)，不会发版。发布前若 main 已前进，原子推送会拒绝覆盖，必须重新 **Run workflow**；旧运行的重试始终保留原提交。
+
+发布分为 `build → submit → finalize → publish`，中间产物保留 30 天：
+
+- `release-build` 保存固定版本的签名产物、源码提交、发布说明与 SHA256 清单。
+- `release-submission-arm64/amd64` 分别保存 Apple submission ID、架构、版本和原始 DMG SHA256；提交完成即保存，不等待公证结果。
+- `release-final-arm64/amd64` 保存装订后验证通过的 DMG、更新包、更新清单与 SHA256 清单。
+- `notary-logs-*` 保存每次等待的状态和可获取的 Apple 公证日志。
+
+网络失败或等待超时后，在**原运行**选择 **Re-run failed jobs**。已保存的构建和 submission ID 会被复用，不会重新编译或重新提交公证；完整重跑也会检查并复用同一运行的检查点。`finalize` 等待同一 ID 最多 20 分钟，只有 `Accepted` 才装订；`staple` 和 `validate` 的临时网络错误最多尝试 5 次，间隔 10、20、40、60 秒。`Invalid/Rejected` 必须检查 Apple 日志并修复代码，重复等待不能修复拒绝原因。
+
+检查点过期或缺失时不能保证恢复。特别是 Apple 已接受上传、但客户端未收到 ID，或 ID 尚未成功上传为 Actions 产物时，需先检查 Apple 提交历史；重试可能再次提交。新建 **Run workflow** 是全新发布，不读取旧运行的检查点。
 
 ### Apple notarization
 
@@ -129,13 +140,13 @@ gh secret set APPLE_API_ISSUER_ID --repo ji233-Sun/mujicagent
 gh secret set APPLE_API_PRIVATE_KEY --repo ji233-Sun/mujicagent < "/path/to/AuthKey.p8"
 ```
 
-工作流创建临时 Keychain，导入证书并验证公证凭据。MyGo 对两个架构的应用和 DMG 签名，提交 Apple 公证并等待 Accepted，将票据附加到 DMG 和用于自动更新的应用，再生成 Ed25519 更新签名。发布前会检查代码签名、DMG 的公证票据，并解压自动更新包验证其中应用的票据。任何一步失败都不发布；凭据缺失时也不会降级为 ad-hoc 发布。任务结束时清理临时 Keychain 和私钥文件。
+构建阶段创建临时 Keychain 导入证书，MyGo 对两个架构的应用和 DMG 签名，以 `-skip-notarize` 保存待公证产物。提交和等待阶段使用临时 API 私钥文件。公证 Accepted 后，将票据附加到 DMG 和用于自动更新的应用，再重新打包并生成对应最终归档的 Ed25519/SHA256 签名；保留 MyGo 更新清单的版本、URL、说明和日期，当前要求 `updates.deltas=0`。发布前会检查代码签名、DMG 的公证票据，并解压自动更新包验证其中应用的票据。任何一步失败都不发布；凭据缺失时也不会降级为 ad-hoc 发布。任务结束时清理临时 Keychain 和私钥文件。
 
 签名配置只在 CI 构建期间注入，发布提交不包含证书身份和 runner 路径。首次配置完成后，建议运行一次 `dry_run=true`，确认签名、公证、票据与更新归档检查全部通过，再正式发布。
 
 仓库 Actions Secret `MYGO_UPDATER_PRIVATE_KEY` 存储更新签名私钥的**内容**。公钥固定在 `mygo.json`；私钥不进仓库、不进入应用。维护者须安全备份私钥，丢失或随意替换会让旧客户端无法验证后续更新。只有签名构建会生成 `update-darwin-*.json` 和对应 `.tar.gz`；两者必须与 `.dmg` 一起保留在 Release 中。此签名不能替代 Apple Developer ID 公证。
 
-若上传失败留下草稿，可在该次 Actions 的 `release-X.Y.Z` 产物中找到安装包和清单，补齐同一版本的草稿再发布；不要删除已分发的更新资产或覆盖已发布版本。
+若上传失败留下草稿，重跑原运行的失败任务即可复用 `release-final-*` 补齐资产。发布脚本只接受与原提交和版本文件完全匹配的已有标签，仅补传草稿；若版本已正式发布则直接结束，不覆盖已发布资产。
 
 ## 范围与限制
 
