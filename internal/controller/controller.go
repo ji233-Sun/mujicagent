@@ -220,26 +220,30 @@ func (c *Controller) AddProject(path string) {
 	c.NewThread(p.ID)
 }
 func (c *Controller) NewThread(projectID string) {
-	if projectID == "" {
-		c.ReportError("Choose a project directory.")
-		return
-	}
 	cwd := ""
 	for _, p := range c.State.Projects {
 		if p.ID == projectID {
 			cwd = p.Path
 		}
 	}
-	if cwd == "" {
+	if cwd == "" && projectID != "" {
 		c.ReportError("Project not found.")
 		return
 	}
 	c.State.AddThread(projectID, cwd)
+	if projectID == "" {
+		c.State.NoProjectExpanded = true
+	}
 	c.Save()
 }
 func (c *Controller) Select(id string) { c.State.Selected = id; c.Save() }
 
 func (c *Controller) SetProjectExpanded(id string, expanded bool) {
+	if id == "" {
+		c.State.NoProjectExpanded = expanded
+		c.Save()
+		return
+	}
 	for i := range c.State.Projects {
 		p := &c.State.Projects[i]
 		if p.ID == id && p.Expanded != expanded {
@@ -321,7 +325,7 @@ func (c *Controller) Send(text string, plan bool) bool {
 		return false
 	}
 	t := c.State.Thread(c.State.Selected)
-	if t == nil || t.ProjectID == "" {
+	if t == nil {
 		c.ReportError("Choose a project directory.")
 		return false
 	}
@@ -341,6 +345,10 @@ func (c *Controller) Send(text string, plan bool) bool {
 
 func (c *Controller) sendThread(t *model.Thread, text string, plan bool, queuedID string) bool {
 	if c.client == nil || c.Connection != "Connected" || c.Running[t.ID] || c.permissionUpdates[t.ID] {
+		return false
+	}
+	if err := c.prepareWorkspace(t, text); err != nil {
+		c.ReportError(err.Error())
 		return false
 	}
 	info, directoryErr := os.Stat(t.Cwd)

@@ -49,3 +49,8 @@ var (
 	fastIcon        = lucideIcon("zap")
 	ultrafastIcon   = lucideIcon("gauge")
 )
+
+// A segmented folder outline distinguishes the virtual project from real directories.
+var noProjectFolder = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+<path d="M2 8V5a2 2 0 0 1 2-2h2 M9 3l2 3h3 M18 6h2a2 2 0 0 1 2 2 M22 12v3 M22 18a2 2 0 0 1-2 2h-2 M14 20h-3 M7 20H4a2 2 0 0 1-2-2 M2 14v-2"/>
+</svg>`))

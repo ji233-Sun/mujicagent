@@ -1507,3 +1507,51 @@ func TestMessageQueueLayoutAndDrag(t *testing.T) {
 		})
 	}
 }
+
+func TestNoProjectGroup(t *testing.T) {
+	state := model.New()
+	ctrl := controller.New(t.TempDir(), state, nil)
+	tt := ui.NewTester(view.New(ctrl).Render, 1140, 780)
+	header, ok := tt.Find("无项目")
+	if !ok {
+		t.Fatal("missing empty No Project group")
+	}
+	tt.Move(header.X+10, header.Y+header.H/2)
+	if err := tt.Click("新建 · 无项目"); err != nil {
+		t.Fatal(err)
+	}
+	thread := state.Thread(state.Selected)
+	if thread == nil || thread.ProjectID != "" || thread.Settled || !state.NoProjectExpanded {
+		t.Fatal("incorrect projectless creation")
+	}
+	thread.Title = "Projectless test"
+	tt.Frame()
+	if !tt.HasText(thread.Title) {
+		t.Fatal("missing projectless row")
+	}
+	ctrl.Settle(thread.ID, true)
+	tt.Frame()
+	if tt.HasText(thread.Title) {
+		t.Fatal("settled thread remains in project")
+	}
+	ctrl.Settle(thread.ID, false)
+	tt.Frame()
+	if !tt.HasText(thread.Title) {
+		t.Fatal("restored thread missing")
+	}
+	if err := tt.Click("无项目"); err != nil {
+		t.Fatal(err)
+	}
+	if tt.HasText(thread.Title) || state.NoProjectExpanded {
+		t.Fatal("collapse failed")
+	}
+	saved, err := model.Load(filepath.Join(ctrl.Dir, "state.json"))
+	if err != nil || saved.NoProjectExpanded {
+		t.Fatal("expansion state not saved")
+	}
+	state.Settings.Language = "en"
+	tt.Frame()
+	if _, ok := tt.Find("No Project"); !ok {
+		t.Fatal("missing English group")
+	}
+}
