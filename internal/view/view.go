@@ -243,7 +243,7 @@ func (v *View) timeline(c *ui.Context, t *model.Thread) {
 	ui.Scroll(c.Key("timeline-"+t.ID)).Grow(1).TrackScroll(s).Padding(26, 28).Gap(30).Children(func() {
 		for i := range t.Turns {
 			turn := &t.Turns[i]
-			ui.Column(c.Key(i)).Gap(20).MaxWidth(900).FillWidth().AlignSelf(ui.Center).Children(func() {
+			ui.Column(c.Key(i)).Gap(20).FillWidth().Children(func() {
 				ui.Column(c).AlignSelf(ui.End).MaxWidth(740).Radius(14).Background(c.Theme().Surface).Padding(12, 16).Children(func() { v.message(c, turn.Prompt, t.ID) })
 				ui.Column(c).Gap(14).Children(func() {
 					for j := 0; j < len(turn.Items); {

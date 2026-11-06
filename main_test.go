@@ -482,6 +482,15 @@ func TestGroupedActivity(t *testing.T) {
 	if _, ok := tt.Find(summary); !ok || tt.HasText("PRIVATE_") || tt.HasText("$ go test") {
 		t.Fatal("activity should start as one collapsed summary")
 	}
+	// The timeline must use the available pane width, including after resizing.
+	for _, width := range []int{1920, 840, 1140} {
+		tt.SetSize(width, 900)
+		tt.Frame()
+		bounds, ok := tt.Find(summary)
+		if !ok || math.Abs(float64(bounds.X-275)) > 1 || math.Abs(float64(bounds.X+bounds.W-float32(width-37))) > 1 {
+			t.Fatalf("timeline at width %d does not fill its padded pane: %+v", width, bounds)
+		}
+	}
 	if err := tt.Click(summary); err != nil {
 		t.Fatal(err)
 	}
