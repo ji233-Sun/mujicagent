@@ -16,25 +16,35 @@ import (
 )
 
 type View struct {
-	C                 *controller.Controller
-	Window            *mygo.Window
-	Settings          bool
-	section           string
-	draft             string
-	shelf             bool
-	settledList       ui.ListState
-	modelPicker       bool
-	modelSearch       string
-	modelList         ui.ListState
-	permissionPicker  bool
-	permissionTarget  string
-	confirmFullAccess bool
-	deleteID          string
-	confirmDelete     bool
-	expanded          map[string]*bool
-	answers           map[string]map[string]string
-	scroll            map[string]*ui.ScrollState
-	md                markdown.Options
+	C                          *controller.Controller
+	Window                     *mygo.Window
+	Settings                   bool
+	section                    string
+	draft                      string
+	shelf                      bool
+	settledList                ui.ListState
+	modelPicker                bool
+	modelSearch                string
+	modelList                  ui.ListState
+	permissionPicker           bool
+	permissionTarget           string
+	confirmFullAccess          bool
+	deleteID                   string
+	confirmDelete              bool
+	expanded                   map[string]*bool
+	answers                    map[string]map[string]string
+	scroll                     map[string]*ui.ScrollState
+	md                         markdown.Options
+	attachments                map[string]*attachmentPreview
+	attachmentOpen             bool
+	attachment                 model.Attachment
+	attachmentThread           string
+	annotationTip              string
+	annotationX, annotationY   float64
+	annotationPoint            bool
+	draftStart, draftEnd       int
+	editorParts                []model.MessagePart
+	editorSource, editorThread string
 }
 
 func New(c *controller.Controller) *View {
@@ -92,6 +102,7 @@ func (v *View) Render(c *ui.Context) {
 	})
 	v.errorAlert(c)
 	v.settingsDialog(c)
+	v.attachmentDialog(c)
 	if ui.AlertDialog(c, &v.confirmFullAccess, tx.FullAccessQuestion(), tx.FullAccessWarning(), tx.Cancel(), tx.EnableFullAccess()) == 1 && v.permissionTarget == v.C.State.Selected {
 		v.C.SetPermission(":danger-full-access")
 	}
@@ -230,7 +241,7 @@ func (v *View) timeline(c *ui.Context, t *model.Thread) {
 		for i := range t.Turns {
 			turn := &t.Turns[i]
 			ui.Column(c.Key(i)).Gap(20).MaxWidth(900).FillWidth().AlignSelf(ui.Center).Children(func() {
-				ui.Column(c).AlignSelf(ui.End).MaxWidth(740).Radius(14).Background(c.Theme().Surface).Padding(12, 16).Children(func() { ui.Text(c, turn.Prompt).FontSize(14).Selectable() })
+				ui.Column(c).AlignSelf(ui.End).MaxWidth(740).Radius(14).Background(c.Theme().Surface).Padding(12, 16).Children(func() { v.message(c, turn.Prompt, t.ID) })
 				ui.Column(c).Gap(14).Children(func() {
 					for j := 0; j < len(turn.Items); {
 						key := fmt.Sprintf("%s-%d-%d", t.ID, i, j)
@@ -320,17 +331,9 @@ func (v *View) composer(c *ui.Context, t *model.Thread) {
 		}
 		busy := t != nil && v.C.Running[t.ID]
 		ui.Column(c).Radius(14).Border(1, c.Theme().Border).Background(c.Theme().Surface).Padding(12, 14, 8).Gap(8).Children(func() {
-			ui.TextAreaBase(c.Key(v.C.State.Selected), draft).Lines(2, 7).Label(tx.Message()).Placeholder(tx.MessagePlaceholder()).FontSize(14).OnTextKey(func(k ui.TextKey) bool {
-				if k.Key == ui.KeyEnter && k.Mods == 0 {
-					if v.C.Send(k.Text(), false) {
-						k.SetText("")
-						v.draft = ""
-					}
-					return true
-				}
-				return false
-			})
+			v.composerInput(c, draft)
 			ui.Row(c).AlignItems(ui.Center).Gap(6).Children(func() {
+				ui.Button(c, tx.AttachFile()).Disabled(t == nil || t.ProjectID == "").OnClick(v.pickAttachments)
 				v.modelSelector(c)
 				v.permissionSelector(c)
 				ui.Box(c).Grow(1)

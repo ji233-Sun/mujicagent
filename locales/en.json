@@ -128,5 +128,13 @@
   "downloadUpdate": "Download update",
   "updateAfterConversation": "Install and restart after active conversations finish",
   "releaseNotes": "Release notes",
-  "noReleaseNotes": "No release notes"
+  "noReleaseNotes": "No release notes",
+  "attachFile": "Insert attachment",
+  "removeAttachment": "Remove attachment",
+  "previewUnavailable": "Preview unavailable",
+  "annotationHint": "Click a point in the image, enter a note, then insert it into the current draft.",
+  "markImage": "Mark image",
+  "annotationTip": "Annotation note",
+  "insertAnnotation": "Insert annotation",
+  "closeAttachment": "Close attachment"
 }

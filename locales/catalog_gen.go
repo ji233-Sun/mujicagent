@@ -1325,3 +1325,83 @@ func NoReleaseNotes() string { return In(i18n.Locale()).NoReleaseNotes() }
 func (msgs Messages) NoReleaseNotes() string {
 	return Catalog.Format(msgs.locale, "noReleaseNotes", nil)
 }
+
+// AttachFile says "插入附件"
+// in the language the app shows.
+func AttachFile() string { return In(i18n.Locale()).AttachFile() }
+
+// AttachFile says "插入附件"
+// in the language of msgs.
+func (msgs Messages) AttachFile() string {
+	return Catalog.Format(msgs.locale, "attachFile", nil)
+}
+
+// RemoveAttachment says "移除附件"
+// in the language the app shows.
+func RemoveAttachment() string { return In(i18n.Locale()).RemoveAttachment() }
+
+// RemoveAttachment says "移除附件"
+// in the language of msgs.
+func (msgs Messages) RemoveAttachment() string {
+	return Catalog.Format(msgs.locale, "removeAttachment", nil)
+}
+
+// PreviewUnavailable says "无法预览"
+// in the language the app shows.
+func PreviewUnavailable() string { return In(i18n.Locale()).PreviewUnavailable() }
+
+// PreviewUnavailable says "无法预览"
+// in the language of msgs.
+func (msgs Messages) PreviewUnavailable() string {
+	return Catalog.Format(msgs.locale, "previewUnavailable", nil)
+}
+
+// AnnotationHint says "点击图片选择位置，填写说明后插入当前草稿。"
+// in the language the app shows.
+func AnnotationHint() string { return In(i18n.Locale()).AnnotationHint() }
+
+// AnnotationHint says "点击图片选择位置，填写说明后插入当前草稿。"
+// in the language of msgs.
+func (msgs Messages) AnnotationHint() string {
+	return Catalog.Format(msgs.locale, "annotationHint", nil)
+}
+
+// MarkImage says "标记图片"
+// in the language the app shows.
+func MarkImage() string { return In(i18n.Locale()).MarkImage() }
+
+// MarkImage says "标记图片"
+// in the language of msgs.
+func (msgs Messages) MarkImage() string {
+	return Catalog.Format(msgs.locale, "markImage", nil)
+}
+
+// AnnotationTip says "标记说明"
+// in the language the app shows.
+func AnnotationTip() string { return In(i18n.Locale()).AnnotationTip() }
+
+// AnnotationTip says "标记说明"
+// in the language of msgs.
+func (msgs Messages) AnnotationTip() string {
+	return Catalog.Format(msgs.locale, "annotationTip", nil)
+}
+
+// InsertAnnotation says "插入标记"
+// in the language the app shows.
+func InsertAnnotation() string { return In(i18n.Locale()).InsertAnnotation() }
+
+// InsertAnnotation says "插入标记"
+// in the language of msgs.
+func (msgs Messages) InsertAnnotation() string {
+	return Catalog.Format(msgs.locale, "insertAnnotation", nil)
+}
+
+// CloseAttachment says "关闭附件"
+// in the language the app shows.
+func CloseAttachment() string { return In(i18n.Locale()).CloseAttachment() }
+
+// CloseAttachment says "关闭附件"
+// in the language of msgs.
+func (msgs Messages) CloseAttachment() string {
+	return Catalog.Format(msgs.locale, "closeAttachment", nil)
+}
