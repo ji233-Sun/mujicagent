@@ -77,17 +77,13 @@ func (v *View) Render(c *ui.Context) {
 	if c.Vibrancy() {
 		c.Root().Background(ui.Transparent)
 	}
-	c.OnShortcut(ui.Cmd, ui.KeyN, func() { v.Settings = false; v.C.NewThread("") })
-	c.OnShortcut(ui.Ctrl, ui.KeyN, func() { v.Settings = false; v.C.NewThread("") })
 	ui.Row(c).Fill().AlignItems(ui.Stretch).Children(func() {
 		side := ui.Column(c).Width(246).Shrink(0).Padding(0, 12, 12)
 		if !c.Vibrancy() {
 			side.Background(c.Theme().Surface)
 		}
 		side.Children(func() {
-			ui.Row(c).Height(54).Shrink(0).Padding(0, 4, 0, max(c.TitleBar().Left-12, 76)).AlignItems(ui.Center).Justify(ui.End).DragWindow().Children(func() {
-				iconButton(c, tx.NewConversation(), plus, func() { v.Settings = false; v.C.NewThread("") })
-			})
+			ui.Row(c).Height(54).Shrink(0).Padding(0, 4, 0, max(c.TitleBar().Left-12, 76)).AlignItems(ui.Center).Justify(ui.End).DragWindow()
 			v.sidebar(c)
 		})
 		ui.Column(c).Grow(1).MinWidth(0).Margin(8, 8, 8, 0).Radius(16).Border(1, c.Theme().Border).Background(c.Theme().Background).Clip().Children(func() {
@@ -341,7 +337,7 @@ func (v *View) composer(c *ui.Context, t *model.Thread) {
 				if busy {
 					iconButton(c, tx.Stop(), stopIcon, v.C.Interrupt)
 				} else {
-					ui.PrimaryButton(c, "").Label(tx.Send()).Tooltip(tx.SendHint()).Size(30, 30).Padding(0).Gap(0).Center().Radius(15).Disabled(strings.TrimSpace(*draft) == "" || v.C.Connection != "Connected").Children(func() { ui.Icon(c, arrow).Size(16, 16).Shrink(0) }).OnClick(func() {
+					ui.PrimaryButton(c, "").Label(tx.Send()).Tooltip(tx.SendHint()).Size(30, 30).Padding(0).Gap(0).Center().Radius(15).Disabled(t == nil || t.ProjectID == "" || strings.TrimSpace(*draft) == "" || v.C.Connection != "Connected").Children(func() { ui.Icon(c, arrow).Size(16, 16).Shrink(0) }).OnClick(func() {
 						if v.C.Send(*draft, false) {
 							v.draft = ""
 						}
