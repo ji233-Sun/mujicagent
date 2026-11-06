@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.1.7
+
+#### What's Changed
+* fix: 统一更新清单来源并修正检查状态 by @ji233-Sun in https://github.com/ji233-Sun/mujicagent/pull/12
+* fix: 删除设置页冗余说明文字 by @ji233-Sun in https://github.com/ji233-Sun/mujicagent/pull/15
+* fix: 支持 MCP elicitation 并统一审批卡片样式 by @ji233-Sun in https://github.com/ji233-Sun/mujicagent/pull/18
+* feat: 支持会话权限调整并显示生效边界 by @ji233-Sun in https://github.com/ji233-Sun/mujicagent/pull/20
+* fix: 仅在权限调整待生效时显示简短提示 by @ji233-Sun in https://github.com/ji233-Sun/mujicagent/pull/21
+* fix: 让对话流自适应宽屏 by @ji233-Sun in https://github.com/ji233-Sun/mujicagent/pull/22
+* feat: 支持消息排队、拖动排序与对话引导 by @ji233-Sun in https://github.com/ji233-Sun/mujicagent/pull/23
+
+
+**Full Changelog**: https://github.com/ji233-Sun/mujicagent/compare/v0.1.6...v0.1.7
+
+### Commits
+
+- fix: 移除队列和插入消息的说明标签 (5bbebf2)
+- feat: 支持消息排队、拖动排序与对话引导 (4804783)
+- fix: 让对话流自适应宽屏 (5b550ba)
+- fix: 仅在权限调整待生效时显示提示 (e4d34e2)
+- fix: 精简权限生效提示文案 (79921d5)
+- feat: 支持会话权限调整并显示生效边界 (f8b52fe)
+- fix: 支持 MCP elicitation 并统一审批卡片样式 (a574453)
+- fix: 删除设置页冗余说明文字 (da60ee5)
+- fix: 统一更新清单来源并修正检查状态 (7d5428b)
+
 ## 0.1.6
 
 #### What's Changed
