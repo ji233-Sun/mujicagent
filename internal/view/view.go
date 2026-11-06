@@ -121,13 +121,7 @@ func (v *View) sidebar(c *ui.Context) {
 	tx := v.texts()
 	ui.Text(c, "MujicAgent").Bold().FontSize(14).Padding(10, 10, 18)
 	ui.Scroll(c.Key("active-threads")).Grow(1).MinHeight(0).Gap(12).Children(func() {
-		ui.Column(c.Key("projectless-threads")).Gap(2).Children(func() {
-			for _, t := range v.C.State.Threads {
-				if !t.Settled && t.ProjectID == "" {
-					v.threadRow(c, t, true)
-				}
-			}
-		})
+		v.group(c, model.Project{Name: tx.NoProject(), Expanded: v.C.State.NoProjectExpanded})
 		for _, p := range v.C.State.Projects {
 			v.group(c, p)
 		}
@@ -153,15 +147,19 @@ func (v *View) group(c *ui.Context, p model.Project) {
 		header.Children(func() {
 			ui.ButtonBase(c.Key("toggle")).Fill().Padding(0, 8).Gap(8).AlignItems(ui.Center).
 				Label(p.Name).Tooltip(p.Path).Expanded(p.Expanded).Children(func() {
-				ui.Icon(c, folder).Size(16, 16).Shrink(0).TextColor(c.Theme().TextMuted)
+				icon := folder
+				if p.ID == "" {
+					icon = noProjectFolder
+				}
+				ui.Icon(c, icon).Size(16, 16).Shrink(0).TextColor(c.Theme().TextMuted)
 				ui.Text(c, p.Name).FontSize(12).Grow(1).MinWidth(0).SingleLine()
 				ui.Box(c).Width(26).Shrink(0)
 				angle := float32(0)
 				if p.Expanded {
 					angle = 90
 				}
-				icon := ui.Icon(c, chevron).Size(14, 14).Shrink(0).TextColor(c.Theme().TextMuted)
-				icon.Rotate(icon.Animate("rotation", angle, 180*time.Millisecond))
+				arrow := ui.Icon(c, chevron).Size(14, 14).Shrink(0).TextColor(c.Theme().TextMuted)
+				arrow.Rotate(arrow.Animate("rotation", angle, 180*time.Millisecond))
 			}).OnClick(func() { v.C.SetProjectExpanded(p.ID, !p.Expanded) })
 			if hovered {
 				iconButton(c, v.texts().NewInProject(p.Name), plus, func() {
@@ -393,7 +391,7 @@ func (v *View) composer(c *ui.Context, t *model.Thread) {
 				v.modelSelector(c)
 				v.permissionSelector(c)
 				ui.Box(c).Grow(1)
-				iconButton(c, tx.AttachFile(), plus, v.pickAttachments).Disabled(t == nil || t.ProjectID == "")
+				iconButton(c, tx.AttachFile(), plus, v.pickAttachments).Disabled(t == nil)
 				if busy {
 					iconButton(c, tx.Stop(), stopIcon, v.C.Interrupt)
 				}
@@ -402,7 +400,7 @@ func (v *View) composer(c *ui.Context, t *model.Thread) {
 					if busy {
 						label = tx.QueueAdd()
 					}
-					ui.PrimaryButton(c, "").Label(label).Tooltip(label).Size(30, 30).Padding(0).Gap(0).Center().Radius(15).Disabled(t == nil || t.ProjectID == "" || strings.TrimSpace(*draft) == "" || v.C.Connection != "Connected").Children(func() { ui.Icon(c, arrow).Size(16, 16).Shrink(0) }).OnClick(func() {
+					ui.PrimaryButton(c, "").Label(label).Tooltip(label).Size(30, 30).Padding(0).Gap(0).Center().Radius(15).Disabled(t == nil || strings.TrimSpace(*draft) == "" || v.C.Connection != "Connected").Children(func() { ui.Icon(c, arrow).Size(16, 16).Shrink(0) }).OnClick(func() {
 						if v.C.Send(*draft, false) {
 							v.draft = ""
 						}

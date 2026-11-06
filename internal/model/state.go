@@ -39,6 +39,7 @@ type Thread struct {
 	ID, ServerID, ProjectID, Title, Cwd string
 	Settled                             bool
 	Updated                             time.Time
+	Created                             time.Time
 	Turns                               []Turn
 	Draft                               string
 	PermissionProfile                   string
@@ -48,11 +49,12 @@ type Settings struct {
 	DeveloperMode                                                                         bool
 }
 type State struct {
-	Version  int
-	Projects []Project
-	Threads  []*Thread
-	Selected string
-	Settings Settings
+	NoProjectExpanded bool
+	Version           int
+	Projects          []Project
+	Threads           []*Thread
+	Selected          string
+	Settings          Settings
 }
 
 func New() *State {
@@ -74,7 +76,7 @@ func (s *State) Thread(id string) *Thread {
 	return nil
 }
 func (s *State) AddThread(projectID, cwd string) *Thread {
-	t := &Thread{ID: ID(), ProjectID: projectID, Cwd: cwd, Title: "New conversation", Updated: time.Now(), PermissionProfile: s.Settings.DefaultPermissionProfile}
+	t := &Thread{ID: ID(), ProjectID: projectID, Cwd: cwd, Title: "New conversation", Updated: time.Now(), Created: time.Now(), PermissionProfile: s.Settings.DefaultPermissionProfile}
 	s.Threads = append([]*Thread{t}, s.Threads...)
 	s.Selected = t.ID
 	return t

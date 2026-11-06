@@ -214,7 +214,7 @@ func TestServiceTierRequests(t *testing.T) {
 		t.Fatal(err)
 	}
 	attachment := model.Attachment{Kind: "image", Path: imagePath, X: 25, Y: 75, Tip: "change this"}
-	for _, tc := range []struct{ model, selected, sent string }{
+	for caseIndex, tc := range []struct{ model, selected, sent string }{
 		{"speed-model", "priority", "priority"},
 		{"speed-model", "ultrafast", "ultrafast"},
 		{"speed-model", "", "default"},
@@ -222,6 +222,11 @@ func TestServiceTierRequests(t *testing.T) {
 		{"plain-model", "priority", "default"},
 		{"unknown-model", "ultrafast", "default"},
 	} {
+		if caseIndex == 5 {
+			t.Setenv("MUJICAGENT_DATA_DIR", dir)
+			c.NewThread("")
+			thread = c.State.Thread(c.State.Selected)
+		}
 		c.State.Settings.Model, c.State.Settings.ServiceTier = tc.model, tc.selected
 		if !c.Send("speed test "+attachment.Link()+" end", false) {
 			t.Fatal(c.Error)
@@ -253,6 +258,13 @@ func TestServiceTierRequests(t *testing.T) {
 		}
 		if len(wire.Input) != 4 || wire.Input[0].Text != "speed test " || wire.Input[2].Type != "localImage" || wire.Input[2].Path != imagePath || wire.Input[3].Text != " end" || !strings.Contains(wire.Input[1].Text, "25.00%, 75.00%") {
 			t.Fatalf("incorrect attachment input: %s", data)
+		}
+		if caseIndex == 5 {
+			data, err := os.ReadFile(request + "-thread")
+			var start struct{ Cwd string }
+			if err != nil || json.Unmarshal(data, &start) != nil || start.Cwd != thread.Cwd || !strings.HasPrefix(start.Cwd, filepath.Join(dir, "workspace")) {
+				t.Fatalf("incorrect projectless cwd: %s, %v", data, err)
+			}
 		}
 		var permissions struct {
 			Permissions, ApprovalPolicy, ApprovalsReviewer string
@@ -865,9 +877,9 @@ func TestLiveAsk(t *testing.T) {
 	}
 }
 
-func TestProjectRequiredForSessions(t *testing.T) {
+func TestInvalidAndLegacySessions(t *testing.T) {
 	c := New(t.TempDir(), model.New(), nil)
-	for _, id := range []string{"", "missing"} {
+	for _, id := range []string{"missing"} {
 		c.NewThread(id)
 		if len(c.State.Threads) != 0 || c.State.Selected != "" {
 			t.Fatal("invalid project created a conversation")
@@ -912,5 +924,126 @@ func TestMcpElicitationQueueAndCleanup(t *testing.T) {
 				t.Fatal("disconnected request retained")
 			}
 		}
+	}
+}
+
+func TestProjectlessWorkspace(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("MUJICAGENT_DATA_DIR", dir)
+	c := New(dir, model.New(), nil)
+	c.NewThread("")
+	thread := c.State.Thread(c.State.Selected)
+	if thread == nil || thread.Settled || thread.Cwd != "" || !c.State.NoProjectExpanded {
+		t.Fatal("invalid blank conversation")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "workspace")); !os.IsNotExist(err) {
+		t.Fatal("draft allocated a directory")
+	}
+	thread.Created = time.Date(2025, 12, 31, 23, 59, 0, 0, time.FixedZone("local", -8*3600))
+	if err := c.prepareWorkspace(thread, "Organize 下载 / FILES"); err != nil {
+		t.Fatal(err)
+	}
+	path := thread.Cwd
+	if !strings.Contains(path, "/workspace/2025/12/organize-files-") || len(filepath.Base(path)) != len("organize-files-")+8 {
+		t.Fatal(path)
+	}
+	if err := os.WriteFile(filepath.Join(path, "keep"), []byte("keep"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	c.NewThread("")
+	second := c.State.Thread(c.State.Selected)
+	second.Created = thread.Created
+	if err := c.prepareWorkspace(second, "Organize 下载 / FILES"); err != nil {
+		t.Fatal(err)
+	}
+	if second.Cwd == path {
+		t.Fatal("shared directory")
+	}
+	if _, err := os.Stat(filepath.Join(second.Cwd, "keep")); !os.IsNotExist(err) {
+		t.Fatal("shared files")
+	}
+	state, err := model.Load(filepath.Join(dir, "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c = New(dir, state, nil)
+	saved := state.Thread(thread.ID)
+	saved.Title = "Changed title"
+	saved.Updated = time.Now()
+	if err := c.prepareWorkspace(saved, "different"); err != nil || saved.Cwd != path {
+		t.Fatalf("directory changed: %v", err)
+	}
+	if data, err := os.ReadFile(filepath.Join(path, "keep")); err != nil || string(data) != "keep" {
+		t.Fatal("lost file")
+	}
+	c.Settle(saved.ID, true)
+	c.Settle(saved.ID, false)
+	if saved.Settled || saved.ProjectID != "" {
+		t.Fatal("restore changed ownership")
+	}
+}
+
+func TestWorkspaceSlugAndCollision(t *testing.T) {
+	for input, want := range map[string]string{
+		"HELLO World": "hello-world", "中文": "chat", "12345": "chat", "": "chat",
+		"Hello中文World": "hello-world", " / Hello---there / ": "hello-there",
+		"abcdefghijklmnopqrstuvw-XYZ": "abcdefghijklmnopqrstuvw",
+		"123456789012345678901234abc": "chat",
+	} {
+		if got := workspaceSlug(input); got != want {
+			t.Fatalf("%q: %q != %q", input, got, want)
+		}
+	}
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "chat-11111111"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	path, err := createWorkspace(dir, "chat", func() string {
+		calls++
+		if calls == 1 {
+			return "11111111"
+		}
+		return "22222222"
+	})
+	if err != nil || calls != 2 || filepath.Base(path) != "chat-22222222" {
+		t.Fatalf("%s %v", path, err)
+	}
+}
+
+func TestWorkspaceFailuresAndAttachmentNames(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("MUJICAGENT_DATA_DIR", dir)
+	c := New(dir, model.New(), nil)
+	c.NewThread("")
+	thread := c.State.Thread(c.State.Selected)
+	if err := c.prepareWorkspace(thread, (model.Attachment{Kind: "file", Path: "/tmp/secret-filename.txt"}).Link()); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(filepath.Base(thread.Cwd), "chat-") {
+		t.Fatal(thread.Cwd)
+	}
+	c.NewThread("")
+	named := c.State.Thread(c.State.Selected)
+	named.Title = "Custom TITLE"
+	if err := c.prepareWorkspace(named, "ignored text"); err != nil || !strings.HasPrefix(filepath.Base(named.Cwd), "custom-title-") {
+		t.Fatalf("%s %v", named.Cwd, err)
+	}
+	// A non-directory parent makes saving fail; no turn may start.
+	blocker := filepath.Join(dir, "blocked")
+	if err := os.WriteFile(blocker, []byte("keep"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	c.Dir = blocker
+	c.client, c.Connection = &codex.Client{}, "Connected"
+	if c.Send("hello", false) || c.Running[named.ID] || len(named.Turns) != 0 {
+		t.Fatal("started despite failed save")
+	}
+	c.Dir = dir
+	t.Setenv("MUJICAGENT_DATA_DIR", blocker)
+	c.NewThread("")
+	failed := c.State.Thread(c.State.Selected)
+	if c.Send("hello", false) || failed.Cwd != "" || c.Running[failed.ID] || len(failed.Turns) != 0 {
+		t.Fatal("started despite failed allocation")
 	}
 }
