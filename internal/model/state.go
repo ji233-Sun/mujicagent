@@ -105,6 +105,15 @@ func Load(path string) (*State, error) {
 	if s.Settings.DefaultPermissionProfile == "" {
 		s.Settings.DefaultPermissionProfile = ":approve-for-me"
 	}
+	// Reveal the last selected conversation's project when reopening the app.
+	if selected := s.Thread(s.Selected); selected != nil && selected.ProjectID != "" {
+		for i := range s.Projects {
+			if s.Projects[i].ID == selected.ProjectID {
+				s.Projects[i].Expanded = true
+				break
+			}
+		}
+	}
 	for _, t := range s.Threads {
 		if t.PermissionProfile == "" {
 			t.PermissionProfile = s.Settings.DefaultPermissionProfile

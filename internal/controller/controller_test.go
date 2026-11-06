@@ -721,6 +721,42 @@ func TestProjectsAndInterruptedRecovery(t *testing.T) {
 	if s.Thread(thread.ID).Turns[0].Status != "interrupted" {
 		t.Fatal("stuck running after restart")
 	}
+	if s.Selected != thread.ID || !s.Projects[0].Expanded {
+		t.Fatal("last conversation and its project were not restored")
+	}
+}
+
+func TestSettleStartsNewConversationInCurrentProject(t *testing.T) {
+	c := New(t.TempDir(), model.New(), nil)
+	c.AddProject(t.TempDir())
+	current := c.State.Thread(c.State.Selected)
+	current.Draft = "old draft"
+	current.Turns = []model.Turn{{Prompt: "old prompt", Status: "completed"}}
+	c.AddProject(t.TempDir())
+	other := c.State.Thread(c.State.Selected)
+	c.Select(current.ID)
+	c.Settle(current.ID, true)
+	next := c.State.Thread(c.State.Selected)
+	if next == nil || next.ID == current.ID || next.ID == other.ID || next.ProjectID != current.ProjectID || next.Cwd != current.Cwd {
+		t.Fatalf("wrong new conversation: %+v", next)
+	}
+	if !current.Settled || next.Settled || next.Draft != "" || len(next.Turns) != 0 || next.ServerID != "" || len(next.Queue) != 0 {
+		t.Fatal("settle did not create a blank conversation")
+	}
+	count := len(c.State.Threads)
+	c.Settle(other.ID, true)
+	c.Settle(current.ID, true)
+	c.Settle(current.ID, false)
+	if c.State.Selected != next.ID || len(c.State.Threads) != count {
+		t.Fatal("settling a background conversation or restoring one changed the current conversation")
+	}
+	s, err := model.Load(filepath.Join(c.Dir, "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Selected != next.ID || !s.Projects[0].Expanded || s.Projects[1].Expanded || len(s.Threads) != count {
+		t.Fatal("restart did not restore the current project and conversation")
+	}
 }
 
 func TestApprovalAndRequestResolution(t *testing.T) {

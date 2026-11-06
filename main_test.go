@@ -291,6 +291,12 @@ func TestManualSettleFromHover(t *testing.T) {
 	if !thread.Settled {
 		t.Fatal("manual settle not applied")
 	}
+	next := s.Thread(s.Selected)
+	if next == nil || next.ID == thread.ID || next.ProjectID != thread.ProjectID || next.Draft != "" || len(next.Turns) != 0 {
+		t.Fatal("settle did not open a blank conversation in the same project")
+	}
+	// Move off the new conversation's hover action before opening the shelf.
+	tt.Move(500, 100)
 	if err := tt.Click("收纳"); err != nil {
 		t.Fatal(err)
 	}
