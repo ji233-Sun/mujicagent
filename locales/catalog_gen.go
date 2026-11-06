@@ -34,6 +34,36 @@ type Messages struct{ locale string }
 // source language.
 func In(locale string) Messages { return Messages{locale} }
 
+// ActivityOutput says "执行输出"
+// in the language the app shows.
+func ActivityOutput() string { return In(i18n.Locale()).ActivityOutput() }
+
+// ActivityOutput says "执行输出"
+// in the language of msgs.
+func (msgs Messages) ActivityOutput() string {
+	return Catalog.Format(msgs.locale, "activityOutput", nil)
+}
+
+// ExpandOutput says "展开输出"
+// in the language the app shows.
+func ExpandOutput() string { return In(i18n.Locale()).ExpandOutput() }
+
+// ExpandOutput says "展开输出"
+// in the language of msgs.
+func (msgs Messages) ExpandOutput() string {
+	return Catalog.Format(msgs.locale, "expandOutput", nil)
+}
+
+// CollapseOutput says "收起输出"
+// in the language the app shows.
+func CollapseOutput() string { return In(i18n.Locale()).CollapseOutput() }
+
+// CollapseOutput says "收起输出"
+// in the language of msgs.
+func (msgs Messages) CollapseOutput() string {
+	return Catalog.Format(msgs.locale, "collapseOutput", nil)
+}
+
 // NewConversation says "新对话"
 // in the language the app shows.
 func NewConversation() string { return In(i18n.Locale()).NewConversation() }

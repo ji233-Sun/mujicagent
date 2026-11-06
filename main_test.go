@@ -505,9 +505,22 @@ func TestGroupedActivity(t *testing.T) {
 		t.Fatal(err)
 	}
 	tt.Advance(250 * time.Millisecond)
-	if !tt.HasText("PRIVATE_OUTPUT") || tt.HasText("PRIVATE_REASONING") {
+	// The virtualized output is a read-only editor, not a Text element.
+	if _, ok := tt.Find("执行输出"); !ok || tt.HasText("PRIVATE_REASONING") {
 		t.Fatal("only the chosen activity details should expand")
 	}
+	checkOutput := func() {
+		t.Helper()
+		if err := tt.Click("执行输出"); err != nil {
+			t.Fatal(err)
+		}
+		tt.Key(ui.Cmd, ui.KeyA)
+		tt.Key(ui.Cmd, ui.KeyC)
+		if tt.Clipboard() != "$ go test\nPRIVATE_OUTPUT" {
+			t.Fatalf("unexpected visible output: %q", tt.Clipboard())
+		}
+	}
+	checkOutput()
 	if err := tt.Click("思考摘要"); err != nil {
 		t.Fatal(err)
 	}
@@ -536,9 +549,10 @@ func TestGroupedActivity(t *testing.T) {
 	tt.Advance(250 * time.Millisecond)
 	thread.Turns[0].Items[6].Text += "\nBUILD_OUTPUT"
 	tt.Frame()
-	if !tt.HasText("PRIVATE_OUTPUT") || tt.HasText("BUILD_OUTPUT") {
+	if _, ok := tt.Find("执行输出"); !ok || tt.HasText("BUILD_OUTPUT") {
 		t.Fatal("streaming changed disclosure state")
 	}
+	checkOutput()
 	if err := tt.Click(summary); err != nil {
 		t.Fatal(err)
 	}
