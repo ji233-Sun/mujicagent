@@ -1737,3 +1737,33 @@ func QueueResume() string { return In(i18n.Locale()).QueueResume() }
 func (msgs Messages) QueueResume() string {
 	return Catalog.Format(msgs.locale, "queueResume", nil)
 }
+
+// QueueEdit says "编辑待发送消息"
+// in the language the app shows.
+func QueueEdit() string { return In(i18n.Locale()).QueueEdit() }
+
+// QueueEdit says "编辑待发送消息"
+// in the language of msgs.
+func (msgs Messages) QueueEdit() string {
+	return Catalog.Format(msgs.locale, "queueEdit", nil)
+}
+
+// QueueEditing says "正在编辑待发送消息 · 保存后保留原位"
+// in the language the app shows.
+func QueueEditing() string { return In(i18n.Locale()).QueueEditing() }
+
+// QueueEditing says "正在编辑待发送消息 · 保存后保留原位"
+// in the language of msgs.
+func (msgs Messages) QueueEditing() string {
+	return Catalog.Format(msgs.locale, "queueEditing", nil)
+}
+
+// QueueSave says "保存到原位"
+// in the language the app shows.
+func QueueSave() string { return In(i18n.Locale()).QueueSave() }
+
+// QueueSave says "保存到原位"
+// in the language of msgs.
+func (msgs Messages) QueueSave() string {
+	return Catalog.Format(msgs.locale, "queueSave", nil)
+}

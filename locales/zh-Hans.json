@@ -169,5 +169,8 @@
   "queueSteer": "插入对话",
   "queueSteerHint": "引导当前对话，在工具调用完成后生效",
   "queueSending": "提交中…",
-  "queueResume": "继续发送"
+  "queueResume": "继续发送",
+  "queueEdit": "编辑待发送消息",
+  "queueEditing": "正在编辑待发送消息 · 保存后保留原位",
+  "queueSave": "保存到原位"
 }

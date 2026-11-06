@@ -186,6 +186,7 @@ func (v *View) loadAttachments(load func() ([]string, error)) {
 		return
 	}
 	doc, id, w := v.editor, v.editorThread, v.Window
+	edit := v.C.QueueEdit(id)
 	a, b := doc.Selection()
 	start, end, version := min(a, b), max(a, b), doc.Version()
 	go func() {
@@ -215,6 +216,9 @@ func (v *View) loadAttachments(load func() ([]string, error)) {
 			if t == nil || len(links) == 0 {
 				return
 			}
+			if edit != v.C.QueueEdit(id) {
+				return
+			}
 			if v.attachments == nil {
 				v.attachments = map[string]*attachmentPreview{}
 			}
@@ -229,11 +233,11 @@ func (v *View) loadAttachments(load func() ([]string, error)) {
 			text := v.composerText(strings.Join(links, " "))
 			doc.Edit(func(e *richtext.Edit) { e.Replace(start, end, text); e.Select(start+text.Len(), start+text.Len()) })
 			if v.editor == doc && v.editorThread == id {
-				v.syncComposer(&t.Draft)
+				v.syncComposer(v.C.ComposerDraft(t))
 				v.editorHandle.Focus()
 			} else {
 				// Do not overwrite a draft that was replaced while the dialog was open.
-				t.Draft += strings.Join(links, " ")
+				*v.C.ComposerDraft(t) += strings.Join(links, " ")
 			}
 			v.C.Save()
 		})
@@ -294,7 +298,7 @@ func (v *View) attachmentDialog(c *ui.Context) {
 									if run.Attributes.Attachment != nil && run.Attributes.Attachment.URL == v.attachment.Link() {
 										text := v.composerText(a.Link())
 										v.editor.Edit(func(e *richtext.Edit) { e.Replace(at, at+1, text) })
-										v.syncComposer(&t.Draft)
+										v.syncComposer(v.C.ComposerDraft(t))
 										replaced = true
 										break
 									}

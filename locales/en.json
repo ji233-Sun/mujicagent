@@ -169,5 +169,8 @@
   "queueSteer": "Steer",
   "queueSteerHint": "Guide this turn after the tool call finishes",
   "queueSending": "Sending…",
-  "queueResume": "Resume queue"
+  "queueResume": "Resume queue",
+  "queueEdit": "Edit queued message",
+  "queueEditing": "Editing queued message · keeps its position",
+  "queueSave": "Save to original position"
 }

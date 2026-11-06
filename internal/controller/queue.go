@@ -7,6 +7,54 @@ import (
 	"github.com/ji233-Sun/mujicagent/internal/model"
 )
 
+// QueueEdit keeps the original queue slot and ordinary draft intact until saved.
+type QueueEdit struct{ ID, Text string }
+
+func (c *Controller) QueueEdit(threadID string) *QueueEdit { return c.queueEdits[threadID] }
+
+func (c *Controller) ComposerDraft(t *model.Thread) *string {
+	if edit := c.QueueEdit(t.ID); edit != nil {
+		return &edit.Text
+	}
+	return &t.Draft
+}
+
+func (c *Controller) EditQueued(threadID, id string) bool {
+	t := c.State.Thread(threadID)
+	if t == nil || c.QueueEdit(threadID) != nil {
+		return false
+	}
+	for _, q := range t.Queue {
+		if q.ID == id && !q.Sending {
+			if c.queueEdits == nil {
+				c.queueEdits = make(map[string]*QueueEdit)
+			}
+			c.queueEdits[threadID] = &QueueEdit{ID: id, Text: q.Text}
+			return true
+		}
+	}
+	return false
+}
+
+func (c *Controller) CancelQueueEdit(threadID string) { delete(c.queueEdits, threadID) }
+
+func (c *Controller) DeleteQueued(threadID, id string) {
+	t := c.State.Thread(threadID)
+	if t == nil {
+		return
+	}
+	for _, q := range t.Queue {
+		if q.ID == id && !q.Sending {
+			if edit := c.QueueEdit(threadID); edit != nil && edit.ID == id {
+				c.CancelQueueEdit(threadID)
+			}
+			c.removeQueued(t, id)
+			c.Save()
+			return
+		}
+	}
+}
+
 func (c *Controller) removeQueued(t *model.Thread, id string) {
 	for i, q := range t.Queue {
 		if q.ID == id {
@@ -33,6 +81,9 @@ func (c *Controller) MoveQueued(threadID, id, target string) {
 	if from < 0 || to < 0 || from == to {
 		return
 	}
+	if t.Queue[from].Sending {
+		return
+	}
 	q := t.Queue[from]
 	t.Queue = append(t.Queue[:from], t.Queue[from+1:]...)
 	t.Queue = append(t.Queue, model.QueuedMessage{})
@@ -52,6 +103,9 @@ func (c *Controller) sendNext(t *model.Thread) {
 		}
 	}
 	q := &t.Queue[0]
+	if edit := c.QueueEdit(t.ID); edit != nil && edit.ID == q.ID {
+		return
+	}
 	q.Sending = true
 	if !c.sendThread(t, q.Text, false, q.ID) {
 		q.Sending = false
@@ -77,6 +131,9 @@ func (c *Controller) Steer(threadID, id string) {
 		q := &t.Queue[i]
 		if q.ID != id || q.Sending {
 			continue
+		}
+		if edit := c.QueueEdit(t.ID); edit != nil && edit.ID == id {
+			return
 		}
 		text := q.Text
 		q.Sending = true

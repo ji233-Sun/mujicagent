@@ -435,6 +435,12 @@ func TestServiceTierRequests(t *testing.T) {
 			t.Fatal("tool completion advanced queue")
 		}
 		os.WriteFile(request+"-reject", []byte("yes"), 0600)
+		c.EditQueued(thread.ID, b)
+		c.Steer(thread.ID, b)
+		if thread.Queue[1].Sending {
+			t.Fatal("steer sent an editing message")
+		}
+		c.CancelQueueEdit(thread.ID)
 		c.Steer(thread.ID, b)
 		wait(func() bool { return !thread.Queue[1].Sending })
 		if len(thread.Queue) != 2 || !strings.Contains(c.Error, "turn mismatch") {
@@ -456,7 +462,13 @@ func TestServiceTierRequests(t *testing.T) {
 		}
 		thread.Draft = "unsent draft"
 		c.State.Selected = other.ID
+		c.EditQueued(thread.ID, cc)
 		notify(c, "turn/completed", `{"threadId":"speed-thread","turn":{"id":"speed-turn","status":"completed"}}`)
+		if len(thread.Queue) != 1 || c.Running[thread.ID] {
+			t.Fatal("completion sent an editing message")
+		}
+		c.CancelQueueEdit(thread.ID)
+		c.ResumeQueue(thread.ID)
 		wait(func() bool { return len(thread.Queue) == 0 })
 		if len(thread.Turns) != initial+1 || thread.Turns[initial].Prompt != "C" || thread.Draft != "unsent draft" || len(other.Turns) != 0 {
 			t.Fatal("queue targeted wrong thread or draft")
@@ -1081,5 +1093,51 @@ func TestWorkspaceFailuresAndAttachmentNames(t *testing.T) {
 	failed := c.State.Thread(c.State.Selected)
 	if c.Send("hello", false) || failed.Cwd != "" || c.Running[failed.ID] || len(failed.Turns) != 0 {
 		t.Fatal("started despite failed allocation")
+	}
+}
+
+func TestQueueEditingAndDeletion(t *testing.T) {
+	s := model.New()
+	c := New(t.TempDir(), s, nil)
+	c.AddProject(t.TempDir())
+	thread := s.Thread(s.Selected)
+	thread.Draft = "ordinary draft"
+	thread.Queue = []model.QueuedMessage{{ID: "a", Text: "first"}, {ID: "b", Text: "second"}, {ID: "c", Text: "sending", Sending: true}}
+	if !c.EditQueued(thread.ID, "b") {
+		t.Fatal("edit failed")
+	}
+	*c.ComposerDraft(thread) = "edited"
+	if thread.Draft != "ordinary draft" || thread.Queue[1].Text != "second" {
+		t.Fatal("edit changed original")
+	}
+	if c.EditQueued(thread.ID, "a") {
+		t.Fatal("replaced unsaved edit")
+	}
+	c.DeleteQueued(thread.ID, "a")
+	if !c.Send("edited", false) || thread.Queue[0].ID != "b" || thread.Queue[0].Text != "edited" {
+		t.Fatal("save lost original slot")
+	}
+	if thread.Draft != "ordinary draft" || c.QueueEdit(thread.ID) != nil {
+		t.Fatal("save lost draft or edit state")
+	}
+	if !c.EditQueued(thread.ID, "b") {
+		t.Fatal("second edit failed")
+	}
+	c.CancelQueueEdit(thread.ID)
+	if thread.Queue[0].Text != "edited" {
+		t.Fatal("cancel changed queue")
+	}
+	c.DeleteQueued(thread.ID, "c")
+	if c.EditQueued(thread.ID, "c") || len(thread.Queue) != 2 {
+		t.Fatal("sending message modified")
+	}
+	c.EditQueued(thread.ID, "b")
+	c.DeleteQueued(thread.ID, "b")
+	if len(thread.Queue) != 1 || c.QueueEdit(thread.ID) != nil {
+		t.Fatal("delete left editing state")
+	}
+	loaded, err := model.Load(filepath.Join(c.Dir, "state.json"))
+	if err != nil || len(loaded.Thread(thread.ID).Queue) != 1 {
+		t.Fatal("queue deletion not persisted", err)
 	}
 }

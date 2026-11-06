@@ -185,3 +185,61 @@ func TestAttachmentComposer(t *testing.T) {
 		t.Fatal("attachment leaked to new conversation")
 	}
 }
+
+func TestQueuedComposerAndDrag(t *testing.T) {
+	state := model.New()
+	ctrl := controller.New(t.TempDir(), state, nil)
+	ctrl.AddProject(t.TempDir())
+	thread := state.Thread(state.Selected)
+	thread.Draft = "preserved draft"
+	thread.Queue = []model.QueuedMessage{{ID: "a", Text: "first message"}, {ID: "b", Text: "second message"}}
+	v := New(ctrl)
+	tt := ui.NewTester(v.Render, 1140, 780)
+	tt.Frame()
+	if err := tt.Click("编辑待发送消息"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if ctrl.QueueEdit(thread.ID) == nil || v.editorSource != "first message" {
+		t.Fatal("not loaded into composer")
+	}
+	v.insertComposer(" edited")
+	tt.Frame()
+	tt.Key(0, ui.KeyEnter)
+	tt.Frame()
+	if thread.Queue[0].Text != "first message edited" || thread.Draft != "preserved draft" {
+		t.Fatal("save lost text or draft")
+	}
+	a, ok := tt.Find("first message edited")
+	if !ok {
+		t.Fatal("source missing")
+	}
+	b, ok := tt.Find("second message")
+	if !ok {
+		t.Fatal("target missing")
+	}
+	tt.Press(a.X+10, a.Y+5)
+	tt.Move(b.X+10, b.Y+5)
+	tt.Frame()
+	tt.Release(b.X+10, b.Y+5)
+	tt.Frame()
+	if thread.Queue[1].ID != "a" {
+		t.Fatal("whole card did not drag")
+	}
+	if err := tt.Click("编辑待发送消息"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	tt.Key(0, ui.KeyEscape)
+	tt.Frame()
+	if ctrl.QueueEdit(thread.ID) != nil || v.editorSource != thread.Draft {
+		t.Fatal("cancel did not restore draft")
+	}
+	if err := tt.Click("删除"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if len(thread.Queue) != 1 {
+		t.Fatal("delete failed")
+	}
+}

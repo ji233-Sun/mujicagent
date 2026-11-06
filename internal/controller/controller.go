@@ -32,6 +32,7 @@ type Controller struct {
 	turnPermissions                     map[string]string
 	Requests                            []*codex.Request
 	Running                             map[string]bool
+	queueEdits                          map[string]*QueueEdit
 	client                              *codex.Client
 	loaded                              map[string]bool
 	events                              chan func()
@@ -283,6 +284,7 @@ func (c *Controller) DeleteThread(id string) {
 		}
 		delete(c.loaded, id)
 		delete(c.Running, id)
+		c.CancelQueueEdit(id)
 		return
 	}
 }
@@ -312,6 +314,18 @@ func (c *Controller) serviceTier() string {
 func (c *Controller) Send(text string, plan bool) bool {
 	text = strings.TrimSpace(text)
 	if text == "" {
+		return false
+	}
+	if edit := c.QueueEdit(c.State.Selected); edit != nil {
+		t := c.State.Thread(c.State.Selected)
+		for i := range t.Queue {
+			if t.Queue[i].ID == edit.ID && !t.Queue[i].Sending {
+				t.Queue[i].Text = text
+				delete(c.queueEdits, t.ID)
+				c.Save()
+				return true
+			}
+		}
 		return false
 	}
 	if c.client == nil || c.Connection != "Connected" {
