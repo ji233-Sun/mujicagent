@@ -10,7 +10,7 @@ func (c *Controller) PermissionID() string {
 	if t := c.State.Thread(c.State.Selected); t != nil && t.PermissionProfile != "" {
 		return t.PermissionProfile
 	}
-	return ":workspace"
+	return c.State.Settings.DefaultPermissionProfile
 }
 
 // Refresh on each opening: profiles may differ between project directories.
