@@ -32,10 +32,14 @@ func (v *View) appUpdates(c *ui.Context) {
 		ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
 			status := tx.AutoCheckUpdates()
 			switch {
+			case u.Checking:
+				status = tx.CheckingForUpdates()
 			case u.Installing:
 				status = tx.DownloadingUpdate()
 			case u.Ready:
 				status = tx.UpdateReady()
+			case u.Error != "":
+				status = tx.UpdateFailed()
 			case u.AvailableVersion != "":
 				status = tx.NewVersion(u.AvailableVersion)
 			case !u.Enabled:

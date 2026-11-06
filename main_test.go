@@ -246,6 +246,24 @@ func TestAppUpdatesView(t *testing.T) {
 	if !tt.HasText("No releases yet") || tt.HasText("Download update") {
 		t.Fatal("empty repository is not handled")
 	}
+	c.AppUpdates.Releases = []model.Release{{Tag: "v0.1.5"}}
+	c.AppUpdates.Checking = true
+	tt.Frame()
+	if !tt.HasText("Checking…") || tt.HasText("You’re up to date") {
+		t.Fatal("checking must replace the previous result")
+	}
+	c.AppUpdates.Checking = false
+	c.AppUpdates.Error = "release v0.1.5 has update manifest version 0.1.4"
+	tt.Frame()
+	if !tt.HasText("Update failed. Please try again.") || tt.HasText("You’re up to date") || tt.HasText("Download update") {
+		t.Fatal("failed check must not claim the app is current or offer a stale update")
+	}
+	s.Settings.Language = "zh-Hans"
+	tt.SetLocale("zh-Hans")
+	tt.Frame()
+	if !tt.HasText("更新失败，请重试") || tt.HasText("已是最新版本") {
+		t.Fatal("failed update status must be localized")
+	}
 }
 
 func TestManualSettleFromHover(t *testing.T) {

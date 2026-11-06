@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -16,6 +17,48 @@ import (
 	"github.com/ji233-Sun/mujicagent/internal/codex"
 	"github.com/ji233-Sun/mujicagent/internal/model"
 )
+
+type updateTransport func(*http.Request) (*http.Response, error)
+
+func (f updateTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestReleaseUpdateManifest(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		body      string
+		status    int
+		wantError bool
+	}{
+		{"matching release", `{"version":"0.1.5","signature":"signed","url":"https://example.com/update.tar.gz"}`, 200, false},
+		{"old manifest", `{"version":"0.1.4"}`, 200, true},
+		{"missing version", `{}`, 200, true},
+		{"malformed manifest", `{`, 200, true},
+		{"missing asset", `Not found`, 404, true},
+		{"oversized manifest", strings.Repeat(" ", 1<<20+1), 200, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := &http.Client{Transport: updateTransport(func(r *http.Request) (*http.Response, error) {
+				want := "https://github.com/ji233-Sun/mujicagent/releases/download/v0.1.5/update-" + runtime.GOOS + "-" + runtime.GOARCH + ".json"
+				if r.URL.String() != want {
+					t.Fatalf("manifest URL = %s, want %s", r.URL, want)
+				}
+				return &http.Response{StatusCode: tc.status, Body: io.NopCloser(strings.NewReader(tc.body)), Header: make(http.Header)}, nil
+			})}
+			source := releaseUpdateSource{tag: "v0.1.5", client: client}
+			body, err := source.Manifest(context.Background(), false)
+			if (err != nil) != tc.wantError {
+				t.Fatalf("Manifest error = %v", err)
+			}
+			if err == nil {
+				defer body.Close()
+				data, err := io.ReadAll(body)
+				if err != nil || string(data) != tc.body {
+					t.Fatalf("manifest changed before MyGo validation: %q, %v", data, err)
+				}
+			}
+		})
+	}
+}
 
 func TestReleaseHistory(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
