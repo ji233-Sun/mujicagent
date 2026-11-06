@@ -49,6 +49,7 @@ type View struct {
 	composerMenu               *mygo.Menu
 	composerMenuLanguage       string
 	editorSource, editorThread string
+	editorQueue                string
 }
 
 func New(c *controller.Controller) *View {
@@ -381,11 +382,18 @@ func (v *View) composer(c *ui.Context, t *model.Thread) {
 		}
 		draft := &v.draft
 		if t != nil {
-			draft = &t.Draft
+			draft = v.C.ComposerDraft(t)
 		}
 		busy := t != nil && v.C.Running[t.ID]
 		v.messageQueue(c, t)
 		ui.Column(c).Radius(14).Border(1, c.Theme().Border).Background(c.Theme().Surface).Padding(12, 14, 8).Gap(8).Children(func() {
+			editing := t != nil && v.C.QueueEdit(t.ID) != nil
+			if editing {
+				ui.Row(c.Key("queue-edit-banner")).AlignItems(ui.Center).Gap(8).Transition(hoverTransition).Children(func() {
+					ui.Text(c, tx.QueueEditing()).TextColor(c.Theme().Accent).Grow(1)
+					ui.Button(c, tx.Cancel()).OnClick(func() { v.C.CancelQueueEdit(t.ID) })
+				})
+			}
 			v.composerInput(c, draft)
 			ui.Row(c).AlignItems(ui.Center).Gap(6).Children(func() {
 				v.modelSelector(c)
@@ -400,7 +408,10 @@ func (v *View) composer(c *ui.Context, t *model.Thread) {
 					if busy {
 						label = tx.QueueAdd()
 					}
-					ui.PrimaryButton(c, "").Label(label).Tooltip(label).Size(30, 30).Padding(0).Gap(0).Center().Radius(15).Disabled(t == nil || strings.TrimSpace(*draft) == "" || v.C.Connection != "Connected").Children(func() { ui.Icon(c, arrow).Size(16, 16).Shrink(0) }).OnClick(func() {
+					if editing {
+						label = tx.QueueSave()
+					}
+					ui.PrimaryButton(c, "").Label(label).Tooltip(label).Size(30, 30).Padding(0).Gap(0).Center().Radius(15).Disabled(t == nil || strings.TrimSpace(*draft) == "" || (!editing && v.C.Connection != "Connected")).Children(func() { ui.Icon(c, arrow).Size(16, 16).Shrink(0) }).OnClick(func() {
 						if v.C.Send(*draft, false) {
 							v.draft = ""
 						}

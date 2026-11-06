@@ -74,21 +74,26 @@ func (v *View) insertComposer(source string) {
 	text := v.composerText(source)
 	v.editor.Edit(func(e *richtext.Edit) { e.Replace(start, end, text); e.Select(start+text.Len(), start+text.Len()) })
 	if t := v.C.State.Thread(v.editorThread); t != nil {
-		v.syncComposer(&t.Draft)
+		v.syncComposer(v.C.ComposerDraft(t))
 		v.C.Save()
 	}
 }
 
 func (v *View) composerInput(c *ui.Context, draft *string) {
 	id := v.C.State.Selected
-	if v.editor == nil || v.editorThread != id || v.editorSource != *draft {
+	queueID := ""
+	if edit := v.C.QueueEdit(id); edit != nil {
+		queueID = edit.ID
+	}
+	if v.editor == nil || v.editorThread != id || v.editorQueue != queueID || v.editorSource != *draft {
 		v.editor = richtext.NewDocument(v.composerText(*draft))
 		v.editor.SetSelection(v.editor.Text().Len(), v.editor.Text().Len())
 		v.editorThread, v.editorSource = id, *draft
+		v.editorQueue = queueID
 	}
 	services := c.Services()
 	tx := v.texts()
-	input := richtext.EditorBase(c.Key("draft-"+id), v.editor, richtext.EditorOptions{
+	input := richtext.EditorBase(c.Key("draft-"+id+"-"+queueID), v.editor, richtext.EditorOptions{
 		TagStyle: func(tag string, span *ui.Span) {
 			if tag == "attachment" {
 				span.Underline = false
@@ -112,6 +117,9 @@ func (v *View) composerInput(c *ui.Context, draft *string) {
 			v.draft = ""
 		}
 	})
+	if queueID != "" {
+		input.OnShortcut(0, ui.KeyEscape, func() { v.C.CancelQueueEdit(id) })
+	}
 	copySelection := func(cut bool) {
 		defer services.Invalidate()
 		a, b := v.editor.Selection()
