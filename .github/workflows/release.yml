@@ -113,18 +113,18 @@ jobs:
             "mygo.json" > "$RUNNER_TEMP/mygo-notarized.json"
           cp "$RUNNER_TEMP/mygo-notarized.json" "mygo.json"
           set -o pipefail
-          for attempt in 1 2 3; do
-            if go tool mygo build -platform "darwin/arm64,darwin/amd64" 2>&1 | tee "$RUNNER_TEMP/macos-build.log"; then
-              break
-            fi
-            output="$(cat "$RUNNER_TEMP/macos-build.log")"
-            if [[ "$attempt" == 3 || "$output" != *'xcrun stapler staple '* || "$output" != *'NSURLErrorDomain Code=-1005'* ]]; then
-              exit 1
-            fi
-            echo "::warning::Apple ticket download lost its connection; retrying build ($attempt/3)."
-            sleep "$((attempt * 10))"
-          done
           for arch in arm64 amd64; do
+            for attempt in 1 2 3; do
+              if go tool mygo build -platform "darwin/$arch" 2>&1 | tee "$RUNNER_TEMP/macos-build.log"; then
+                break
+              fi
+              output="$(cat "$RUNNER_TEMP/macos-build.log")"
+              if [[ "$attempt" == 3 || "$output" != *'xcrun stapler staple '* || "$output" != *'NSURLErrorDomain Code=-1005'* ]]; then
+                exit 1
+              fi
+              echo "::warning::Apple ticket download lost its connection; retrying $arch ($attempt/3)."
+              sleep "$((attempt * 10))"
+            done
             test -s "build/darwin-$arch/update-darwin-$arch.json"
             codesign --verify --deep --strict "build/darwin-$arch/MujicAgent.app"
             xcrun stapler validate "build/darwin-$arch/MujicAgent.app"
