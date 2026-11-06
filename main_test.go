@@ -757,7 +757,7 @@ func TestLanguageSwitch(t *testing.T) {
 		t.Fatal("language selection did not immediately update settings")
 	}
 	click("Close settings")
-	if !tt.HasText("New conversation") || !tt.HasText("Settled") || tt.HasText("收纳") || !tt.HasText("Connect Codex in Settings before sending.") {
+	if !tt.HasText("未发送的草稿") || !tt.HasText("Settled") || tt.HasText("收纳") || !tt.HasText("Connect Codex in Settings before sending.") {
 		t.Fatal("conversation UI did not switch to English")
 	}
 	if !tt.HasText("Continue") || tt.HasText("继续") || !tt.HasText("保留问题原文") || !tt.HasText("Blue") {
@@ -787,7 +787,7 @@ func TestLanguageSwitch(t *testing.T) {
 	click("简体中文")
 	tt.SetLocale(s.Settings.Language)
 	click("关闭设置")
-	if !tt.HasText("新对话") || !tt.HasText("收纳") || tt.HasText("New conversation") {
+	if !tt.HasText("未发送的草稿") || !tt.HasText("收纳") || tt.HasText("New conversation") {
 		t.Fatal("switching back to Chinese did not update the empty conversation title")
 	}
 }
@@ -1017,7 +1017,7 @@ func TestProjectFoldersPersistExpandedState(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "state.json")
 	// Existing projects without an expansion preference start collapsed.
-	if err := os.WriteFile(path, []byte(`{"Version":1,"Projects":[{"ID":"one","Name":"First project","Path":"/first"},{"ID":"two","Name":"Second project","Path":"/second"}],"Threads":[{"ID":"thread","ProjectID":"one","Title":"Saved conversation","Draft":"Keep this draft"}]}`), 0600); err != nil {
+	if err := os.WriteFile(path, []byte(`{"Version":1,"Projects":[{"ID":"one","Name":"First project","Path":"/first"},{"ID":"two","Name":"Second project","Path":"/second"}],"Threads":[{"ID":"thread","ProjectID":"one","Title":"Saved conversation","Draft":"Keep this draft","Turns":[{"Prompt":"Saved conversation","Status":"completed"}]}]}`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	s, err := model.Load(path)
@@ -1096,7 +1096,9 @@ func TestSidebarVirtualProjectAndSettledLists(t *testing.T) {
 	}
 	s.Projects = []model.Project{{ID: "project", Name: "Project", Path: t.TempDir()}, {ID: "other", Name: "Other project"}}
 	for i := 999; i >= 0; i-- {
-		s.AddThread("project", s.Projects[0].Path).Title = fmt.Sprintf("Active row %04d", i)
+		thread := s.AddThread("project", s.Projects[0].Path)
+		thread.Title = fmt.Sprintf("Active row %04d", i)
+		thread.Turns = []model.Turn{{Prompt: thread.Title, Status: "completed"}}
 	}
 	s.Selected = ""
 	c := controller.New(t.TempDir(), s, nil)

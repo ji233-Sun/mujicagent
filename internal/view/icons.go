@@ -54,3 +54,8 @@ var (
 var noProjectFolder = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 <path d="M2 8V5a2 2 0 0 1 2-2h2 M9 3l2 3h3 M18 6h2a2 2 0 0 1 2 2 M22 12v3 M22 18a2 2 0 0 1-2 2h-2 M14 20h-3 M7 20H4a2 2 0 0 1-2-2 M2 14v-2"/>
 </svg>`))
+
+// Segmented like the virtual folder, but following the conversation bubble outline.
+var unsentChat = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+<path d="M2 7V5a2 2 0 0 1 2-2h1 M9 3h3 M16 3h4a2 2 0 0 1 2 2 M22 9v3 M22 16v1a2 2 0 0 1-2 2h-1 M15 19h-3 M8 19H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V19 M2 15v-4"/>
+</svg>`))

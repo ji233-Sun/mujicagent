@@ -411,3 +411,51 @@ func TestMarkupCommentWorkflow(t *testing.T) {
 		t.Fatal("composer undo did not restore attachment")
 	}
 }
+
+func TestDraftTitleAndSidebarOrder(t *testing.T) {
+	state := model.New()
+	ctrl := controller.New(t.TempDir(), state, nil)
+	ctrl.NewThread("")
+	blank := state.Thread(state.Selected)
+	draft := state.AddThread("", "")
+	draft.Draft = "草稿"
+	sent := state.AddThread("", "")
+	sent.Title = "已发送"
+	sent.Turns = []model.Turn{{Prompt: "已发送", Status: "completed"}}
+	sent.Draft = "后续草稿"
+	state.Selected = draft.ID
+	v := New(ctrl)
+	tt := ui.NewTester(v.Render, 1140, 780)
+	tt.Frame()
+	b, bok := tt.Find("新对话")
+	d, dok := tt.Find("草稿")
+	s, sok := tt.Find("已发送")
+	if !bok || !dok || !sok || b.Y >= d.Y || d.Y >= s.Y {
+		t.Fatalf("expected blank, draft, sent order: %v %v %v", b, d, s)
+	}
+	if err := tt.Click("消息"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Type("实时更新")
+	tt.Frame()
+	if v.threadTitle(draft) != "草稿实时更新" || !tt.HasText("草稿实时更新") {
+		t.Fatal("draft title did not follow typing")
+	}
+	tt.Key(ui.Cmd, ui.KeyA)
+	tt.Key(0, ui.KeyBackspace)
+	tt.Frame()
+	if v.threadTitle(draft) != "新对话" || v.threadTitle(blank) != "新对话" {
+		t.Fatal("cleared draft did not restore placeholder")
+	}
+	draft.Draft = "前文" + (model.Attachment{Kind: "file", Path: "/tmp/example.txt"}).Link() + "后文"
+	if v.threadTitle(draft) != "前文example.txt后文" {
+		t.Fatal("attachment title exposed its internal link")
+	}
+	draft.Draft = strings.Repeat("中", 49)
+	if v.threadTitle(draft) != strings.Repeat("中", 48)+"…" {
+		t.Fatal("long draft title was not truncated safely")
+	}
+	if v.threadTitle(sent) != "已发送" {
+		t.Fatal("follow-up draft changed a sent conversation title")
+	}
+}

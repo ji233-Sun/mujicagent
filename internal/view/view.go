@@ -4,6 +4,7 @@ package view
 import (
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -195,6 +196,17 @@ func (v *View) group(c *ui.Context, p model.Project) {
 		if len(threads) == 0 {
 			return
 		}
+		// Keep blank conversations first, then drafts, preserving order within each group.
+		rank := func(t *model.Thread) int {
+			if len(t.Turns) != 0 {
+				return 2
+			}
+			if strings.TrimSpace(t.Draft) != "" {
+				return 1
+			}
+			return 0
+		}
+		sort.SliceStable(threads, func(i, j int) bool { return rank(threads[i]) < rank(threads[j]) })
 		list := v.projectLists[p.ID]
 		if list == nil {
 			list = &ui.ListState{}
@@ -253,7 +265,11 @@ func (v *View) threadRow(c *ui.Context, t *model.Thread, activeList bool) {
 			if v.C.Running[t.ID] {
 				ui.Spinner(c).Size(14, 14)
 			} else {
-				ui.Icon(c, chat).Size(16, 16).TextColor(c.Theme().TextMuted)
+				icon := chat
+				if len(t.Turns) == 0 {
+					icon = unsentChat
+				}
+				ui.Icon(c, icon).Size(16, 16).TextColor(c.Theme().TextMuted)
 			}
 			ui.Text(c, title).SingleLine().Grow(1).MinWidth(0).FontSize(12)
 		})
