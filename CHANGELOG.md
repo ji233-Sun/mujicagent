@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.6
+
+#### What's Changed
+* fix: 附件连续编辑、直接粘贴与图片气泡标注 by @ji233-Sun in https://github.com/ji233-Sun/mujicagent/pull/14
+
+
+**Full Changelog**: https://github.com/ji233-Sun/mujicagent/compare/v0.1.5...v0.1.6
+
+### Commits
+
+- fix: 改为连续编辑的行内附件并支持粘贴和气泡标注 (56bb7f7)
+
 ## 0.1.5
 
 #### What's Changed
