@@ -124,6 +124,7 @@
   "updatesUnavailable": "Updates are unavailable for this build",
   "noReleases": "No releases yet",
   "upToDate": "You’re up to date",
+  "updateFailed": "Update failed. Please try again.",
   "restartToUpdate": "Restart to update",
   "downloadUpdate": "Download update",
   "updateAfterConversation": "Install and restart after active conversations finish",

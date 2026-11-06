@@ -124,6 +124,7 @@
   "updatesUnavailable": "当前构建不支持自动更新",
   "noReleases": "暂无发布版本",
   "upToDate": "已是最新版本",
+  "updateFailed": "更新失败，请重试",
   "restartToUpdate": "重启并更新",
   "downloadUpdate": "下载更新",
   "updateAfterConversation": "对话结束后可安装并重启",

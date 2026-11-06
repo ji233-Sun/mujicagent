@@ -1,15 +1,20 @@
 package controller
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"time"
 
 	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/netproxy"
 	"github.com/ji233-Sun/mujicagent/internal/model"
 )
 
@@ -50,15 +55,21 @@ func (c *Controller) CheckAppUpdates() {
 		return
 	}
 	u.Checking, u.Error = true, ""
+	u.update, u.AvailableVersion = nil, ""
 	enabled := u.Enabled
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		releases, err := fetchReleases(ctx, http.DefaultClient, releaseEndpoint)
+		client := &http.Client{Transport: netproxy.Transport()}
+		releases, err := fetchReleases(ctx, client, releaseEndpoint)
 		var update *mygo.Update
 		// An empty repository has no update manifest yet.
 		if err == nil && enabled && len(releases) > 0 {
+			// Resolve the manifest from the same release as the displayed notes.
+			// A separately cached /latest redirect may still point to an older release.
+			mygo.Updater.SetSource(releaseUpdateSource{tag: releases[0].Tag, client: client})
 			update, err = mygo.Updater.Check(ctx)
+			mygo.Updater.SetSource(nil)
 		}
 		c.post(func() {
 			u.Checking = false
@@ -76,6 +87,57 @@ func (c *Controller) CheckAppUpdates() {
 			}
 		})
 	}()
+}
+
+// MyGo retains this source on the returned Update and still verifies the archive signature.
+type releaseUpdateSource struct {
+	tag    string
+	client *http.Client
+}
+
+func (s releaseUpdateSource) Manifest(ctx context.Context, _ bool) (io.ReadCloser, error) {
+	endpoint := "https://github.com/ji233-Sun/mujicagent/releases/download/" + url.PathEscape(s.tag) + "/update-" + runtime.GOOS + "-" + runtime.GOARCH + ".json"
+	body, err := s.Open(ctx, endpoint)
+	if err != nil {
+		return nil, err
+	}
+	defer body.Close()
+	const maxManifestSize = 1 << 20
+	data, err := io.ReadAll(io.LimitReader(body, maxManifestSize+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maxManifestSize {
+		return nil, fmt.Errorf("update manifest exceeds 1 MiB")
+	}
+	var manifest struct{ Version string }
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return nil, err
+	}
+	if strings.TrimPrefix(manifest.Version, "v") != strings.TrimPrefix(s.tag, "v") {
+		return nil, fmt.Errorf("release %s has update manifest version %q", s.tag, manifest.Version)
+	}
+	return io.NopCloser(bytes.NewReader(data)), nil
+}
+
+func (s releaseUpdateSource) Open(ctx context.Context, endpoint string) (io.ReadCloser, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	if req.URL.Scheme != "https" {
+		return nil, fmt.Errorf("update URL must use HTTPS")
+	}
+	req.Header.Set("User-Agent", "MujicAgent")
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		return nil, fmt.Errorf("GitHub update: HTTP %d", resp.StatusCode)
+	}
+	return resp.Body, nil
 }
 
 func (c *Controller) InstallAppUpdate() {

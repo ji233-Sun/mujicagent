@@ -1276,6 +1276,16 @@ func (msgs Messages) UpToDate() string {
 	return Catalog.Format(msgs.locale, "upToDate", nil)
 }
 
+// UpdateFailed says "更新失败，请重试"
+// in the language the app shows.
+func UpdateFailed() string { return In(i18n.Locale()).UpdateFailed() }
+
+// UpdateFailed says "更新失败，请重试"
+// in the language of msgs.
+func (msgs Messages) UpdateFailed() string {
+	return Catalog.Format(msgs.locale, "updateFailed", nil)
+}
+
 // RestartToUpdate says "重启并更新"
 // in the language the app shows.
 func RestartToUpdate() string { return In(i18n.Locale()).RestartToUpdate() }
