@@ -158,13 +158,13 @@ func TestServiceTierRequests(t *testing.T) {
 			t.Fatalf("selection %+v sent incorrect turn/start: %s", tc, data)
 		}
 		var permissions struct {
-			Permissions, ApprovalPolicy string
-			SandboxPolicy               any
+			Permissions, ApprovalPolicy, ApprovalsReviewer string
+			SandboxPolicy                                  any
 		}
 		if err := json.Unmarshal(data, &permissions); err != nil {
 			t.Fatal(err)
 		}
-		if permissions.Permissions != ":workspace" || permissions.ApprovalPolicy != "on-request" || permissions.SandboxPolicy != nil {
+		if permissions.Permissions != ":workspace" || permissions.ApprovalPolicy != "on-request" || permissions.ApprovalsReviewer != "auto_review" || permissions.SandboxPolicy != nil {
 			t.Fatalf("invalid default permissions: %s", data)
 		}
 		notify(c, "turn/completed", `{"threadId":"speed-thread","turn":{"id":"speed-turn","status":"completed"}}`)
@@ -176,6 +176,11 @@ func TestServiceTierRequests(t *testing.T) {
 		{":workspace", ":workspace", "on-request", "user"},
 	} {
 		thread.PermissionProfile = tc.profile
+		if tc.profile == ":danger-full-access" {
+			c.State.Settings.DefaultPermissionProfile = tc.profile
+			c.NewThread("")
+			thread = c.State.Thread(c.State.Selected)
+		}
 		// Exercise resume as well as updates to an already loaded conversation.
 		if tc.profile == ":danger-full-access" || tc.profile == ":approve-for-me" {
 			c.loaded[thread.ID] = false

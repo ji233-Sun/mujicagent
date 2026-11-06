@@ -63,6 +63,8 @@
   "permissionPicker": "Permission picker",
   "readOnly": "Read only",
   "defaultPermissions": "Default permissions",
+  "codexDefaultPermissions": "Codex default permissions",
+  "defaultPermissionsHint": "Applies to new conversations. Permissions can still be changed per conversation.",
   "fullAccess": "Full access",
   "fullAccessQuestion": "Enable full access?",
   "fullAccessWarning": "Codex can edit files outside the workspace and access the network without asking each time. Applies only to this conversation.",

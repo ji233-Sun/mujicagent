@@ -112,6 +112,17 @@ func (v *View) settingsPane(c *ui.Context) {
 				}
 				ui.Text(c, label).TextColor(c.Theme().TextMuted)
 			})
+			ui.Divider(c)
+			ui.Row(c).AlignItems(ui.Center).Gap(16).Children(func() {
+				ui.Text(c, tx.CodexDefaultPermissions()).Grow(1)
+				settingsSelect(c.Key("default-permissions"), &v.C.State.Settings.DefaultPermissionProfile, tx.CodexDefaultPermissions(), []settingOption{
+					{":read-only", tx.ReadOnly()},
+					{":workspace", tx.DefaultPermissions()},
+					{":approve-for-me", tx.ApproveForMe()},
+					{":danger-full-access", tx.FullAccess()},
+				}, v.C.Save)
+			})
+			ui.Text(c, tx.DefaultPermissionsHint()).FontSize(12).TextColor(c.Theme().TextMuted)
 		})
 		ui.Column(c).Radius(14).Background(c.Theme().Surface).Padding(18).Gap(14).Children(func() {
 			ui.Text(c, tx.Connection()).Bold()

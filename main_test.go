@@ -222,10 +222,62 @@ func TestManualSettleFromHover(t *testing.T) {
 	}
 }
 
+func TestDefaultPermissionsSettings(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "state.json")
+	// Older snapshots have neither an app default nor a per-thread selection.
+	if err := os.WriteFile(path, []byte(`{"Version":1,"Settings":{},"Threads":[{"ID":"old"}]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := model.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := controller.New(dir, s, nil)
+	if c.PermissionID() != ":approve-for-me" || s.Thread("old").PermissionProfile != ":approve-for-me" {
+		t.Fatal("unconfigured permissions must default to auto-review")
+	}
+	s.Selected = "old"
+	s.Thread("old").PermissionProfile = ":read-only"
+	v := view.New(c)
+	tt := ui.NewTester(v.Render, 1140, 780)
+	for _, label := range []string{"设置", "自动审批", "完全访问"} {
+		if err := tt.Click(label); err != nil {
+			t.Fatal(err)
+		}
+		tt.Advance(250 * time.Millisecond)
+	}
+	if s.Settings.DefaultPermissionProfile != ":danger-full-access" {
+		t.Fatal("settings selection did not update default permissions")
+	}
+	loaded, err := model.Load(path)
+	if err != nil || loaded.Settings.DefaultPermissionProfile != ":danger-full-access" {
+		t.Fatalf("default permissions were not persisted: %v", err)
+	}
+	if loaded.Thread("old").PermissionProfile != ":read-only" {
+		t.Fatal("changing defaults changed an existing conversation")
+	}
+	c.NewThread("")
+	if c.PermissionID() != ":danger-full-access" {
+		t.Fatal("new conversations must use the configured default")
+	}
+	s.Settings.DefaultPermissionProfile = ":read-only"
+	if c.PermissionID() != ":danger-full-access" {
+		t.Fatal("existing conversation must retain its permissions")
+	}
+	s.Settings.Language = "en"
+	tt.SetLocale("en")
+	tt.Frame()
+	if !tt.HasText("Codex default permissions") {
+		t.Fatal("default permissions setting is not localized")
+	}
+}
+
 func TestNativePermissions(t *testing.T) {
 	s := model.New()
 	thread := s.AddThread("", t.TempDir())
 	thread.ServerID = "permissions-thread"
+	thread.PermissionProfile = ":workspace"
 	c := controller.New(t.TempDir(), s, nil)
 	c.Connection = "Connected"
 	c.Permissions = []codex.PermissionProfile{{ID: ":read-only", Allowed: true}, {ID: ":workspace", Allowed: true}, {ID: ":approve-for-me", Allowed: true}, {ID: ":danger-full-access", Allowed: true}, {ID: "managed-profile", Allowed: false}}
@@ -272,7 +324,7 @@ func TestNativePermissions(t *testing.T) {
 	}
 	other := s.AddThread("", t.TempDir())
 	tt.Frame()
-	if c.PermissionID() != ":workspace" {
+	if c.PermissionID() != ":approve-for-me" {
 		t.Fatal("permissions leaked into another conversation")
 	}
 	c.Select(thread.ID)

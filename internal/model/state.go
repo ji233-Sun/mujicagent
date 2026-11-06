@@ -26,7 +26,7 @@ type Thread struct {
 	Draft                               string
 	PermissionProfile                   string
 }
-type Settings struct{ CodexPath, Model, Effort, ServiceTier, Appearance, Language string }
+type Settings struct{ CodexPath, Model, Effort, ServiceTier, Appearance, Language, DefaultPermissionProfile string }
 type State struct {
 	Version  int
 	Projects []Project
@@ -36,7 +36,7 @@ type State struct {
 }
 
 func New() *State {
-	return &State{Version: 1, Settings: Settings{CodexPath: "codex", Effort: "medium", Appearance: "Light", Language: "zh-Hans"}}
+	return &State{Version: 1, Settings: Settings{CodexPath: "codex", Effort: "medium", Appearance: "Light", Language: "zh-Hans", DefaultPermissionProfile: ":approve-for-me"}}
 }
 func ID() string {
 	var b [12]byte
@@ -54,7 +54,7 @@ func (s *State) Thread(id string) *Thread {
 	return nil
 }
 func (s *State) AddThread(projectID, cwd string) *Thread {
-	t := &Thread{ID: ID(), ProjectID: projectID, Cwd: cwd, Title: "New conversation", Updated: time.Now()}
+	t := &Thread{ID: ID(), ProjectID: projectID, Cwd: cwd, Title: "New conversation", Updated: time.Now(), PermissionProfile: s.Settings.DefaultPermissionProfile}
 	s.Threads = append([]*Thread{t}, s.Threads...)
 	s.Selected = t.ID
 	return t
@@ -80,7 +80,13 @@ func Load(path string) (*State, error) {
 	if s.Settings.Language != "en" {
 		s.Settings.Language = "zh-Hans"
 	}
+	if s.Settings.DefaultPermissionProfile == "" {
+		s.Settings.DefaultPermissionProfile = ":approve-for-me"
+	}
 	for _, t := range s.Threads {
+		if t.PermissionProfile == "" {
+			t.PermissionProfile = s.Settings.DefaultPermissionProfile
+		}
 		for i := range t.Turns {
 			if t.Turns[i].Status == "inProgress" {
 				t.Turns[i].Status = "interrupted"

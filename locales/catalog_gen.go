@@ -664,6 +664,26 @@ func (msgs Messages) DefaultPermissions() string {
 	return Catalog.Format(msgs.locale, "defaultPermissions", nil)
 }
 
+// CodexDefaultPermissions says "Codex 默认权限"
+// in the language the app shows.
+func CodexDefaultPermissions() string { return In(i18n.Locale()).CodexDefaultPermissions() }
+
+// CodexDefaultPermissions says "Codex 默认权限"
+// in the language of msgs.
+func (msgs Messages) CodexDefaultPermissions() string {
+	return Catalog.Format(msgs.locale, "codexDefaultPermissions", nil)
+}
+
+// DefaultPermissionsHint says "应用于新对话，每个对话仍可单独调整权限。"
+// in the language the app shows.
+func DefaultPermissionsHint() string { return In(i18n.Locale()).DefaultPermissionsHint() }
+
+// DefaultPermissionsHint says "应用于新对话，每个对话仍可单独调整权限。"
+// in the language of msgs.
+func (msgs Messages) DefaultPermissionsHint() string {
+	return Catalog.Format(msgs.locale, "defaultPermissionsHint", nil)
+}
+
 // FullAccess says "完全访问"
 // in the language the app shows.
 func FullAccess() string { return In(i18n.Locale()).FullAccess() }
