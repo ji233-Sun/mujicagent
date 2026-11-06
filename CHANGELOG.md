@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.1.5
+
+#### What's Changed
+* feat: 支持行内附件与图片坐标标记 by @ji233-Sun in https://github.com/ji233-Sun/mujicagent/pull/8
+* docs: 禁止未明确要求的描述性文本 by @ji233-Sun in https://github.com/ji233-Sun/mujicagent/pull/9
+* feat: 支持可恢复的自动公证与发布流程 by @ji233-Sun in https://github.com/ji233-Sun/mujicagent/pull/10
+* fix: 阻止检查点丢失时重复构建与公证 by @ji233-Sun in https://github.com/ji233-Sun/mujicagent/pull/11
+
+
+**Full Changelog**: https://github.com/ji233-Sun/mujicagent/compare/v0.1.4...v0.1.5
+
+### Commits
+
+- fix: reject rebuilds when full reruns discard checkpoints (6f5e51b)
+- fix: allow time for notarization polling and ticket retries (0f2ac39)
+- feat: make notarization resumable across release retries (7dfc52e)
+- docs: 禁止未明确要求的描述性文本 (58fd5f1)
+- feat: support inline attachments and image annotations (898dffb)
+
 ## 0.1.4
 
 #### What's Changed
