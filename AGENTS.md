@@ -2,6 +2,10 @@
 
 本文件适用于整个仓库；用户本次明确要求优先于默认约定。
 
+## 输出约定
+
+- 禁止描述性文本，除非明确要求。
+
 ## 强制遵循的交付技能
 
 - 任何变更任务（包括代码、配置、测试、文档、AGENTS.md 和 Skills）开始时，**修改前必须读取并遵循 [mujicagent-delivery](.agents/skills/mujicagent-delivery/SKILL.md)**。提交、推送、创建或更新 PR 及关联 Issue 时同样适用。
