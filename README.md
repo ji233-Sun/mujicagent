@@ -26,7 +26,7 @@ codex login
 go tool mygo dev
 ```
 
-应用默认寻找 PATH 中的 `codex`。如果从 Finder 启动时找不到，可在 **设置 → 智能体（Agents）→ Codex 路径** 填写绝对路径。
+应用默认寻找 PATH 中的 `codex`。macOS 下会读取用户登录 Shell 的 PATH，供 Codex 及其 Node 等运行时使用，因此从 Finder、Dock 启动也能找到终端中安装的 CLI；探测有超时限制，并保留原有 PATH 和常见安装目录。也可在 **设置 → 智能体（Agents）→ Codex 路径** 指定绝对路径，应用不会自动替换该选择。
 
 ```sh
 go test -race ./...

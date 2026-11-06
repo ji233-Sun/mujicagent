@@ -3,6 +3,7 @@ package codex
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -174,6 +175,84 @@ func TestRoundTripAndAsk(t *testing.T) {
 	if err := c.Call(ctx, "exit", nil, nil); err == nil {
 		t.Fatal("missing exit error")
 	}
+}
+
+func TestDesktopLaunch(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("macOS desktop environment")
+	}
+	home := t.TempDir()
+	bin := filepath.Join(home, "tools with spaces")
+	if err := os.Mkdir(bin, 0700); err != nil {
+		t.Fatal(err)
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	quote := func(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'" }
+	files := map[string]string{
+		filepath.Join(home, ".zshrc"):                 "printf 'profile startup output\\n'\nexport PATH=" + quote(bin) + ":$PATH\n",
+		filepath.Join(bin, "codex"):                   "#!/usr/bin/env mujicagent-test-runtime\n",
+		filepath.Join(bin, "mujicagent-test-runtime"): "#!/bin/sh\nshift\nif [ \"$1\" = --version ]; then printf 'codex-cli test\\n'; exit 0; fi\nexec " + quote(exe) + " -test.run=^TestProtocolChild$ -- \"$@\"\n",
+	}
+	for path, content := range files {
+		if err := os.WriteFile(path, []byte(content), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("HOME", home)
+	t.Setenv("ZDOTDIR", home)
+	t.Setenv("SHELL", "/bin/zsh")
+	t.Setenv("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")
+	t.Setenv("MUJICAGENT_PROTOCOL_CHILD", "1")
+	for name, binary := range map[string]string{"from PATH": "codex", "explicit path": filepath.Join(bin, "codex")} {
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			c, err := Start(ctx, binary, func(Message) {})
+			if err != nil {
+				t.Fatalf("desktop launch must find the CLI and its runtime from the login shell: %v", err)
+			}
+			defer c.Close()
+			if version := c.Version(); version != "codex-cli test" {
+				t.Fatalf("version lookup must share the server's executable and PATH: %q", version)
+			}
+		})
+	}
+	if os.Getenv("PATH") != "/usr/bin:/bin:/usr/sbin:/sbin" {
+		t.Fatal("desktop discovery must not change the application environment")
+	}
+	if _, err := desktopCommand(context.Background(), filepath.Join(home, "missing", "codex")); err == nil {
+		t.Fatal("an invalid explicit path must not fall back to another installation")
+	}
+	t.Run("profile unavailable", func(t *testing.T) {
+		t.Setenv("SHELL", filepath.Join(home, "missing-shell"))
+		t.Setenv("PATH", bin+":/usr/bin:/bin")
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		c, err := Start(ctx, "codex", func(Message) {})
+		if err != nil {
+			t.Fatalf("an unavailable shell must preserve the inherited PATH: %v", err)
+		}
+		c.Close()
+	})
+	t.Run("profile timeout", func(t *testing.T) {
+		shell := filepath.Join(home, "slow-shell")
+		if err := os.WriteFile(shell, []byte("#!/bin/sh\nexec /bin/sleep 30\n"), 0700); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("SHELL", shell)
+		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+		defer cancel()
+		started := time.Now()
+		if _, err := desktopCommand(ctx, "codex"); !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("shell discovery must respect the connection deadline: %v", err)
+		}
+		if time.Since(started) > 2*time.Second {
+			t.Fatal("shell discovery did not stop promptly")
+		}
+	})
 }
 
 func TestApprovalOptions(t *testing.T) {

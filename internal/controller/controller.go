@@ -145,7 +145,7 @@ func (c *Controller) Connect() {
 			} `json:"account"`
 		}
 		accountErr := client.Call(ctx, "account/read", map[string]bool{"refreshToken": false}, &account)
-		version := Version(binary)
+		version := client.Version()
 		c.post(func() {
 			if epoch != c.epoch {
 				client.Close()

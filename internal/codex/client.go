@@ -10,6 +10,7 @@ import (
 	"io"
 	"os/exec"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -38,7 +39,10 @@ type Client struct {
 }
 
 func Start(ctx context.Context, binary string, emit func(Message)) (*Client, error) {
-	cmd := exec.Command(binary, "app-server", "--listen", "stdio://")
+	cmd, err := desktopCommand(ctx, binary, "app-server", "--listen", "stdio://")
+	if err != nil {
+		return nil, err
+	}
 	in, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err
@@ -66,6 +70,20 @@ func Start(ctx context.Context, binary string, emit func(Message)) (*Client, err
 		return nil, fmt.Errorf("Codex initialization: %w", err)
 	}
 	return c, nil
+}
+
+// Version uses the exact executable and environment of the connected server.
+func (c *Client) Version() string {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, c.cmd.Path, "--version")
+	cmd.Env = c.cmd.Env
+	cmd.WaitDelay = 100 * time.Millisecond
+	out, err := cmd.Output()
+	if err != nil {
+		return "Not installed"
+	}
+	return strings.TrimSpace(string(out))
 }
 
 func (c *Client) read(out io.Reader) {
