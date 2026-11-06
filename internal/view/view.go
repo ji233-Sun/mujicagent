@@ -377,7 +377,9 @@ func (v *View) request(c *ui.Context, r *codex.Request) {
 		v.answers[key] = values
 	}
 	ui.Scroll(c.Key("request-"+key)).MaxHeight(300).Padding(14).Radius(12).Border(1, c.Theme().Accent).Gap(10).Children(func() {
-		if r.Method == "item/tool/requestUserInput" {
+		if r.Method == "mcpServer/elicitation/request" {
+			v.elicitation(c, r, values)
+		} else if r.Method == "item/tool/requestUserInput" {
 			for _, q := range r.Questions {
 				ui.Column(c.Key(q.ID)).Gap(6).Children(func() {
 					ui.Text(c, q.Question).Bold()

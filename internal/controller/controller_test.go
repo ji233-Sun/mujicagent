@@ -329,6 +329,54 @@ func TestServiceTierRequests(t *testing.T) {
 			t.Fatalf("approval payload changed: %s, %s", reply.ID, reply.Result)
 		}
 	}
+
+	for _, id := range []string{`"mcp-1"`, `42`} {
+		for _, action := range []string{"accept", "decline", "cancel"} {
+			c.handle(codex.Message{ID: json.RawMessage(id), Method: "mcpServer/elicitation/request", Params: json.RawMessage(`{"threadId":"speed-thread","serverName":"github","mode":"form","message":"Create PR?","_meta":{"source":"server"},"requestedSchema":{"type":"object","properties":{"decision":{"type":"string","enum":["once","session"],"enumNames":["Allow once","This session"]}},"required":["decision"]}}`)})
+			r := c.Requests[len(c.Requests)-1]
+			c.RespondElicitation(r, "accept", map[string]string{"decision": "invented"})
+			if r.Responding {
+				t.Fatal("invalid selection accepted")
+			}
+			c.RespondElicitation(r, action, map[string]string{"decision": "once"})
+			deadline := time.Now().Add(3 * time.Second)
+			var reply codex.Message
+			var result map[string]any
+			var data []byte
+			for time.Now().Before(deadline) {
+				c.Drain()
+				data, _ = os.ReadFile(request)
+				reply = codex.Message{}
+				result = nil
+				if json.Unmarshal(data, &reply) == nil && json.Unmarshal(reply.Result, &result) == nil &&
+					string(reply.ID) == id && result["action"] == action && len(c.Requests) == 0 {
+					break
+				}
+				time.Sleep(time.Millisecond)
+			}
+			if string(reply.ID) != id || result["action"] != action || reply.Error != nil || len(c.Requests) != 0 {
+				t.Fatalf("elicitation response: %s; pending=%d", data, len(c.Requests))
+			}
+			if _, exists := result["decision"]; exists {
+				t.Fatal("command approval response reused")
+			}
+			if _, exists := result["_meta"]; exists {
+				t.Fatal("server metadata echoed as client metadata")
+			}
+			if action == "accept" {
+				if result["content"].(map[string]any)["decision"] != "once" {
+					t.Fatal(result)
+				}
+			} else if result["content"] != nil {
+				t.Fatal("decline/cancel must not include input")
+			}
+			// A resolved/stale card cannot send a second answer.
+			c.RespondElicitation(r, "accept", map[string]string{"decision": "once"})
+			if len(c.Requests) != 0 {
+				t.Fatal("stale request requeued")
+			}
+		}
+	}
 }
 
 func notify(c *Controller, method, params string) {
@@ -415,8 +463,8 @@ func TestApprovalAndRequestResolution(t *testing.T) {
 	if len(c.Requests) != 0 {
 		t.Fatal("resolved ask retained")
 	}
-	c.handle(codex.Message{ID: json.RawMessage(`"mcp"`), Method: "mcpServer/elicitation/request", Params: json.RawMessage(`{"threadId":"t1"}`)})
-	if len(c.Logs) != 1 || c.Logs[0].Level != "debug" || !strings.Contains(c.Logs[0].Message, "mcpServer/elicitation/request") || c.Error != "" {
+	c.handle(codex.Message{ID: json.RawMessage(`"unknown"`), Method: "unknown/request", Params: json.RawMessage(`{"threadId":"t1"}`)})
+	if len(c.Logs) != 1 || c.Logs[0].Level != "debug" || !strings.Contains(c.Logs[0].Message, "unknown/request") || c.Error != "" {
 		t.Fatal("unsupported requests must be diagnostic logs, not error alerts")
 	}
 }
@@ -584,5 +632,27 @@ func TestProjectRequiredForSessions(t *testing.T) {
 	}
 	if _, err := os.Stat(legacy.Cwd); !os.IsNotExist(err) {
 		t.Fatal("projectless sending created a working directory")
+	}
+}
+
+func TestMcpElicitationQueueAndCleanup(t *testing.T) {
+	for _, id := range []string{`"mcp-approval-1"`, `42`} {
+		for _, mode := range []string{"form", "url", "openai/userVerification"} {
+			c := New(t.TempDir(), model.New(), nil)
+			params := fmt.Sprintf(`{"threadId":"t1","serverName":"github","mode":%q,"message":"Create PR?","requestedSchema":{"type":"object","properties":{}}}`, mode)
+			c.handle(codex.Message{ID: json.RawMessage(id), Method: "mcpServer/elicitation/request", Params: json.RawMessage(params)})
+			if len(c.Requests) != 1 || string(c.Requests[0].ID) != id || len(c.Logs) != 0 {
+				t.Fatalf("request not visible: %+v / %+v", c.Requests, c.Logs)
+			}
+			notify(c, "serverRequest/resolved", fmt.Sprintf(`{"requestId":%s}`, id))
+			if len(c.Requests) != 0 {
+				t.Fatal("resolved request retained")
+			}
+			c.handle(codex.Message{ID: json.RawMessage(id), Method: "mcpServer/elicitation/request", Params: json.RawMessage(params)})
+			notify(c, "transport/closed", `{}`)
+			if len(c.Requests) != 0 {
+				t.Fatal("disconnected request retained")
+			}
+		}
 	}
 }

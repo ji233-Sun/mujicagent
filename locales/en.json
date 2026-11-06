@@ -136,5 +136,12 @@
   "markImage": "Mark image",
   "annotationTip": "Annotation note",
   "insertAnnotation": "Insert annotation",
-  "closeAttachment": "Close attachment"
+  "closeAttachment": "Close attachment",
+  "mcpRequest": "MCP request",
+  "mcpAccept": "Accept",
+  "mcpYes": "Yes",
+  "mcpNo": "No",
+  "mcpInputHint": "Complete required fields with valid values before accepting.",
+  "mcpURLHint": "Open this URL in your browser, complete the request, then accept.",
+  "mcpUnsupported": "This request mode or form is not supported. You can decline or cancel."
 }

@@ -126,23 +126,32 @@ func (v *View) approvalOptions(c *ui.Context, r *codex.Request) {
 			case "network-deny":
 				label, detail, icon = tx.DenyHost(), option.Host, failureIcon
 			}
-			b := pickerOption(c.Key(i), label, option.Kind == "accept").Disabled(r.Responding)
+			b := approvalRow(c.Key(i), label, detail, icon, option.Kind == "accept").Disabled(r.Responding)
 			if option.Kind == "acceptForSession" {
 				b.Tooltip(tx.SessionApprovalHint())
 			}
 			if detail != "" {
-				b.Height(52).Tooltip(detail)
+				b.Tooltip(detail)
 			}
-			b.Children(func() {
-				ui.Icon(c, icon).Size(16, 16).Shrink(0)
-				ui.Column(c).Gap(3).Grow(1).MinWidth(0).Children(func() {
-					ui.Text(c, label).FontSize(12)
-					if detail != "" {
-						ui.Text(c, detail).Font("monospace").FontSize(11).TextColor(c.Theme().TextMuted).SingleLine()
-					}
-				})
-			})
 			b.OnClick(func() { v.C.Approve(r, option.Decision) })
 		}
 	})
+}
+
+// approvalRow keeps command, file and MCP choices visually consistent.
+func approvalRow(c *ui.Context, label, detail string, icon *ui.SVG, selected bool) ui.Element {
+	b := pickerOption(c, label, selected)
+	if detail != "" {
+		b.Height(52)
+	}
+	b.Children(func() {
+		ui.Icon(c, icon).Size(16, 16).Shrink(0)
+		ui.Column(c).Gap(3).Grow(1).MinWidth(0).Children(func() {
+			ui.Text(c, label).FontSize(12)
+			if detail != "" {
+				ui.Text(c, detail).Font("monospace").FontSize(11).TextColor(c.Theme().TextMuted).SingleLine()
+			}
+		})
+	})
+	return b
 }
