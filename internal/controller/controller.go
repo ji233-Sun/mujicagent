@@ -702,8 +702,20 @@ func (c *Controller) handle(m codex.Message) {
 		found := false
 		for i := range turn.Items {
 			if turn.Items[i].ID == item.ID {
-				if item.Text == "" {
+				if item.Text == "" && item.Kind != "mcpToolCall" {
 					item.Text = turn.Items[i].Text
+				}
+				if item.MCP != nil && turn.Items[i].MCP != nil {
+					previous := turn.Items[i].MCP
+					if item.MCP.Server == "" {
+						item.MCP.Server = previous.Server
+					}
+					if item.MCP.Tool == "" {
+						item.MCP.Tool = previous.Tool
+					}
+					if item.MCP.Arguments == "" {
+						item.MCP.Arguments = previous.Arguments
+					}
 				}
 				turn.Items[i] = item
 				found = true
@@ -784,5 +796,10 @@ func decodeItem(raw json.RawMessage) model.Item {
 	case "webSearch":
 		text = v.Query
 	}
-	return model.Item{ID: v.ID, Kind: v.Type, Text: text, Status: v.Status}
+	item := model.Item{ID: v.ID, Kind: v.Type, Text: text, Status: v.Status}
+	if v.Type == "mcpToolCall" {
+		item.MCP = decodeMCPCall(raw)
+		item.Text = ""
+	}
+	return item
 }

@@ -15,7 +15,15 @@ type Project struct {
 	ID, Name, Path string
 	Expanded       bool `json:",omitempty"`
 }
-type Item struct{ ID, Kind, Text, Status string }
+type Item struct {
+	ID, Kind, Text, Status string
+	MCP                    *MCPCall `json:",omitempty"`
+}
+
+// MCPCall contains display data with credentials redacted before storage.
+type MCPCall struct {
+	Server, Tool, Arguments, Result, Error string
+}
 type Turn struct {
 	ID, Prompt, Status, Error string
 	Started                   time.Time
