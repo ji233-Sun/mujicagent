@@ -724,11 +724,11 @@ func (msgs Messages) Permissions() string {
 	return Catalog.Format(msgs.locale, "permissions", nil)
 }
 
-// PermissionTiming says "调整从下一轮生效。当前轮次、正在执行的操作和待处理审批保持原权限。"
+// PermissionTiming says "调整从下一轮生效"
 // in the language the app shows.
 func PermissionTiming() string { return In(i18n.Locale()).PermissionTiming() }
 
-// PermissionTiming says "调整从下一轮生效。当前轮次、正在执行的操作和待处理审批保持原权限。"
+// PermissionTiming says "调整从下一轮生效"
 // in the language of msgs.
 func (msgs Messages) PermissionTiming() string {
 	return Catalog.Format(msgs.locale, "permissionTiming", nil)

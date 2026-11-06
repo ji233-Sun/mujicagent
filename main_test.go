@@ -384,6 +384,9 @@ func TestNativePermissions(t *testing.T) {
 		tt.Advance(250 * time.Millisecond)
 	}
 	click("权限")
+	if tt.HasText("调整从下一轮生效") {
+		t.Fatal("unchanged permissions must not show a pending-change hint")
+	}
 	click("自动审批")
 	storedAuto, err := model.Load(filepath.Join(c.Dir, "state.json"))
 	if err != nil || storedAuto.Thread(thread.ID).PermissionProfile != ":approve-for-me" {
@@ -429,8 +432,8 @@ func TestNativePermissions(t *testing.T) {
 	c.Running[thread.ID] = true
 	tt.Frame()
 	click("权限")
-	if !tt.HasText("managed-profile") || !tt.HasText("调整从下一轮生效。当前轮次、正在执行的操作和待处理审批保持原权限。") {
-		t.Fatal("running turn must allow opening permissions and explain the boundary")
+	if !tt.HasText("managed-profile") || tt.HasText("调整从下一轮生效") {
+		t.Fatal("running turn without a permission change must not show a pending-change hint")
 	}
 	click("只读")
 	if thread.PermissionProfile != ":danger-full-access" || !tt.HasText("当前轮次正在启动，请稍后再调整权限。") {
