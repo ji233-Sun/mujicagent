@@ -141,7 +141,7 @@ func (c *Controller) Steer(threadID, id string) {
 		turnID, serverID := t.Turns[turnIndex].ID, t.ServerID
 		client, epoch := c.client, c.epoch
 		go func() {
-			input, err := messageInput(text)
+			input, err := messageInput(text, c.Dir)
 			if err == nil {
 				ctx, cancel := codex.Timeout()
 				defer cancel()

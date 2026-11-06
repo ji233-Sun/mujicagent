@@ -45,25 +45,33 @@ func TestImageAnnotation(t *testing.T) {
 		t.Fatal(err)
 	}
 	tt.Frame()
+	if err := tt.Click("位置评论"); err != nil {
+		t.Fatal(err)
+	}
 	r, ok := tt.Find("标记图片")
 	if !ok {
 		t.Fatal("image preview not shown")
 	}
-	tt.ClickAt(r.X+r.W*0.25, r.Y+r.H*0.75)
-	if !v.annotationPoint || math.Abs(v.annotationX-25) > 0.1 || math.Abs(v.annotationY-75) > 0.1 {
-		t.Fatalf("point: %v,%v", v.annotationX, v.annotationY)
+	ir := v.annotation.imageRect(r.W, r.H, v.preview(a).bitmap)
+	tt.ClickAt(r.X+ir.X+ir.W*0.25, r.Y+ir.Y+ir.H*0.75)
+	if len(v.annotation.notes) == 0 {
+		t.Fatal("point was not added")
+	}
+	point := v.annotation.notes[0].Marks[0].Points[0]
+	if math.Abs(point.X-25) > 0.1 || math.Abs(point.Y-75) > 0.1 {
+		t.Fatalf("point: %+v", point)
 	}
 	if err := tt.Click("标记说明"); err != nil {
 		t.Fatal(err)
 	}
 	tt.Type("改成绿色")
-	if err := tt.Click("插入标记"); err != nil {
+	if err := tt.Click("应用到当前草稿"); err != nil {
 		t.Fatal(err)
 	}
 	tt.Frame()
 	tt.Frame()
 	parts := model.MessageParts(thread.Draft)
-	if len(parts) != 2 || parts[0].Text != "keep this" || parts[1].Attachment.Tip != "改成绿色" || parts[1].Attachment.X != 25 || parts[1].Attachment.Y != 75 {
+	if len(parts) != 2 || parts[0].Text != "keep this" || parts[1].Attachment.Annotations[0].Comment != "改成绿色" || math.Abs(parts[1].Attachment.Annotations[0].Marks[0].Points[0].X-25) > 0.1 {
 		t.Fatalf("draft: %s", thread.Draft)
 	}
 	// Editing a draft annotation replaces the same inline attachment, and undo
@@ -72,16 +80,19 @@ func TestImageAnnotation(t *testing.T) {
 	thread.Draft = original
 	v.openAttachment(*parts[1].Attachment, thread.ID)
 	tt.Frame()
+	if err := tt.Click("选择标注 1"); err != nil {
+		t.Fatal(err)
+	}
 	if err := tt.Click("标记说明"); err != nil {
 		t.Fatal(err)
 	}
 	tt.Key(ui.Cmd, ui.KeyA)
 	tt.Type("改成蓝色")
-	if err := tt.Click("插入标记"); err != nil {
+	if err := tt.Click("应用到当前草稿"); err != nil {
 		t.Fatal(err)
 	}
 	updated := model.MessageParts(thread.Draft)
-	if len(updated) != 3 || updated[0].Text != "keep this" || updated[1].Attachment.Tip != "改成蓝色" || updated[2].Text != " after" {
+	if len(updated) != 3 || updated[0].Text != "keep this" || updated[1].Attachment.Annotations[0].Comment != "改成蓝色" || updated[2].Text != " after" {
 		t.Fatalf("annotation split or duplicated attachment: %s", thread.Draft)
 	}
 	if err := tt.Click("消息"); err != nil {
@@ -241,5 +252,162 @@ func TestQueuedComposerAndDrag(t *testing.T) {
 	tt.Frame()
 	if len(thread.Queue) != 1 {
 		t.Fatal("delete failed")
+	}
+}
+
+func TestMarkupCommentWorkflow(t *testing.T) {
+	state := model.New()
+	ctrl := controller.New(t.TempDir(), state, nil)
+	ctrl.NewThread("")
+	thread := state.Thread(state.Selected)
+	a := model.Attachment{Kind: "image", Path: filepath.Join(t.TempDir(), "layout.png")}
+	bitmap := ui.NewBitmap(image.NewRGBA(image.Rect(0, 0, 1000, 600)))
+	v := New(ctrl)
+	v.attachments = map[string]*attachmentPreview{"image:" + a.Path: {bitmap: bitmap, ready: true, size: 4096, format: "png"}}
+	thread.Draft = "Before " + a.Link() + " after"
+	tt := ui.NewTester(v.Render, 1140, 780)
+	tt.Frame()
+	v.openAttachment(a, thread.ID)
+	tt.Frame()
+	click := func(label string) {
+		t.Helper()
+		if err := tt.Click(label); err != nil {
+			t.Fatal(err)
+		}
+		tt.Frame()
+	}
+	draw := func(tool string, x1, y1, x2, y2 float32) {
+		t.Helper()
+		click(tool)
+		b, _ := tt.Find("标记图片")
+		r := v.annotation.imageRect(b.W, b.H, bitmap)
+		tt.Press(b.X+r.X+r.W*x1, b.Y+r.Y+r.H*y1)
+		tt.Move(b.X+r.X+r.W*(x1+x2)/2, b.Y+r.Y+r.H*(y1+y2)/2)
+		tt.Frame()
+		tt.Move(b.X+r.X+r.W*x2, b.Y+r.Y+r.H*y2)
+		tt.Frame()
+		tt.Release(b.X+r.X+r.W*x2, b.Y+r.Y+r.H*y2)
+		tt.Frame()
+	}
+	draw("矩形", .15, .2, .6, .65)
+	if len(v.annotation.notes) != 1 || v.annotation.notes[0].Marks[0].Kind != "rectangle" {
+		t.Fatal("rectangle missing")
+	}
+	click("标记说明")
+	tt.Type("Make these align")
+	tt.Frame()
+	click("撤销标注")
+	if v.annotation.notes[0].Comment != "" {
+		t.Fatal("comment undo failed")
+	}
+	click("重做标注")
+	if v.annotation.notes[0].Comment != "Make these align" {
+		t.Fatal("comment redo failed")
+	}
+	click("新图形关联到此评论")
+	draw("箭头", .3, .4, .7, .6)
+	if len(v.annotation.notes) != 1 || len(v.annotation.notes[0].Marks) != 2 || v.annotation.notes[0].Comment != "Make these align" {
+		t.Fatalf("grouped marks: %+v", v.annotation.notes)
+	}
+	click("撤销标注")
+	if len(v.annotation.notes[0].Marks) != 1 {
+		t.Fatal("undo did not remove only arrow")
+	}
+	click("重做标注")
+	if len(v.annotation.notes[0].Marks) != 2 {
+		t.Fatal("redo lost arrow")
+	}
+	// Redo deliberately clears linking; a pen stroke starts a new annotation.
+	draw("画笔", .1, .8, .4, .8)
+	if len(v.annotation.notes) != 2 || v.annotation.notes[1].Marks[0].Kind != "pen" {
+		t.Fatal("pen missing")
+	}
+	click("添加整体说明")
+	click("标记说明")
+	tt.Type("Keep the overall spacing")
+	tt.Frame()
+	if len(v.annotation.notes) != 3 || len(v.annotation.notes[2].Marks) != 0 {
+		t.Fatal("whole-image note missing")
+	}
+	click("选择标注 1")
+	if v.annotation.current() == nil || v.annotation.current().Comment != "Make these align" {
+		t.Fatalf("selection did not restore comment: selected=%s notes=%+v texts=%v", v.annotation.selected, v.annotation.notes, tt.Texts())
+	}
+	// Zoomed image painting must stay inside the canvas, including alpha backgrounds.
+	headerPixel := tt.Image().RGBAAt(700, 60)
+	click("1:1")
+	if tt.Image().RGBAAt(700, 60) != headerPixel {
+		t.Fatal("zoomed image overpainted the header")
+	}
+	click("适应窗口")
+	// Keep the same normalized point under the cursor while zooming.
+	b, _ := tt.Find("标记图片")
+	r := v.annotation.imageRect(b.W, b.H, bitmap)
+	pivot := ui.Point{X: r.X + r.W*.35, Y: r.Y + r.H*.4}
+	old := normalized(pivot, r)
+	v.annotation.zoomBy(1.4, bitmap, b, pivot)
+	next := normalized(pivot, v.annotation.imageRect(b.W, b.H, bitmap))
+	if math.Abs(old.X-next.X) > .01 || math.Abs(old.Y-next.Y) > .01 {
+		t.Fatalf("zoom moved pivot: %+v -> %+v", old, next)
+	}
+	click("适应窗口")
+	// Hiding the sidebar preserves marks; clicking a mark reveals its comment.
+	click("显示或收起评论栏")
+	click("选择标注")
+	b, _ = tt.Find("标记图片")
+	r = v.annotation.imageRect(b.W, b.H, bitmap)
+	tt.ClickAt(b.X+r.X+r.W*.15, b.Y+r.Y+r.H*.2)
+	tt.Frame()
+	if !v.annotation.sidebar || v.annotation.selected != v.annotation.notes[0].ID {
+		t.Fatal("mark did not reveal sidebar")
+	}
+	// Dirty close offers a choice and Escape keeps edits intact.
+	click("关闭附件")
+	if !v.annotation.confirmClose || !v.attachmentOpen {
+		t.Fatal("dirty editor closed without confirmation")
+	}
+	click("继续编辑")
+	if len(v.annotation.notes) != 3 {
+		t.Fatal("close confirmation lost notes")
+	}
+	if output := os.Getenv("MUJICAGENT_MARKUP_SCREENSHOT"); output != "" {
+		f, err := os.Create(output)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		if err := png.Encode(f, tt.Image()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The minimum native window keeps the canvas and apply action accessible.
+	tt.SetSize(840, 560)
+	tt.Frame()
+	b, _ = tt.Find("标记图片")
+	if b.W < 200 || b.H < 50 {
+		t.Fatalf("small window canvas: %+v", b)
+	}
+	if output := os.Getenv("MUJICAGENT_MARKUP_SMALL_SCREENSHOT"); output != "" {
+		f, err := os.Create(output)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		if err := png.Encode(f, tt.Image()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	click("应用到当前草稿")
+	parts := model.MessageParts(thread.Draft)
+	if len(parts) != 3 || parts[0].Text != "Before " || parts[2].Text != " after" || len(parts[1].Attachment.Annotations) != 3 {
+		t.Fatalf("draft replacement: %s", thread.Draft)
+	}
+	if v.attachmentOpen {
+		t.Fatal("editor still open")
+	}
+	click("消息")
+	tt.Key(ui.Cmd, ui.KeyZ)
+	if thread.Draft != "Before "+a.Link()+" after" {
+		t.Fatal("composer undo did not restore attachment")
 	}
 }
