@@ -1,12 +1,15 @@
 {
-  "name": "MujicAgent",
+  "i18n": {
+    "dir": "locales",
+    "source": "zh-Hans"
+  },
   "identifier": "dev.ji233.mujicagent",
-  "version": "0.1.0",
+  "name": "MujicAgent",
   "out": "build",
   "updates": {
     "github": "ji233-Sun/mujicagent",
     "publicKey": "muf37Koz9ajnJjdKNMDxGradJu2/Ukqt7RszE1NziWE=",
     "deltas": 0
   },
-  "i18n": { "dir": "locales", "source": "zh-Hans" }
+  "version": "0.1.1"
 }

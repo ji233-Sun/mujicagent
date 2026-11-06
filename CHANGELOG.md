@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.1
+
+**Full Changelog**: https://github.com/ji233-Sun/mujicagent/commits/v0.1.1
+
+### Commits
+
+- fix: keep native appearance light across the application (030d519)
+- feat: initialize native Codex client with signed app updates and release workflows (d30875f)
+
 ## 0.1.0
 
 - 全原生 Codex 桌面客户端，支持项目、无项目对话、手动收纳与中英文界面。
