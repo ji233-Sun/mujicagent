@@ -82,7 +82,7 @@ func (v *View) messageQueue(c *ui.Context, t *model.Thread) {
 						}
 					}).Disabled(q.Sending || edit != nil)
 					iconButton(c, tx.Delete(), closeIcon, func() { v.C.DeleteQueued(t.ID, q.ID) }).Disabled(q.Sending)
-					ui.Button(c, label).FontSize(11).TextColor(c.Theme().Accent).Tooltip(tx.QueueSteerHint()).Disabled(q.Sending || editing || !v.C.CanSteer(t)).OnClick(func() { v.C.Steer(t.ID, q.ID) })
+					iconButton(c, label, arrow, func() { v.C.Steer(t.ID, q.ID) }).TextColor(c.Theme().Accent).Tooltip(tx.QueueSteerHint()).Disabled(q.Sending || editing || !v.C.CanSteer(t))
 				})
 			}
 		})
