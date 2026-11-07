@@ -158,10 +158,13 @@ func (c *Controller) applyTurnEvent(t *model.Thread, index int, e harness.AgentE
 		turn.ID = e.TurnID
 	}
 	if e.Accepted && run != nil {
+		// Persist delivery state promptly; ordinary acceptance can share the stream batch.
+		if run.queuedID != "" || !t.HandoffSent && t.HandoffContext != "" {
+			c.streamFinal = true
+		}
 		run.accepted = true
 		c.removeQueued(t, run.queuedID)
 		t.HandoffSent = true
-		c.streamFinal = true
 	}
 	if e.Interaction != nil {
 		r := e.Interaction.Request

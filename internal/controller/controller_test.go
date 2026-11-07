@@ -84,6 +84,11 @@ printf '%s\n' '{"id":"request-3","result":{}}'
 				t.Fatal(c.Error)
 			}
 			sendDuration := time.Since(start)
+			statePath := filepath.Join(dir, "state.json")
+			lastSnapshot, err := os.Stat(statePath)
+			if err != nil {
+				t.Fatal(err)
+			}
 			start = time.Now()
 			var worst time.Duration
 			frames := 0
@@ -101,17 +106,26 @@ printf '%s\n' '{"id":"request-3","result":{}}'
 			if worst > 100*time.Millisecond {
 				t.Fatalf("UI blocked during streaming: %s", worst)
 			}
-			deadline := time.Now().Add(3 * time.Second)
+			saveStart := time.Now()
+			deadline := saveStart.Add(3 * time.Second)
 			for {
-				saved, err := model.Load(filepath.Join(dir, "state.json"))
-				if err == nil && len(saved.Thread(thread.ID).Turns[0].Items) == 1 && saved.Thread(thread.ID).Turns[0].Status == "completed" {
-					break
+				info, err := os.Stat(statePath)
+				// Atomic saves replace the file. Avoid repeatedly decoding the same
+				// 24 MiB history while the background writer is still encoding it.
+				if err == nil && (!os.SameFile(lastSnapshot, info) || !lastSnapshot.ModTime().Equal(info.ModTime())) {
+					lastSnapshot = info
+					var saved *model.State
+					saved, err = model.Load(statePath)
+					if err == nil && len(saved.Thread(thread.ID).Turns[0].Items) == 1 && saved.Thread(thread.ID).Turns[0].Status == "completed" {
+						break
+					}
 				}
 				if time.Now().After(deadline) {
 					t.Fatal("final background save never completed", err)
 				}
 				time.Sleep(20 * time.Millisecond)
 			}
+			snapshotCheckDuration := time.Since(saveStart)
 			// A newer settings save must supersede any queued stream snapshot.
 			s.Settings.PiDefaultAccess = "native"
 			c.Save()
@@ -120,7 +134,7 @@ printf '%s\n' '{"id":"request-3","result":{}}'
 			if err != nil || restored.Settings.PiDefaultAccess != "native" || restored.Thread(thread.ID).Turns[0].Items[0].Text != strings.Repeat("x", 2048) {
 				t.Fatal("stale stream snapshot overwrote final state", err)
 			}
-			t.Logf("24 MiB history, 2048 deltas: send=%s stream=%s frames=%d worst Drain=%s", sendDuration, elapsed, frames, worst)
+			t.Logf("24 MiB history, 2048 deltas: send=%s stream=%s frames=%d worst Drain=%s snapshot check=%s", sendDuration, elapsed, frames, worst, snapshotCheckDuration)
 		})
 	}
 }
