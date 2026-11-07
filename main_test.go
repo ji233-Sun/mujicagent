@@ -870,8 +870,8 @@ func TestModelEffortPopover(t *testing.T) {
 	}
 	list, ok := tt.Find("模型列表")
 	// The two text rows between the slider and speed options use platform fonts.
-	if !ok || list.H > 180 || fast.Y-(right.Y+right.H) > 72 {
-		t.Fatalf("model picker left excessive empty space: list=%+v, slider=%+v, speed=%+v", list, right, fast)
+	if !ok || panel.H != 360 || list.H != 309 || fast.Y-(right.Y+right.H) > 72 {
+		t.Fatalf("model picker must fill its fixed height and keep options compact: panel=%+v, list=%+v, slider=%+v, speed=%+v", panel, list, right, fast)
 	}
 	for _, choice := range []struct{ label, tier string }{{"Fast", "priority"}, {"Ultrafast", "ultrafast"}, {"Ultrafast", ""}, {"Ultrafast", "ultrafast"}} {
 		if err := tt.Click(choice.label); err != nil {
