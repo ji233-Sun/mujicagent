@@ -40,7 +40,7 @@ func TestImageView(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, lang := range []string{"zh-Hans", "en"} {
-		for _, scene := range []string{"collapsed", "ready", "relative", "loading", "missing", "broken", "empty", "narrow", "dialog"} {
+		for _, scene := range []string{"collapsed", "ready", "relative", "loading", "missing", "broken", "empty", "narrow"} {
 			t.Run(lang+"/"+scene, func(t *testing.T) {
 				state := model.New()
 				state.Settings.Language = lang
@@ -76,50 +76,37 @@ func TestImageView(t *testing.T) {
 				if scene == "narrow" {
 					width = 660
 				}
-				if scene == "dialog" {
-					// Open through the shared action without simulated input.
-					v.openAttachment(a, "")
-					if !v.attachmentOpen || v.attachmentEditable() {
-						t.Fatal("viewed image must open without allowing draft replacement")
-					}
-				}
 				tt := ui.NewTester(v.Render, width, 800)
 				tt.Frame()
 				tt.Advance(time.Second)
 				tt.Frame()
-				if scene == "dialog" {
-					if !tt.HasText(name) {
-						t.Fatal("image dialog missing filename")
+				label := v.texts().ImagePreview()
+				if item.Text != "" {
+					label += " · " + filepath.Base(item.Text)
+				}
+				if !tt.HasText(label) || tt.HasText("imageView") {
+					t.Fatal("image tool row missing its localized title or filename")
+				}
+				if scene == "collapsed" {
+					if tt.HasText(path) {
+						t.Fatal("collapsed item exposes expanded contents")
 					}
-				} else {
-					label := v.texts().ImagePreview()
-					if item.Text != "" {
-						label += " · " + filepath.Base(item.Text)
+				} else if scene != "empty" && !tt.HasText(a.Path) {
+					t.Fatal("expanded image path missing")
+				}
+				switch scene {
+				case "missing", "broken", "empty":
+					if !tt.HasText(v.texts().NoImagePreview()) {
+						t.Fatal("unavailable image has no fallback")
 					}
-					if !tt.HasText(label) || tt.HasText("imageView") {
-						t.Fatal("image tool row missing its localized title or filename")
+				case "loading":
+					if !tt.HasText(v.texts().AttachmentLoading()) {
+						t.Fatal("loading image has no status")
 					}
-					if scene == "collapsed" {
-						if tt.HasText(path) {
-							t.Fatal("collapsed item exposes expanded contents")
-						}
-					} else if scene != "empty" && !tt.HasText(a.Path) {
-						t.Fatal("expanded image path missing")
-					}
-					switch scene {
-					case "missing", "broken", "empty":
-						if !tt.HasText(v.texts().NoImagePreview()) {
-							t.Fatal("unavailable image has no fallback")
-						}
-					case "loading":
-						if !tt.HasText(v.texts().AttachmentLoading()) {
-							t.Fatal("loading image has no status")
-						}
-					case "ready", "relative", "narrow":
-						r, ok := tt.Find(v.texts().ImagePreview())
-						if !ok || r.W <= 0 || r.H <= 0 || r.X+r.W > float32(width) {
-							t.Fatalf("thumbnail missing or outside viewport: %+v", r)
-						}
+				case "ready", "relative", "narrow":
+					r, ok := tt.Find(v.texts().ImagePreview())
+					if !ok || r.W <= 0 || r.H <= 0 || r.X+r.W > float32(width) {
+						t.Fatalf("thumbnail missing or outside viewport: %+v", r)
 					}
 				}
 				if out := os.Getenv("MUJICAGENT_IMAGE_VIEW_SCREENSHOTS"); out != "" {
@@ -137,5 +124,32 @@ func TestImageView(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestImageViewThumbnailDoesNotOpenAnnotations(t *testing.T) {
+	state := model.New()
+	thread := state.AddThread("", t.TempDir())
+	ctrl := controller.New(t.TempDir(), state, nil)
+	defer ctrl.Close()
+	v := New(ctrl)
+	item := model.Item{Kind: "imageView", Text: filepath.Join(thread.Cwd, "sample.png")}
+	v.attachments = map[string]*attachmentPreview{
+		"image:" + item.Text: {ready: true, bitmap: ui.NewBitmap(image.NewRGBA(image.Rect(0, 0, 20, 20)))},
+	}
+	tt := ui.NewTester(func(c *ui.Context) {
+		v.imageView(c, &item)
+		v.attachmentDialog(c)
+	}, 400, 300)
+	tt.Frame()
+	r, ok := tt.Find(v.texts().ImagePreview())
+	if !ok {
+		t.Fatal("thumbnail missing")
+	}
+	// Interaction regression is separate from the direct-state screenshot scenes.
+	tt.ClickAt(r.X+r.W/2, r.Y+r.H/2)
+	tt.Frame()
+	if v.attachmentOpen || v.annotation != nil {
+		t.Fatal("clicking a tool thumbnail must not open image annotations")
 	}
 }

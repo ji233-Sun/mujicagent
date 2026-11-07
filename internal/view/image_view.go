@@ -33,11 +33,11 @@ func (v *View) imageView(c *ui.Context, item *model.Item) {
 		case p.err != nil || p.bitmap == nil:
 			ui.Text(c, tx.NoImagePreview()).FontSize(12).TextColor(c.Theme().TextMuted)
 		default:
-			ui.ButtonBase(c.Key("viewed-image")).Width(280).MaxWidthPercent(100).Height(160).
+			ui.Box(c.Key("viewed-image")).Width(280).MaxWidthPercent(100).Height(160).
 				Radius(8).Border(1, c.Theme().Border).Background(c.Theme().Surface).
 				Label(tx.ImagePreview()).Tooltip(a.Path).Children(func() {
 				ui.Image(c, p.bitmap).Fill().Fit(ui.Contain)
-			}).OnClick(func() { v.openAttachment(a, "") })
+			})
 		}
 	})
 }
