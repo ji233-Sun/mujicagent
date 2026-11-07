@@ -447,7 +447,10 @@ func (v *View) composer(c *ui.Context, t *model.Thread) {
 					ui.Button(c, tx.Cancel()).OnClick(func() { v.C.CancelQueueEdit(t.ID) })
 				})
 			}
-			v.composerInput(c, draft)
+			// Clip the editor's custom painting at the input viewport.
+			ui.Box(c).Height(90).Shrink(0).Clip().Children(func() {
+				v.composerInput(c, draft)
+			})
 			ui.Row(c).AlignItems(ui.Center).Gap(6).Children(func() {
 				v.modelSelector(c)
 				v.permissionSelector(c)
