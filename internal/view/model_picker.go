@@ -114,9 +114,7 @@ func (v *View) codexModelPanel(c *ui.Context) {
 		selectedModel = t.AgentModel
 	}
 	v.modelCatalogPanel(c, "codex", v.C.Models, selectedModel, v.chooseModel, func(current codex.Model) {
-		ui.Text(c, v.texts().ReasoningEffort()).FontSize(11).TextColor(c.Theme().TextMuted).Padding(6, 8).Margin(0, 0, 3)
-		v.effortSlider(c, current)
-		v.speedOptions(c, current)
+		v.modelTuningOptions(c, "codex", current, nil)
 	})
 }
 

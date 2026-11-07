@@ -90,7 +90,7 @@ func (v *View) agentModelPanel(c *ui.Context) {
 		if t == nil || t.Driver() != id {
 			return
 		}
-		ui.Box(c).Disabled(v.C.Running[t.ID]).Children(func() { v.agentThinkingOptions(c, current, t) })
+		ui.Box(c).Disabled(v.C.Running[t.ID]).Children(func() { v.modelTuningOptions(c, id, current, t) })
 	})
 	ui.Row(c).Height(28).Shrink(0).Padding(0, 8).Gap(6).AlignItems(ui.Center).Children(func() {
 		ui.Box(c).Grow(1)
@@ -173,21 +173,27 @@ func (v *View) favoriteModelPanel(c *ui.Context) {
 	catalogs := map[string][]codex.Model{"codex": v.C.Models, "pi": v.externalModels("pi"), "droid": v.externalModels("droid")}
 	var choices []modelChoice
 	for _, key := range v.C.State.Settings.ModelFavorites {
-		option := codex.Model{Model: key.ModelID}
-		for _, m := range catalogs[key.Harness] {
-			if m.Model == key.ModelID {
-				option = m
-				break
-			}
-		}
-		choices = append(choices, modelChoice{key.Harness, option})
+		choices = append(choices, modelChoice{key.Harness, catalogModel(catalogs, key)})
 	}
+	t := v.C.State.Thread(v.C.State.Selected)
 	selected := model.ModelFavorite{}
-	if t := v.C.State.Thread(v.C.State.Selected); t != nil {
+	if t != nil {
 		selected = model.ModelFavorite{Harness: t.Driver(), ModelID: t.AgentModel}
 	}
 	if selected.Harness == "codex" && selected.ModelID == "" {
 		selected.ModelID = v.C.State.Settings.Model
+	}
+	// Favorites span harnesses, so tune the model the active thread uses; its
+	// catalog entry supplies the real effort and speed options.
+	var side func(codex.Model)
+	if active := catalogModel(catalogs, selected); t != nil && active.Model != "" {
+		side = func(codex.Model) {
+			box := ui.Box(c)
+			if t.Driver() != "codex" && v.C.Running[t.ID] {
+				box = box.Disabled(true)
+			}
+			box.Children(func() { v.modelTuningOptions(c, t.Driver(), active, t) })
+		}
 	}
 	v.modelChoicesPanel(c, choices, selected, func(m modelChoice) {
 		if m.Driver == "codex" {
@@ -195,7 +201,18 @@ func (v *View) favoriteModelPanel(c *ui.Context) {
 		} else {
 			v.chooseExternalModel(m.Driver, m.Model)
 		}
-	}, nil, true)
+	}, side, true)
+}
+
+// catalogModel resolves a favorite or active model against loaded catalogs and
+// keeps its ID when the catalog has not arrived yet.
+func catalogModel(catalogs map[string][]codex.Model, key model.ModelFavorite) codex.Model {
+	for _, m := range catalogs[key.Harness] {
+		if m.Model == key.ModelID {
+			return m
+		}
+	}
+	return codex.Model{Model: key.ModelID}
 }
 func (v *View) chooseExternalModel(id string, m codex.Model) {
 	t := v.C.State.Thread(v.C.State.Selected)
@@ -279,10 +296,15 @@ func (v *View) agentDefaultPermissions(c *ui.Context, driver string) {
 	})
 }
 
-func (v *View) agentThinkingOptions(c *ui.Context, current codex.Model, t *model.Thread) {
+func (v *View) modelTuningOptions(c *ui.Context, driver string, current codex.Model, t *model.Thread) {
 	tx := v.texts()
 	ui.Text(c, tx.ReasoningEffort()).FontSize(11).TextColor(c.Theme().TextMuted).Padding(6, 8).Margin(0, 0, 3)
-	if current.Model == "" {
+	if driver == "codex" {
+		v.effortSlider(c, current)
+		v.speedOptions(c, current)
+		return
+	}
+	if t == nil || current.Model == "" {
 		ui.Text(c, tx.ChooseModel()).FontSize(11).TextColor(c.Theme().TextMuted).Padding(8, 6)
 		return
 	}
