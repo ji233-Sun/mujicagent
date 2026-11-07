@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.1.13
+
+#### What's Changed
+* feat: 支持 Windows 双架构发版与原生 CI by @ji233-Sun in https://github.com/ji233-Sun/mujicagent/pull/62
+* fix: 修复图片标注长评论溢出卡片 by @ji233-Sun in https://github.com/ji233-Sun/mujicagent/pull/63
+
+
+**Full Changelog**: https://github.com/ji233-Sun/mujicagent/compare/v0.1.12...v0.1.13
+
+### Commits
+
+- fix: 修复图片标注长评论溢出卡片 (f0a9c9d)
+- test: 修复 Windows 路径与字体度量断言 (52c0327)
+- feat: 支持 Windows 双架构发版与原生 CI (2191ac6)
+
 ## 0.1.12
 
 #### What's Changed
