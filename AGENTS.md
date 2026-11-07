@@ -14,6 +14,11 @@
 - 新功能使用 `feat/`，修复使用 `fix/`，文档等使用对应的有意义前缀；禁止 `codex/`。不得直接在主分支提交或推送，不得丢弃或混入无关的未提交工作。
 - 分支检查、验证选择、中文 PR、Issue 关闭关联和发布边界统一维护在交付技能中，不在此重复细则。
 
+## UI 验收
+
+- UI 布局与视觉验收使用纯 CPU 离屏测试和本次生成的 PNG：直接设置场景状态，再渲染截图；不使用 Computer Use，也不通过模拟点击、键盘或鼠标操作切换截图场景。
+- 具体流程和能力边界遵循 [mygo-maintenance](.agents/skills/mygo-maintenance/SKILL.md#verification)，截图交付遵循 [mujicagent-delivery](.agents/skills/mujicagent-delivery/SKILL.md#最小充分验证)。CPU 截图不作为 GPU 或系统原生窗口行为的验证证据。
+
 ## Harness 扩展
 
 - 修改智能体设置、harness 安装更新、认证或新增 agent 时，读取并遵循 [harness-maintenance](.agents/skills/harness-maintenance/SKILL.md)，特别注意 Windows 原生程序与 npm 启动器、安装来源和非账号认证的区别。
