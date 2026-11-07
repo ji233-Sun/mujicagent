@@ -9,6 +9,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -16,7 +17,7 @@ import (
 
 func TestAgentCompactScreenshots(t *testing.T) {
 	for _, lang := range []string{"zh-Hans", "en"} {
-		for _, scene := range []string{"settings-codex", "settings-pi", "settings-droid", "picker-codex", "picker-pi", "picker-droid", "picker-favorites", "picker-loading", "picker-error", "defaults-pi", "defaults-droid"} {
+		for _, scene := range []string{"settings-codex", "settings-pi", "settings-droid", "picker-codex", "picker-pi", "picker-droid", "picker-favorites", "picker-loading", "picker-error"} {
 			t.Run(lang+"-"+scene, func(t *testing.T) {
 				s := model.New()
 				s.Settings.Language = lang
@@ -37,11 +38,7 @@ func TestAgentCompactScreenshots(t *testing.T) {
 				}
 				s.Settings.ModelFavorites = []model.ModelFavorite{{Harness: "codex", ModelID: "gpt-6-astra"}, {Harness: "pi", ModelID: "gpt-6.1-sol"}, {Harness: "droid", ModelID: "gpt-6.1-sol"}}
 				v := New(c)
-				if strings.HasPrefix(scene, "defaults-") {
-					v.Settings = true
-					v.agentSection = strings.TrimPrefix(scene, "defaults-")
-					v.settingsModelPicker = true
-				} else if strings.HasPrefix(scene, "settings") {
+				if strings.HasPrefix(scene, "settings") {
 					v.Settings = true
 					v.agentSection = scene[9:]
 					if v.agentSection != "" {
@@ -69,6 +66,23 @@ func TestAgentCompactScreenshots(t *testing.T) {
 				tt.Frame()
 				tt.Advance(time.Second)
 				tt.Frame()
+				for _, removed := range []string{"Default model", "默认模型", "Model ID", "模型 ID", "Custom", "自定义"} {
+					if slices.Contains(tt.Texts(), removed) {
+						t.Fatalf("removed model control is visible: %s", removed)
+					}
+				}
+				if scene == "settings-pi" || scene == "settings-droid" {
+					if slices.Contains(tt.Texts(), v.texts().Models()) {
+						t.Fatal("settings still exposes model selection")
+					}
+				}
+				if scene == "picker-pi" || scene == "picker-droid" {
+					for _, label := range []string{"gpt-6.1-sol", "claude-sonnet-4-6", "custom:Local-0", v.texts().SearchModels(), v.texts().AdjustReasoningEffort()} {
+						if _, ok := tt.Find(label); !ok {
+							t.Fatalf("missing model control: %s", label)
+						}
+					}
+				}
 				for _, name := range []string{"Codex", "Pi", "Droid"} {
 					b, ok := tt.Find(name)
 					if !ok || b.W < 24 || b.X < 0 || b.X+b.W > 840 {

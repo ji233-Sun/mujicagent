@@ -52,7 +52,7 @@ type ModelFavorite struct{ Harness, ModelID string }
 
 type Settings struct {
 	ModelFavorites                                                                        []ModelFavorite `json:",omitempty"`
-	PiPath, DroidPath, PiModel, DroidModel                                                string          `json:",omitempty"`
+	PiPath, DroidPath                                                                     string          `json:",omitempty"`
 	HarnessSource                                                                         string          `json:",omitempty"`
 	DisableHarnessAutoCheck                                                               bool            `json:",omitempty"`
 	CodexPath, Model, Effort, ServiceTier, Appearance, Language, DefaultPermissionProfile string

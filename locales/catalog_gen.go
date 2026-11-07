@@ -2318,16 +2318,6 @@ func (msgs Messages) AgentPath() string {
 	return Catalog.Format(msgs.locale, "agentPath", nil)
 }
 
-// AgentModel says "模型 ID"
-// in the language the app shows.
-func AgentModel() string { return In(i18n.Locale()).AgentModel() }
-
-// AgentModel says "模型 ID"
-// in the language of msgs.
-func (msgs Messages) AgentModel() string {
-	return Catalog.Format(msgs.locale, "agentModel", nil)
-}
-
 // AgentSetup says "安装与登录"
 // in the language the app shows.
 func AgentSetup() string { return In(i18n.Locale()).AgentSetup() }
@@ -2346,16 +2336,6 @@ func AgentProbe() string { return In(i18n.Locale()).AgentProbe() }
 // in the language of msgs.
 func (msgs Messages) AgentProbe() string {
 	return Catalog.Format(msgs.locale, "agentProbe", nil)
-}
-
-// AgentSwitch says "使用此模型"
-// in the language the app shows.
-func AgentSwitch() string { return In(i18n.Locale()).AgentSwitch() }
-
-// AgentSwitch says "使用此模型"
-// in the language of msgs.
-func (msgs Messages) AgentSwitch() string {
-	return Catalog.Format(msgs.locale, "agentSwitch", nil)
 }
 
 // AgentHandoff says "交接到此模型"
@@ -2438,16 +2418,6 @@ func (msgs Messages) AgentDroidAccess() string {
 	return Catalog.Format(msgs.locale, "agentDroidAccess", nil)
 }
 
-// AgentDefaultModel says "默认模型"
-// in the language the app shows.
-func AgentDefaultModel() string { return In(i18n.Locale()).AgentDefaultModel() }
-
-// AgentDefaultModel says "默认模型"
-// in the language of msgs.
-func (msgs Messages) AgentDefaultModel() string {
-	return Catalog.Format(msgs.locale, "agentDefaultModel", nil)
-}
-
 // AgentRefreshModels says "刷新"
 // in the language the app shows.
 func AgentRefreshModels() string { return In(i18n.Locale()).AgentRefreshModels() }
@@ -2476,16 +2446,6 @@ func AgentModelsFailed() string { return In(i18n.Locale()).AgentModelsFailed() }
 // in the language of msgs.
 func (msgs Messages) AgentModelsFailed() string {
 	return Catalog.Format(msgs.locale, "agentModelsFailed", nil)
-}
-
-// AgentCustomModel says "自定义"
-// in the language the app shows.
-func AgentCustomModel() string { return In(i18n.Locale()).AgentCustomModel() }
-
-// AgentCustomModel says "自定义"
-// in the language of msgs.
-func (msgs Messages) AgentCustomModel() string {
-	return Catalog.Format(msgs.locale, "agentCustomModel", nil)
 }
 
 // FavoriteModels says "收藏模型"

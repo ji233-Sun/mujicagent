@@ -43,15 +43,15 @@ func (v *View) agentSidebar(c *ui.Context) {
 			b.Background(c.Theme().Surface).TextColor(c.Theme().Accent)
 		}
 		b.Children(func() { agentGlyph(c, d.ID); ui.Text(c, d.Name).FontSize(12).Grow(1).SingleLine() })
-		b.OnClick(func() { v.agentSection = d.ID; v.settingsModelPicker = false; v.C.LoadAgentModels(d.ID, false) })
+		b.OnClick(func() { v.agentSection = d.ID })
 	}
 }
 func (v *View) externalAgentPane(c *ui.Context, id string) {
 	tx, h := v.texts(), v.C.HarnessFor(id)
-	path, modelID := &v.C.State.Settings.PiPath, &v.C.State.Settings.PiModel
+	path := &v.C.State.Settings.PiPath
 	url := "https://pi.dev/"
 	if id == "droid" {
-		path, modelID = &v.C.State.Settings.DroidPath, &v.C.State.Settings.DroidModel
+		path = &v.C.State.Settings.DroidPath
 		url = "https://docs.factory.com/droid-cli/quickstart"
 	}
 	services := c.Services()
@@ -66,29 +66,8 @@ func (v *View) externalAgentPane(c *ui.Context, id string) {
 				}
 				ui.Text(c, version).FontSize(11).TextColor(c.Theme().TextMuted).SingleLine()
 			})
-			ui.Button(c, tx.AgentProbe()).Height(28).FontSize(12).Disabled(h.Checking || h.ModelsLoading).OnClick(func() { v.C.CheckAgent(id); v.C.LoadAgentModels(id, true) })
+			ui.Button(c, tx.AgentProbe()).Height(28).FontSize(12).Disabled(h.Checking).OnClick(func() { v.C.CheckAgent(id) })
 			ui.Button(c, tx.AgentSetup()).Height(28).FontSize(12).OnClick(func() { services.OpenURL(url) })
-		})
-		ui.Divider(c)
-		ui.Row(c).Padding(10, 14).Gap(12).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, tx.Models()).Width(112).Shrink(0).FontSize(12).TextColor(c.Theme().TextMuted)
-			label := *modelID
-			if label == "" {
-				label = tx.AgentDefaultModel()
-			}
-			button := ui.ButtonBase(c).Height(28).Radius(6).Border(1, c.Theme().Border).Padding(0, 10).Gap(8).AlignItems(ui.Center).Grow(1).MinWidth(0).Label(tx.ChooseModel())
-			button.Children(func() {
-				ui.Text(c, label).FontSize(12).Grow(1).SingleLine().MinWidth(0)
-				ui.Icon(c, chevron).Size(12, 12).Rotate(90).TextColor(c.Theme().TextMuted)
-			})
-			button.OnClick(func() {
-				v.settingsModelPicker = !v.settingsModelPicker
-				v.modelSearch = ""
-				v.C.LoadAgentModels(id, false)
-			})
-			pickerPopover(c.Key("settings-agent-model"), button, &v.settingsModelPicker, tx.ModelPicker(), 448, func() {
-				v.externalModelCatalog(c, id, *modelID, func(m codex.Model) { *modelID = m.Model; v.C.Save(); v.settingsModelPicker = false }, false)
-			})
 		})
 		if h.Checking {
 			ui.Progress(c, -1).Height(3)
@@ -136,45 +115,26 @@ func (v *View) harnessRail(c *ui.Context) {
 			v.pickerHarness = d.ID
 			v.C.LoadAgentModels(d.ID, false)
 			v.modelSearch = ""
-			v.agentModelDraft = v.C.State.Settings.PiModel
-			if d.ID == "droid" {
-				v.agentModelDraft = v.C.State.Settings.DroidModel
-			}
-			if t := v.C.State.Thread(v.C.State.Selected); t != nil && t.Driver() == d.ID {
-				v.agentModelDraft = t.AgentModel
-			}
 		})
 	}
 }
 func (v *View) agentModelPanel(c *ui.Context) {
+	id := v.pickerHarness
+	tx, h := v.texts(), v.C.HarnessFor(id)
 	t := v.C.State.Thread(v.C.State.Selected)
-	selected := v.C.State.Settings.PiModel
-	if v.pickerHarness == "droid" {
-		selected = v.C.State.Settings.DroidModel
-	}
-	if t != nil && t.Driver() == v.pickerHarness {
+	selected := ""
+	if t != nil && t.Driver() == id {
 		selected = t.AgentModel
 	}
-	v.externalModelCatalog(c, v.pickerHarness, selected, func(m codex.Model) { v.chooseExternalModel(v.pickerHarness, m) }, true)
-}
-func (v *View) externalModelCatalog(c *ui.Context, id, selected string, choose func(codex.Model), conversation bool) {
-	tx, h := v.texts(), v.C.HarnessFor(id)
-	models := append([]codex.Model{{DisplayName: tx.AgentDefaultModel()}}, v.externalModels(id)...)
-	var side func(codex.Model)
-	if conversation {
-		side = func(current codex.Model) {
-			t := v.C.State.Thread(v.C.State.Selected)
-			if t == nil || t.Driver() != id {
-				return
-			}
-			ui.Text(c, tx.ReasoningEffort()).FontSize(11).TextColor(c.Theme().TextMuted).Padding(6, 8)
-			ui.Box(c).Disabled(v.C.Running[t.ID]).Children(func() { v.modelEffortSlider(c, current, &t.AgentEffort) })
+	v.modelCatalogPanel(c, id, v.externalModels(id), selected, func(m codex.Model) { v.chooseExternalModel(id, m) }, func(current codex.Model) {
+		if t == nil || t.Driver() != id {
+			return
 		}
-	}
-	v.modelCatalogPanel(c, id, models, selected, choose, side)
+		ui.Text(c, tx.ReasoningEffort()).FontSize(11).TextColor(c.Theme().TextMuted).Padding(6, 8).Margin(0, 0, 3)
+		ui.Box(c).Disabled(v.C.Running[t.ID]).Children(func() { v.modelEffortSlider(c, current, &t.AgentEffort) })
+	})
 	ui.Row(c).Height(28).Padding(0, 8).Gap(6).AlignItems(ui.Center).Children(func() {
 		ui.Box(c).Grow(1)
-		ui.Button(c, tx.AgentCustomModel()).Height(24).FontSize(11).OnClick(func() { open := v.openState("custom-model-" + id); *open = !*open })
 		label := tx.AgentRefreshModels()
 		if h.ModelsLoading {
 			label = tx.AgentLoadingModels()
@@ -184,12 +144,6 @@ func (v *View) externalModelCatalog(c *ui.Context, id, selected string, choose f
 			ui.Text(c, tx.AgentModelsFailed()).FontSize(11).TextColor(c.Theme().Danger).Tooltip(h.ModelsError)
 		}
 	})
-	if *v.openState("custom-model-" + id) {
-		ui.Row(c).Gap(6).Padding(4, 8).Children(func() {
-			ui.TextInput(c, &v.agentModelDraft).Height(26).FontSize(12).Grow(1).MinWidth(0).Label(tx.AgentModel()).Placeholder(tx.AgentModel())
-			ui.Button(c, tx.AgentSwitch()).Height(26).FontSize(11).Disabled(v.agentModelDraft == "" || v.C.Running[v.C.State.Selected]).OnClick(func() { choose(codex.Model{Model: v.agentModelDraft}) })
-		})
-	}
 }
 func (v *View) agentPermissions(c *ui.Context, t *model.Thread) {
 	tx := v.texts()
