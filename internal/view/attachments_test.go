@@ -580,6 +580,78 @@ func TestProjectPickerTransfersDraft(t *testing.T) {
 	}
 }
 
+func TestProjectPickerFollowsSelectedSessionRunningState(t *testing.T) {
+	state := model.New()
+	ctrl := controller.New(t.TempDir(), state, nil)
+	state.Projects = []model.Project{{ID: "target", Name: "Destination", Path: t.TempDir()}}
+	thread := state.AddThread("", "")
+	idle := state.AddThread("", "")
+	state.Selected = thread.ID
+	v := New(ctrl)
+	tt := ui.NewTester(v.Render, 1140, 780)
+	tt.Frame()
+	_, ok := tt.Find("切换项目")
+	if !ok {
+		t.Fatal("idle session has no project selector")
+	}
+	idleMessage, _ := tt.Find("消息")
+	if err := tt.Click("切换项目"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	ctrl.Running[thread.ID] = true
+	for i := 0; i < 3; i++ {
+		tt.Frame()
+	}
+	if _, ok := tt.Find("切换项目"); ok || v.projectPicker {
+		t.Fatal("running session retained project selector or open picker")
+	}
+	if _, ok := tt.Find("搜索项目"); ok {
+		t.Fatal("running session retained project popover")
+	}
+	runningMessage, ok := tt.Find("消息")
+	if !ok || runningMessage.Y != idleMessage.Y || runningMessage.H != idleMessage.H {
+		t.Fatalf("composer moved or resized: idle=%+v running=%+v", idleMessage, runningMessage)
+	}
+	// With a bottom-anchored composer, the removed row returns its space above it.
+	if _, ok := tt.Find("切换项目 · Destination"); ok {
+		t.Fatal("hidden picker retained clickable options")
+	}
+	if err := tt.Click("消息"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Type("queued while running")
+	tt.Frame()
+	if thread.Draft != "queued while running" {
+		t.Fatalf("running composer lost input: %q", thread.Draft)
+	}
+	state.Selected = idle.ID
+	tt.Frame()
+	if _, ok := tt.Find("切换项目"); !ok {
+		t.Fatal("idle selection inherited another session's running state")
+	}
+	state.Selected = thread.ID
+	tt.Frame()
+	if _, ok := tt.Find("切换项目"); ok {
+		t.Fatal("running selection restored project selector")
+	}
+	ctrl.Running[thread.ID] = false
+	tt.Frame()
+	if _, ok := tt.Find("切换项目"); !ok || v.projectPicker {
+		t.Fatal("stopped session did not restore closed selector")
+	}
+	if err := tt.Click("切换项目"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if err := tt.Click("切换项目 · Destination"); err != nil {
+		t.Fatal(err)
+	}
+	if state.Thread(state.Selected).ProjectID != "target" {
+		t.Fatal("restored selector could not switch projects")
+	}
+}
+
 func TestProjectPickerHeightAndSearch(t *testing.T) {
 	state := model.New()
 	ctrl := controller.New(t.TempDir(), state, nil)
