@@ -24,6 +24,12 @@ description: 为 MujicAgent 添加或维护 harness、模型发现与收藏、�
 
 先确认官方 CLI/SDK 的当前协议：模型目录、会话创建与续聊、模型/思考强度参数、停止、输入附件、工具权限、流式或最终结果。记录真实支持范围，只有 CLI 版本探测不能证明认证或推理成功。能力缺失时不假装与 Codex 等价；未实现的附件类型需明确拒绝，权限不能静默放大。
 
+## 新增 Harness 的 Issue 标签
+
+- 每次新增 Harness，必须在同次交付中为 GitHub 仓库创建 `harness:<driver-id>` 标签，后缀使用新 Harness 的稳定 driver ID；说明写明对应 Harness，颜色沿用已有 Harness 标签。先查询已有标签，存在则复用，不按显示名另建同义标签。
+- 同步更新本技能的支持列表、[Issue 提报规范中的映射](../mujicagent-delivery/SKILL.md#issue-提报与关联) 及 [README 提报说明](../../../README.md#参与项目)，让提报者能够选择新 Harness。标签选择范围及无权限、待确认情况统一遵循提报规范。
+- 交付前回读远端标签，核对名称、说明与 `Drivers` ID 一致，并在 PR 中记录结果。仅修改本地文档不算完成标签维护；创建标签遇到权限或认证阻塞时，按交付技能报告未完成项。
+
 ## 模型选择与紧凑界面
 
 - 模型选择以 Codex 为参照，复用 `modelCatalogPanel` / `modelChoicesPanel` 和 `modelEffortSlider`。在对话输入栏选择具体模型，不新增「默认模型」、手填模型 ID 或设置页 Models 控件。设置页只放版本、安装/登录入口及折叠连接详情，不铺满协议解释文字；异常通过简短状态和可重试入口表达。

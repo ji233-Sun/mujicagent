@@ -72,7 +72,9 @@ MujicAgent 使用 Go 和 [MyGo](https://github.com/egoist/mygo) 构建，界面�
 
 ## 参与项目
 
-欢迎通过 [Issues](https://github.com/ji233-Sun/mujicagent/issues) 提交问题和建议。报告问题时，请附上系统、应用与 Codex 版本，以及复现步骤。
+欢迎通过 [Issues](https://github.com/ji233-Sun/mujicagent/issues) 提交问题和建议，选择 `bug` 或 `feature request` 作为主要分类。报告问题时，请附上系统、应用版本、复现步骤及实际与预期结果；功能建议请说明使用场景、期望行为和验收标准。
+
+涉及具体 Harness 的安装、认证、模型、会话或工具调用时，请写明 Harness 名称及 CLI 版本，并选择对应标签：Codex → `harness:codex`、Pi → `harness:pi`、Droid → `harness:droid`。跨 Harness 交接或影响多个 Harness 时选择所有相关标签；通用界面等无关问题无需选择。无法确认时请注明待确认，无标签权限时在正文说明，由维护者补充。完整规则见 [Issue 提报规范](.agents/skills/mujicagent-delivery/SKILL.md#issue-提报与关联)。
 
 想从源码运行或参与开发，请阅读[开发指南](docs/development.md)，了解环境要求、项目结构和验证命令。
 
