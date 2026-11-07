@@ -111,7 +111,7 @@ func TestNotarizationResume(t *testing.T) {
 set -eu
 if [[ "$1" == api ]]; then
   [[ "${API_FAIL:-0}" == 0 ]] || exit 42
-  for name in release-build release-submission-arm64 release-final-arm64; do
+  for name in release-build release-submission-arm64 release-final-arm64 release-final-windows; do
     if [[ "$*" == *"\"$name\""* && -d "$STORE/$name" ]]; then echo false; fi
   done
 else
@@ -239,6 +239,43 @@ esac
 	if string(before) != string(after) {
 		t.Fatal("called build tools after losing checkpoints")
 	}
+	// Windows packages share the prepared version and resume without rebuilding.
+	writeTestFile(t, filepath.Join(bin, "go"), `#!/bin/bash
+set -eu
+echo windows-build >> "$CALLS"
+[[ "$*" == 'tool mygo build -platform windows/amd64,windows/arm64' ]]
+version="$(jq -r .version mygo.json)"
+for arch in amd64 arm64; do
+  dir="build/windows-$arch"
+  mkdir -p "$dir"
+  for asset in "mujicagent-setup-$version-$arch.exe" "mujicagent-$version-windows-$arch.tar.gz" "update-windows-$arch.json"; do
+    [[ "$asset" != "${MISSING_ASSET:-}" ]] || continue
+    echo payload > "$dir/$asset"
+  done
+done
+`)
+	if _, err := runStage("windows", "MISSING_ASSET=update-windows-arm64.json"); err == nil {
+		t.Fatal("accepted a Windows build without its signed update manifest")
+	}
+	windows, err := runStage("windows")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.CopyFS(filepath.Join(store, "release-final-windows"), os.DirFS(filepath.Join(windows, "final-state"))); err != nil {
+		t.Fatal(err)
+	}
+	before, _ = os.ReadFile(calls)
+	if _, err := runStage("windows"); err != nil {
+		t.Fatal(err)
+	}
+	after, _ = os.ReadFile(calls)
+	if string(before) != string(after) {
+		t.Fatal("rebuilt a completed Windows checkpoint")
+	}
+	writeTestFile(t, filepath.Join(store, "release-final-windows/update-windows-arm64.json"), "corrupt")
+	if _, err := runStage("windows"); err == nil {
+		t.Fatal("accepted a corrupt Windows checkpoint")
+	}
 }
 
 func TestPublishResume(t *testing.T) {
@@ -270,9 +307,12 @@ func TestPublishResume(t *testing.T) {
 	git(seed, "push", "origin", "main")
 	sha := git(seed, "rev-parse", "HEAD")
 	store := filepath.Join(root, "store")
-	for _, name := range []string{"release-build", "release-final-arm64", "release-final-amd64"} {
+	for _, name := range []string{"release-build", "release-final-arm64", "release-final-amd64", "release-final-windows"} {
 		dir := filepath.Join(store, name)
 		files := map[string]string{"test.dmg": "dmg", "test.tar.gz": "archive", "update-test.json": "manifest"}
+		if name == "release-final-windows" {
+			files = map[string]string{"test.exe": "installer", "windows.tar.gz": "archive", "update-windows.json": "manifest"}
+		}
 		if name == "release-build" {
 			files = map[string]string{"mygo.json": `{"version":"1.2.3"}`, "CHANGELOG.md": "new", "release-notes.md": "notes", "state.json": fmt.Sprintf(`{"source":%q,"run":"123"}`, sha)}
 		}
@@ -302,6 +342,7 @@ release)
   case "$2" in
     create) echo true > "$STORE/draft";;
     upload)
+      [[ "$*" == *"final-windows/test.exe"* && "$*" == *"final-windows/windows.tar.gz"* && "$*" == *"final-windows/update-windows.json"* ]] || exit 43
       if [[ ! -f "$STORE/upload-attempted" ]]; then touch "$STORE/upload-attempted"; exit 42; fi;;
     edit) echo false > "$STORE/draft";;
   esac;;
