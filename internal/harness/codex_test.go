@@ -450,6 +450,105 @@ func TestAgentProtocol(t *testing.T) {
 	}
 }
 
+func TestNativeToolContracts(t *testing.T) {
+	cases := []struct{ pi, droid, kind, input string }{
+		{"bash", "Execute", "execute", `{"command":"pwd"}`},
+		{"edit", "Edit", "edit", `{"path":"a.go","oldText":"old","newText":"new"}`},
+		{"write", "Create", "edit", `{"file_path":"a.go","content":"new"}`},
+		{"read", "Read", "read", `{"file_path":"a.go"}`},
+		{"todo", "TodoWrite", "plan", `{"todos":"1. [in_progress] Verify"}`},
+		{"ask_user", "AskUser", "ask", `{"questionnaire":"Choose a platform"}`},
+		{"grep", "Grep", "search", `{"pattern":"TODO"}`},
+		{"find", "Glob", "search", `{"patterns":["**/*.go"]}`},
+		{"fetchurl", "FetchUrl", "fetch", `{"url":"https://example.com"}`},
+		{"compact", "Compact", "compaction", `{"summary":"Retain the task"}`},
+	}
+	for _, tc := range cases {
+		for _, driver := range []string{"pi", "droid"} {
+			t.Run(driver+"/"+tc.kind+"/"+tc.pi, func(t *testing.T) {
+				var event AgentEvent
+				emit := func(e AgentEvent) { event = e }
+				var err error
+				if driver == "pi" {
+					raw, _ := json.Marshal(map[string]any{"type": "tool_execution_start", "toolCallId": "call", "toolName": tc.pi, "args": json.RawMessage(tc.input)})
+					p := agentParser{driver: driver}
+					err = p.line(raw, emit)
+				} else {
+					raw, _ := json.Marshal(map[string]any{"type": "tool_call", "toolUse": map[string]any{"id": "call", "name": tc.droid, "input": json.RawMessage(tc.input)}})
+					a := droidRPC{emit: emit}
+					err = a.update(raw)
+				}
+				if err != nil || event.ID != "call" || event.Tool == nil || event.Tool.Kind != tc.kind || string(event.Tool.Arguments) != tc.input {
+					t.Fatalf("native tool contract: %+v %v", event, err)
+				}
+			})
+		}
+	}
+	a := droidRPC{}
+	var events []AgentEvent
+	a.emit = func(e AgentEvent) { events = append(events, e) }
+	for _, raw := range []string{
+		`{"type":"tool_call","toolUse":{"id":"script","name":"Script","input":{"script":"text(await tools.Read({file_path:'/workspace/a.go'}));"}}}`,
+		`{"type":"tool_call","toolUse":{"id":"read","name":"Read","input":{"file_path":"/workspace/a.go"},"scriptExecution":{"runId":"run","outerToolUseId":"script"}}}`,
+		`{"type":"tool_result","toolUseId":"read","content":[{"type":"text","text":"package main"}]}`,
+		`{"type":"tool_progress_update","toolUseId":"script","toolName":"Script","update":{"type":"message","text":"first"}}`,
+		`{"type":"tool_progress_update","toolUseId":"script","toolName":"Script","update":{"type":"message","text":"second"}}`,
+		`{"type":"tool_progress_update","toolUseId":"script","toolName":"Script","update":{"type":"message","fullOutput":"replacement"}}`,
+		`{"type":"tool_progress_update","toolUseId":"script","toolName":"Script","update":{"type":"error","error":"Execution failed"}}`,
+		`{"type":"tool_result","toolUseId":"script","content":"Execution failed","isError":true}`,
+	} {
+		if err := a.update([]byte(raw)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(events) != 8 || events[0].Tool.Kind != "execute" || events[1].Tool.ParentID != "script" || string(events[4].Tool.Result) != `"firstsecond"` || string(events[5].Tool.Result) != `"replacement"` || events[6].Status != "failed" || events[7].Status != "failed" {
+		t.Fatalf("Script children/progress/error contract: %+v", events)
+	}
+}
+
+func TestCompactionLifecycle(t *testing.T) {
+	for _, driver := range []string{"pi", "droid"} {
+		t.Run(driver, func(t *testing.T) {
+			var events []AgentEvent
+			emit := func(e AgentEvent) { events = append(events, e) }
+			p := agentParser{driver: driver}
+			a := droidRPC{emit: emit}
+			for range 2 {
+				for _, end := range []bool{false, true} {
+					var err error
+					if driver == "pi" {
+						kind := "auto_compaction_start"
+						if end {
+							kind = "auto_compaction_end"
+						}
+						err = p.line([]byte(`{"type":"`+kind+`"}`), emit)
+					} else if !end {
+						err = a.update([]byte(`{"type":"droid_working_state_changed","newState":"compacting_conversation"}`))
+					} else {
+						err = a.update([]byte(`{"type":"session_compacted"}`))
+					}
+					if err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			if len(events) != 4 || events[0].ID != events[1].ID || events[2].ID != events[3].ID || events[0].ID == events[2].ID || events[0].Kind != "contextCompaction" || events[0].Status != "inProgress" || events[1].Status != "completed" {
+				t.Fatalf("repeated compaction overwrote history: %+v", events)
+			}
+			if driver == "pi" {
+				for _, tc := range []struct{ raw, want string }{
+					{`{"type":"compaction_end","aborted":true}`, "interrupted"},
+					{`{"type":"auto_compaction_end","errorMessage":"failed"}`, "failed"},
+				} {
+					if err := p.line([]byte(tc.raw), emit); err != nil || events[len(events)-1].Status != tc.want {
+						t.Fatal("compaction failure/cancel lost", err)
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestPiToolAndMessageBoundaries(t *testing.T) {
 	p := agentParser{driver: "pi"}
 	var events []AgentEvent

@@ -17,10 +17,144 @@ import (
 	"time"
 )
 
+func TestNativeToolCards(t *testing.T) {
+	cases := []struct{ scene, kind, pi, droid, args, output, title, body string }{
+		{"bash", "commandExecution", "bash", "Execute", `{"command":"printf 'hello\\n'","timeout":30}`, `{"content":[{"type":"text","text":"hello\n"}]}`, "$ printf 'hello\\n'", "hello"},
+		{"read", "toolCall", "read", "Read", `{"file_path":"/workspace/main.go"}`, `[{"type":"text","text":"package main\n\nfunc main() {}\n"}]`, " · /workspace/main.go", "package main"},
+		{"edit", "fileChange", "edit", "Edit", `{"path":"/workspace/main.go","oldText":"old","newText":"new"}`, `"Successfully edited"`, "/workspace/main.go", "-old\n+new"},
+		{"write", "fileChange", "write", "Create", `{"file_path":"/workspace/new.go","content":"package main\n"}`, `"Successfully created"`, "/workspace/new.go", "+package main"},
+		{"script", "commandExecution", "Script", "Script", `{"script":"const result = await tools.Read({file_path: '/workspace/main.go'});\ntext(result);","code":"wrong"}`, `"package main"`, "Script", "const result = await tools.Read"},
+		{"search", "webSearch", "grep", "Grep", `{"pattern":"TODO","path":"/workspace"}`, `"main.go:42: TODO verify"`, " · /workspace", "main.go:42"},
+		{"todo", "plan", "todo", "TodoWrite", `{"todos":"1. [completed] Verify\n2. [in_progress] Review"}`, `"Plan updated"`, "", ""},
+		{"patch", "fileChange", "apply_patch", "ApplyPatch", `"*** Begin Patch\n*** Update File: /workspace/main.go\n@@\n-old\n+new\n*** End Patch"`, `"Successfully applied"`, "", "*** Update File: /workspace/main.go"},
+	}
+	for _, driver := range []string{"codex", "pi", "droid"} {
+		for _, lang := range []string{"zh-Hans", "en"} {
+			for _, tc := range cases {
+				if tc.scene == "script" && driver != "droid" {
+					continue
+				}
+				t.Run(lang+"-"+driver+"-"+tc.scene, func(t *testing.T) {
+					s := model.New()
+					s.Settings.Language = lang
+					thread := s.AddThread("", "")
+					thread.Harness = driver
+					name := tc.pi
+					if driver == "droid" {
+						name = tc.droid
+					}
+					item := model.Item{ID: "tool", Kind: tc.kind, Status: "completed", MCP: &model.MCPCall{Tool: name, Arguments: tc.args, Result: tc.output}}
+					text := toolActivityText(&item, true)
+					if !strings.Contains(text, tc.title) || !strings.Contains(text, tc.body) {
+						t.Fatal("native fields were not adapted", text)
+					}
+					if preview := toolActivityText(&item, false); strings.Contains(preview, "\n") || strings.Contains(preview, `"file_path"`) || strings.Contains(preview, `"command"`) {
+						t.Fatal("raw arguments leaked into a tool row", preview)
+					}
+					if driver == "codex" {
+						item.Text, item.MCP = text, nil
+						if tc.scene == "read" {
+							item.Kind = "commandExecution"
+						}
+					}
+					if tc.scene == "todo" {
+						item.Text = "1. [completed] Verify\n2. [in_progress] Review"
+					}
+					thread.Turns = []model.Turn{{ID: "turn", Prompt: "Verify the project", Status: "completed", Items: []model.Item{item}}}
+					c := controller.New(t.TempDir(), s, nil)
+					defer c.Close()
+					v := New(c)
+					*v.openState("activity-" + thread.ID + "-0-0") = true
+					*v.openState(thread.ID + "-0-0-0") = true
+					tt := ui.NewTester(v.Render, 1100, 800)
+					tt.Frame()
+					tt.Advance(time.Second)
+					tt.Frame()
+					if _, ok := tt.Find(v.texts().ActivityOutput()); !ok && tc.scene != "todo" && !(driver == "codex" && tc.scene == "search") {
+						t.Fatal("native tool did not use the Codex output viewer")
+					}
+					if tc.scene == "todo" {
+						if _, ok := tt.Find(v.texts().ActivityOutput()); ok || !tt.HasText("Verify") || !tt.HasText("Review") {
+							t.Fatal("native Todo did not use the shared plan")
+						}
+					}
+					if tt.HasText(v.texts().McpArguments()) {
+						t.Fatal("native tool fell back to MCP")
+					}
+					if output := os.Getenv("MUJICAGENT_TOOLS_SCREENSHOTS"); output != "" {
+						if err := os.MkdirAll(output, 0700); err != nil {
+							t.Fatal(err)
+						}
+						f, err := os.Create(filepath.Join(output, lang+"-"+driver+"-"+tc.scene+".png"))
+						if err != nil {
+							t.Fatal(err)
+						}
+						defer f.Close()
+						if err = png.Encode(f, tt.Image()); err != nil {
+							t.Fatal(err)
+						}
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestAgentDefaultPermissionConfirmation(t *testing.T) {
+	for _, driver := range []string{"pi", "droid"} {
+		t.Run(driver, func(t *testing.T) {
+			s := model.New()
+			s.Settings.Language = "en"
+			thread := s.AddThread("", "")
+			thread.Harness = driver
+			c := controller.New(t.TempDir(), s, nil)
+			defer c.Close()
+			v := New(c)
+			v.Settings, v.agentSection = true, driver
+			*v.openState("harness-" + driver) = true
+			tt := ui.NewTester(v.Render, 1100, 800)
+			tt.Frame()
+			label := agentName(driver) + " " + v.texts().DefaultPermissions()
+			chooseFull := func() {
+				t.Helper()
+				bounds, ok := tt.Find(label)
+				if !ok {
+					t.Fatal("default permission row missing")
+				}
+				tt.ClickAt(bounds.X+124+87, bounds.Y+bounds.H/2)
+				tt.Frame()
+				if err := tt.Click(v.texts().FullAccess()); err != nil {
+					t.Fatal(err)
+				}
+				tt.Frame()
+				tt.Advance(time.Second)
+			}
+			chooseFull()
+			if *v.agentDefaultAccess(driver) != "" || !tt.HasText(v.texts().FullAccessDefaultWarning()) {
+				t.Fatal("full access default changed before confirmation")
+			}
+			if err := tt.Click(v.texts().Cancel()); err != nil {
+				t.Fatal(err)
+			}
+			if *v.agentDefaultAccess(driver) != "" {
+				t.Fatal("cancel granted access")
+			}
+			tt.Advance(time.Second)
+			chooseFull()
+			if err := tt.Click(v.texts().EnableFullAccess()); err != nil {
+				t.Fatal(err)
+			}
+			if *v.agentDefaultAccess(driver) != agentFullAccess(driver) || thread.AgentAccess != "" {
+				t.Fatal("confirmation did not isolate default and existing permissions")
+			}
+		})
+	}
+}
+
 func TestHarnessTimelineScreenshots(t *testing.T) {
 	for _, lang := range []string{"zh-Hans", "en"} {
 		for _, driver := range []string{"codex", "pi", "droid"} {
-			for _, scene := range []string{"collapsed", "expanded", "long-output", "failed", "approval", "running", "stopped"} {
+			for _, scene := range []string{"collapsed", "expanded", "long-output", "failed", "approval", "running", "stopped", "compact", "compact-running", "compact-failed", "compact-stopped", "script-nested"} {
 				t.Run(lang+"-"+driver+"-"+scene, func(t *testing.T) {
 					s := model.New()
 					s.Settings.Language = lang
@@ -28,10 +162,10 @@ func TestHarnessTimelineScreenshots(t *testing.T) {
 					thread.Harness = driver
 					thread.ServerID = "session"
 					status := "completed"
-					if scene == "running" || scene == "approval" {
+					if scene == "running" || scene == "approval" || scene == "compact-running" {
 						status = "inProgress"
 					}
-					if scene == "stopped" {
+					if scene == "stopped" || scene == "compact-stopped" {
 						status = "interrupted"
 					}
 					output := "proof.txt: verified"
@@ -44,6 +178,18 @@ func TestHarnessTimelineScreenshots(t *testing.T) {
 						tool.MCP.Error = "File not found: proof.txt"
 					}
 					thread.Turns = []model.Turn{{ID: "turn", Prompt: "Read proof.txt and report its contents", Status: status, Items: []model.Item{{ID: "m", Kind: "agentMessage", Text: "I will read the file.", Status: "completed"}, tool}}}
+					if strings.HasPrefix(scene, "compact") {
+						compact := model.Item{ID: "compact-1", Kind: "contextCompaction", Status: status}
+						if scene == "compact-failed" {
+							compact.Status, compact.Text = "failed", "Context compaction failed"
+						}
+						thread.Turns[0].Items[1] = compact
+						thread.Turns[0].Items = append(thread.Turns[0].Items, model.Item{ID: "compact-2", Kind: "contextCompaction", Status: status})
+					}
+					if scene == "script-nested" {
+						thread.Turns[0].Items[1].ParentID = "script"
+						thread.Turns[0].Items = append(thread.Turns[0].Items[:1], model.Item{ID: "script", Kind: "commandExecution", Status: status, MCP: &model.MCPCall{Tool: "Script", Arguments: `{"script":"text(await tools.Read({file_path: 'proof.txt'}));"}`, Result: `"proof.txt: verified"`}}, thread.Turns[0].Items[1])
+					}
 					c := controller.New(t.TempDir(), s, nil)
 					defer c.Close()
 					c.Running[thread.ID] = status == "inProgress"
@@ -59,8 +205,11 @@ func TestHarnessTimelineScreenshots(t *testing.T) {
 					tt.Frame()
 					tt.Advance(time.Second)
 					tt.Frame()
-					if !tt.HasText(v.texts().AgentToolCall()) {
+					if !strings.HasPrefix(scene, "compact") && !tt.HasText(v.texts().AgentToolCall()) {
 						t.Fatal("tool category missing")
+					}
+					if strings.HasPrefix(scene, "compact") && !tt.HasText(v.texts().Compaction()) {
+						t.Fatal("compaction did not use the shared timeline")
 					}
 					if scene == "running" && !tt.HasText(agentName(driver)) {
 						t.Fatal("wrong running harness")
@@ -421,7 +570,7 @@ func TestHarnessInstallScreenshots(t *testing.T) {
 
 func TestAgentCompactScreenshots(t *testing.T) {
 	for _, lang := range []string{"zh-Hans", "en"} {
-		for _, scene := range []string{"settings-codex", "settings-codex-running", "settings-pi", "settings-droid", "picker-codex", "picker-pi", "picker-droid", "picker-favorites", "picker-loading", "picker-error", "picker-many", "picker-search-empty", "picker-favorites-empty", "permissions-pi", "permissions-droid"} {
+		for _, scene := range []string{"settings-codex", "settings-codex-running", "settings-pi", "settings-droid", "settings-pi-confirm", "settings-droid-confirm", "picker-codex", "picker-pi", "picker-droid", "picker-favorites", "picker-loading", "picker-error", "picker-many", "picker-search-empty", "picker-favorites-empty", "permissions-pi", "permissions-droid"} {
 			t.Run(lang+"-"+scene, func(t *testing.T) {
 				s := model.New()
 				s.Settings.Language = lang
@@ -448,7 +597,10 @@ func TestAgentCompactScreenshots(t *testing.T) {
 					v.permissionPicker = true
 				} else if strings.HasPrefix(scene, "settings") {
 					v.Settings = true
-					v.agentSection = strings.TrimSuffix(scene[9:], "-running")
+					v.agentSection = strings.TrimSuffix(strings.TrimSuffix(scene[9:], "-running"), "-confirm")
+					if strings.HasSuffix(scene, "-confirm") {
+						v.defaultPermissionHarness, v.confirmFullAccess = v.agentSection, true
+					}
 					if scene == "settings-codex-running" {
 						c.Running[thread.ID] = true
 						h := c.HarnessFor("codex")
@@ -520,6 +672,9 @@ func TestAgentCompactScreenshots(t *testing.T) {
 				if scene == "settings-pi" || scene == "settings-droid" {
 					if slices.Contains(tt.Texts(), v.texts().Models()) {
 						t.Fatal("settings still exposes model selection")
+					}
+					if !tt.HasText(agentName(v.agentSection) + " " + v.texts().DefaultPermissions()) {
+						t.Fatal("default permissions missing")
 					}
 				}
 				if scene == "picker-pi" || scene == "picker-droid" {
@@ -599,6 +754,7 @@ func TestAgentThinkingScreenshots(t *testing.T) {
 					case "empty":
 						m.Efforts = nil
 					}
+					thread.AgentEffort = m.ResolveEffort(thread.AgentEffort)
 					c := controller.New(t.TempDir(), s, nil)
 					c.HarnessFor(driver).Models = []harness.AgentModel{m, {ID: "another-model", Name: "Another model"}}
 					c.HarnessFor(driver).ModelsChecked = true
@@ -614,24 +770,30 @@ func TestAgentThinkingScreenshots(t *testing.T) {
 					if !ok || panel.H != 360 || panel.Y < 0 || panel.Y+panel.H > 560 {
 						t.Fatal("thinking changed picker bounds", panel)
 					}
-					wantToggle := strings.HasPrefix(scene, "toggle-")
-					if _, ok := tt.Find(tx.ThinkingToggle()); ok != wantToggle {
-						t.Fatal("incorrect toggle availability")
+					wantSlider := len(m.Efforts) > 1
+					if _, ok := tt.Find(tx.AdjustReasoningEffort()); ok != wantSlider {
+						t.Fatal("all harnesses must use the Codex slider")
+					}
+					if _, ok := tt.Find(tx.ThinkingToggle()); ok {
+						t.Fatal("harness-specific toggle returned")
 					}
 					if scene == "single" || scene == "stale" {
-						if !tt.HasText("high") || !tt.HasText(tx.ThinkingFixed()) || tt.HasText(tx.AgentDefaultEffort()) || tt.HasText(tx.ThinkingOff()) {
+						if !tt.HasText("high") || tt.HasText(tx.AgentDefaultEffort()) {
 							t.Fatal("single level invented choices or a default")
 						}
 					}
-					if scene == "none" || scene == "empty" {
+					if scene == "empty" {
 						if !tt.HasText(tx.ThinkingUnavailable()) || tt.HasText("high") {
 							t.Fatal("unsupported model exposes an effort")
 						}
 					}
+					if scene == "none" && !tt.HasText(off) {
+						t.Fatal("fixed off value missing")
+					}
 					for _, label := range []string{tx.AdjustReasoningEffort(), tx.ThinkingToggle(), tx.ThinkingFixed(), "max"} {
 						if scene == "extended" && label == "max" {
 							continue
-						} // Last row scrolls inside the bounded control.
+						}
 						if b, ok := tt.Find(label); ok && (b.X < panel.X || b.Y < panel.Y || b.X+b.W > panel.X+panel.W || b.Y+b.H > panel.Y+panel.H) {
 							t.Fatalf("thinking control clipped: %s %+v", label, b)
 						}
@@ -681,22 +843,24 @@ func TestAgentThinkingSelection(t *testing.T) {
 			}
 			thread.AgentEffort = "none"
 			v.chooseExternalModel(driver, catalog[3])
-			tt := ui.NewTester(func(ctx *ui.Context) { v.agentThinkingOptions(ctx, catalog[3], thread) }, 160, 320)
+			tt := ui.NewTester(func(ctx *ui.Context) {
+				ui.Box(ctx).Disabled(c.Running[thread.ID]).Children(func() { v.agentThinkingOptions(ctx, catalog[3], thread) })
+			}, 160, 320)
 			tt.Frame()
-			if err := tt.Click(v.texts().ThinkingToggle()); err != nil {
+			if err := tt.Click(v.texts().AdjustReasoningEffort()); err != nil {
 				t.Fatal(err)
 			}
+			tt.Key(0, ui.KeyEnd)
 			if thread.AgentEffort != "high" {
-				t.Fatal("toggle did not send advertised enabled value", thread.AgentEffort)
+				t.Fatal("slider did not send advertised enabled value", thread.AgentEffort)
 			}
-			if err := tt.Click(v.texts().ThinkingToggle()); err != nil {
-				t.Fatal(err)
-			}
+			tt.Key(0, ui.KeyHome)
 			if thread.AgentEffort != "none" {
-				t.Fatal("toggle changed the wire off value", thread.AgentEffort)
+				t.Fatal("slider changed advertised off value", thread.AgentEffort)
 			}
 			c.Running[thread.ID] = true
-			if err := tt.Click(v.texts().ThinkingToggle()); err != nil {
+			tt.Frame()
+			if err := tt.Click(v.texts().AdjustReasoningEffort()); err != nil {
 				t.Fatal(err)
 			}
 			if thread.AgentEffort != "none" {
@@ -706,12 +870,13 @@ func TestAgentThinkingSelection(t *testing.T) {
 			catalog[3].DefaultReasoningEffort = ""
 			thread.AgentEffort = ""
 			tt.Frame()
-			if !tt.HasText(v.texts().ThinkingCLIDefault()) {
+			if !tt.HasText(v.texts().AgentDefaultEffort()) {
 				t.Fatal("unreported default looks like off")
 			}
-			if err := tt.Click(v.texts().ThinkingOff()); err != nil {
+			if err := tt.Click(v.texts().AdjustReasoningEffort()); err != nil {
 				t.Fatal(err)
 			}
+			tt.Key(0, ui.KeyHome)
 			if thread.AgentEffort != "none" {
 				t.Fatal("cannot explicitly disable from CLI default")
 			}

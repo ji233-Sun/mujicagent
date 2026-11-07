@@ -45,6 +45,9 @@ type Controller struct {
 	stop                                chan struct{}
 	once                                sync.Once
 	wake                                func()
+	streamDirty                         bool
+	streamFinal                         bool
+	writer                              *snapshotWriter
 	epoch                               int
 }
 
@@ -61,17 +64,32 @@ func (c *Controller) post(fn func()) {
 	}
 }
 func (c *Controller) Drain() {
-	for {
+	defer func() {
+		if c.streamDirty {
+			c.streamDirty = false
+			c.saveStream()
+		}
+		if len(c.events) > 0 && c.wake != nil {
+			c.wake()
+		}
+	}()
+	// A producer can replenish the queue indefinitely. Always return to input
+	// and painting, even while a CLI is emitting faster than we can consume.
+	deadline := time.Now().Add(4 * time.Millisecond)
+	for i := 0; i < 128; i++ {
 		select {
 		case fn := <-c.events:
 			fn()
 		default:
 			return
 		}
+		if time.Now().After(deadline) {
+			return
+		}
 	}
 }
 func (c *Controller) Save() {
-	if err := model.Save(filepath.Join(c.Dir, "state.json"), c.State); err != nil {
+	if err := c.saveState(); err != nil {
 		c.ReportError(err.Error())
 	}
 }
@@ -94,6 +112,10 @@ func (c *Controller) Close() {
 			c.client.Close()
 		}
 		c.Save()
+		if c.writer != nil {
+			close(c.writer.pending)
+			<-c.writer.done
+		}
 	})
 }
 func (c *Controller) AnyRunning() bool {
@@ -335,7 +357,7 @@ func (c *Controller) DeleteThread(id string) {
 				}
 			}
 		}
-		if err := model.Save(filepath.Join(c.Dir, "state.json"), c.State); err != nil {
+		if err := c.saveState(); err != nil {
 			c.State.Threads = old
 			c.State.Selected = selected
 			c.ReportError(err.Error())

@@ -22,19 +22,17 @@ func (v *View) modelSelector(c *ui.Context) {
 	settings := &v.C.State.Settings
 	t := v.C.State.Thread(v.C.State.Selected)
 	label := settings.Model
+	effort := settings.Effort
 	if t != nil && t.AgentModel != "" {
 		label = t.AgentModel
 	}
 	if t.Driver() != "codex" {
-		label = agentName(t.Driver())
-		if t.AgentModel != "" {
-			label += " · " + t.AgentModel
-		}
+		label, effort = t.AgentModel, t.AgentEffort
 	}
 	if label == "" {
 		label = tx.ChooseModel()
-	} else if t.Driver() == "codex" && settings.Effort != "" {
-		label += " · " + settings.Effort
+	} else if effort != "" {
+		label += " · " + effort
 	}
 	for _, model := range v.C.Models {
 		if t.Driver() != "codex" || model.Model != settings.Model || !model.SupportsSpeed(settings.ServiceTier) {
@@ -243,7 +241,7 @@ func (v *View) modelEffortSlider(c *ui.Context, m codex.Model, value *string) {
 		ui.Row(c).AlignItems(ui.Center).Gap(6).Children(func() {
 			ui.Icon(c, thinkingIcon).Size(14, 14).TextColor(c.Theme().TextMuted)
 			label := efforts[int(index)].ReasoningEffort
-			if *value == "" && m.DefaultReasoningEffort == "" {
+			if *value == "" && m.DefaultReasoningEffort == "" && len(efforts) > 1 {
 				label = v.texts().AgentDefaultEffort()
 			}
 			ui.Text(c, label).FontSize(13).Grow(1)

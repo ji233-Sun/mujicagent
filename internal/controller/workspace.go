@@ -67,7 +67,7 @@ func (c *Controller) prepareWorkspace(t *model.Thread, text string) error {
 		t.Cwd = path
 	}
 	// Retry persistence after a failed save before allowing any agent operation.
-	return model.Save(filepath.Join(c.Dir, "state.json"), c.State)
+	return c.saveState()
 }
 
 func createWorkspace(parent, slug string, id func() string) (string, error) {

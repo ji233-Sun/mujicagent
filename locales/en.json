@@ -91,6 +91,7 @@
   "fullAccess": "Full access",
   "fullAccessQuestion": "Enable full access?",
   "fullAccessWarning": "The agent can edit files outside the workspace and access the network without asking each time. Applies only to this conversation.",
+  "fullAccessDefaultWarning": "New conversations with this agent will allow file changes and command execution with full access. Existing conversations keep their permissions.",
   "enableFullAccess": "Enable full access",
   "retry": "Retry",
   "permissionRestricted": "Restricted by managed policy",

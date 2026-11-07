@@ -34,7 +34,7 @@ func (c *Controller) Handoff(driver, targetModel string) bool {
 	}
 	targetModel = strings.TrimSpace(targetModel)
 	if len(old.Turns) == 0 && old.ServerID == "" && old.HandoffContext == "" {
-		old.Harness, old.AgentModel, old.AgentAccess = driver, targetModel, ""
+		old.Harness, old.AgentModel, old.AgentAccess = driver, targetModel, c.State.Settings.AgentDefaultAccess(driver)
 		old.AgentEffort = ""
 		c.Save()
 		return true
@@ -61,9 +61,10 @@ func (c *Controller) Handoff(driver, targetModel string) bool {
 	oldSelected := c.State.Selected
 	next := c.State.AddThread(old.ProjectID, old.Cwd)
 	next.Harness, next.AgentModel = driver, targetModel
+	next.AgentAccess = c.State.Settings.AgentDefaultAccess(driver)
 	next.HandoffFrom, next.HandoffContext = old.ID, history.String()
 	next.Title, next.Draft = old.Title, old.Draft
-	if err := model.Save(filepath.Join(c.Dir, "state.json"), c.State); err != nil {
+	if err := c.saveState(); err != nil {
 		c.State.Threads = c.State.Threads[1:]
 		c.State.Selected = oldSelected
 		c.ReportError(err.Error())
@@ -125,7 +126,7 @@ func (c *Controller) sendAgent(t *model.Thread, text, queuedID string) bool {
 	c.Running[t.ID] = true
 	t.Settled = false
 	t.Updated = time.Now()
-	if err := model.Save(filepath.Join(c.Dir, "state.json"), c.State); err != nil {
+	if err := c.saveState(); err != nil {
 		t.Turns = t.Turns[:index]
 		c.Running[t.ID] = false
 		c.ReportError(err.Error())
@@ -177,7 +178,7 @@ func (c *Controller) sendAgent(t *model.Thread, text, queuedID string) bool {
 					t.ServerID = o.Session
 					t.HandoffSent = true
 				}
-				c.Save()
+				c.streamDirty = true
 			})
 		})
 		interrupted := ctx.Err() != nil
@@ -210,7 +211,8 @@ func (c *Controller) sendAgent(t *model.Thread, text, queuedID string) bool {
 					turn.Items[i].Status = turn.Status
 				}
 			}
-			c.Save()
+			c.streamDirty = true
+			c.streamFinal = true
 			if err == nil {
 				c.sendNext(t)
 			}

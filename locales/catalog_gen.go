@@ -946,6 +946,16 @@ func (msgs Messages) FullAccessWarning() string {
 	return Catalog.Format(msgs.locale, "fullAccessWarning", nil)
 }
 
+// FullAccessDefaultWarning says "此智能体的新对话将默认允许完全访问、修改文件和执行命令。已有对话保留原权限。"
+// in the language the app shows.
+func FullAccessDefaultWarning() string { return In(i18n.Locale()).FullAccessDefaultWarning() }
+
+// FullAccessDefaultWarning says "此智能体的新对话将默认允许完全访问、修改文件和执行命令。已有对话保留原权限。"
+// in the language of msgs.
+func (msgs Messages) FullAccessDefaultWarning() string {
+	return Catalog.Format(msgs.locale, "fullAccessDefaultWarning", nil)
+}
+
 // EnableFullAccess says "启用完全访问"
 // in the language the app shows.
 func EnableFullAccess() string { return In(i18n.Locale()).EnableFullAccess() }
