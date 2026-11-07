@@ -1383,6 +1383,109 @@ func TestAnnotatedImageInput(t *testing.T) {
 	}
 }
 
+func TestNewThreadInheritsSelectedHarness(t *testing.T) {
+	for _, driver := range []string{"pi", "droid"} {
+		t.Run(driver, func(t *testing.T) {
+			c := New(t.TempDir(), model.New(), nil)
+			defer c.Close()
+			previous := c.State.AddThread("", "")
+			previous.Harness, previous.AgentModel, previous.AgentEffort = driver, "custom:model", "high"
+			previous.Turns = []model.Turn{{Status: "completed"}}
+			c.NewThread("")
+			next := c.State.Thread(c.State.Selected)
+			if next.Driver() != driver || next.AgentModel != previous.AgentModel || next.AgentEffort != previous.AgentEffort {
+				t.Fatalf("new conversation lost the last configuration: %+v", next)
+			}
+		})
+	}
+}
+
+func TestNewThreadRemembersExplicitModelSelection(t *testing.T) {
+	for _, selection := range []model.ModelSelection{
+		{Harness: "codex", Model: "codex-model", Effort: "high", ServiceTier: "fast"},
+		{Harness: "codex", Model: "codex-model", Effort: "low", ServiceTier: "ultrafast"},
+		{Harness: "codex", Model: "codex-model", Effort: "medium"},
+		{Harness: "pi", Model: "provider/model", Effort: "off"},
+		{Harness: "droid", Model: "custom:model", Effort: "high"},
+		{Harness: "droid", Model: "custom:default"},
+	} {
+		t.Run(selection.Harness+"-"+selection.Effort+"-"+selection.ServiceTier, func(t *testing.T) {
+			dir := t.TempDir()
+			c := New(dir, model.New(), nil)
+			c.State.Settings.PiDefaultAccess, c.State.Settings.DroidDefaultAccess = "", "low"
+			source := c.State.AddThread("", "")
+			source.Harness, source.AgentModel, source.AgentEffort = selection.Harness, selection.Model, selection.Effort
+			source.AgentAccess, source.PermissionProfile = "high", ":danger-full-access"
+			source.ServerID, source.Draft = "existing-session", "keep draft"
+			source.Turns = []model.Turn{{Status: "completed"}}
+			source.Queue = []model.QueuedMessage{{Text: "keep queue"}}
+			c.State.Settings.Effort, c.State.Settings.ServiceTier = selection.Effort, selection.ServiceTier
+			c.RememberModelSelection()
+			if c.State.Settings.LastModelSelection != selection {
+				t.Fatal("explicit configuration was not remembered", c.State.Settings.LastModelSelection)
+			}
+			other := c.State.AddThread("", "")
+			other.Harness, other.AgentModel, other.AgentEffort = "pi", "other-model", "max"
+			other.Draft = "other draft"
+			c.Select(other.ID)
+			c.Close()
+			saved, err := model.Load(filepath.Join(dir, "state.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			c = New(dir, saved, nil)
+			defer c.Close()
+			c.AddProject(t.TempDir())
+			next := c.State.Thread(c.State.Selected)
+			if next.Driver() != selection.Harness || next.AgentModel != selection.Model {
+				t.Fatal("navigation or restart lost the last selection", next)
+			}
+			if selection.Harness == "codex" {
+				if saved.Settings.Effort != selection.Effort || saved.Settings.ServiceTier != selection.ServiceTier {
+					t.Fatal("Codex reasoning or speed was not inherited", saved.Settings)
+				}
+			} else if next.AgentEffort != selection.Effort || next.AgentAccess != saved.Settings.AgentDefaultAccess(selection.Harness) {
+				t.Fatal("agent reasoning or default permissions were not inherited", next)
+			}
+			if next.PermissionProfile != saved.Settings.DefaultPermissionProfile || next.ServerID != "" || next.HandoffContext != "" || next.Draft != "" || len(next.Turns) != 0 || len(next.Queue) != 0 {
+				t.Fatal("new conversation inherited session data or permissions", next)
+			}
+			// Reusing an empty conversation still applies the last explicit choice.
+			next.AgentModel, next.AgentEffort = "stale-model", "stale-effort"
+			c.NewThread(next.ProjectID)
+			if saved.Selected != next.ID || next.AgentModel != selection.Model || selection.Harness != "codex" && next.AgentEffort != selection.Effort {
+				t.Fatal("empty conversation was duplicated or retained stale configuration", next)
+			}
+			if old := saved.Thread(source.ID); old.Draft != "keep draft" || old.ServerID != "existing-session" || len(old.Queue) != 1 || len(old.Turns) != 1 {
+				t.Fatal("source conversation was changed")
+			}
+			c.DeleteThread(source.ID)
+			c.State.Selected = ""
+			c.NewThread("")
+			if got := c.State.Thread(c.State.Selected); got.Driver() != selection.Harness || got.AgentModel != selection.Model {
+				t.Fatal("deleting or deselecting a conversation lost the preference", got)
+			}
+		})
+	}
+}
+
+func TestNewThreadNormalizesRememberedEffort(t *testing.T) {
+	for _, driver := range []string{"pi", "droid"} {
+		t.Run(driver, func(t *testing.T) {
+			c := New(t.TempDir(), model.New(), nil)
+			defer c.Close()
+			c.State.Settings.LastModelSelection = model.ModelSelection{Harness: driver, Model: "model", Effort: "unsupported"}
+			h := c.HarnessFor(driver)
+			h.ModelsKey = c.State.Settings.AgentPath(driver) + "\x00" + c.Dir
+			h.Models = []harness.AgentModel{{ID: "model", Efforts: []string{"low", "high"}, DefaultEffort: "low"}}
+			c.NewThread("")
+			if c.State.Thread(c.State.Selected).AgentEffort != "low" || c.State.Settings.LastModelSelection.Effort != "low" {
+				t.Fatal("new conversation retained an unsupported remembered effort")
+			}
+		})
+	}
+}
+
 func TestNewThreadReusesOnlyEmptyConversationInProject(t *testing.T) {
 	c := New(t.TempDir(), model.New(), nil)
 	c.NewThread("")
@@ -1667,6 +1770,19 @@ sleep 20
 			if !c.Send("first", false) {
 				t.Fatal(c.Error)
 			}
+			full := "high"
+			if driver == "pi" {
+				full = "native"
+			}
+			thread.AgentAccess = full
+			if c.PermissionID() != "" || c.NextPermissionID() != full {
+				t.Fatal("running turn lost its read-only permission snapshot")
+			}
+			thread.AgentAccess = ""
+			if c.PermissionID() != c.NextPermissionID() {
+				t.Fatal("restoring active permissions retained a pending change")
+			}
+			thread.AgentAccess = full
 			deadline := time.Now().Add(5 * time.Second)
 			for c.Running[thread.ID] && time.Now().Before(deadline) {
 				c.Drain()
@@ -1676,11 +1792,18 @@ sleep 20
 			if c.Running[thread.ID] || thread.Turns[0].Status != "completed" || thread.Turns[0].Items[0].Text != "done" || thread.ServerID == "" {
 				t.Fatalf("%+v %s", thread, c.Error)
 			}
+			if c.PermissionID() != full {
+				t.Fatal("completed turn still shows the previous permissions")
+			}
 			if err := os.WriteFile(binary, []byte("#!/bin/sh\nexec sleep 20\n"), 0700); err != nil {
 				t.Fatal(err)
 			}
 			if !c.Send("second", false) {
 				t.Fatal(c.Error)
+			}
+			thread.AgentAccess = ""
+			if c.PermissionID() != full || c.NextPermissionID() != "" {
+				t.Fatal("next turn did not replace the permission snapshot")
 			}
 			c.Interrupt()
 			deadline = time.Now().Add(5 * time.Second)
@@ -1691,6 +1814,9 @@ sleep 20
 			c.Drain()
 			if thread.Turns[1].Status != "interrupted" {
 				t.Fatalf("not cancelled: %+v", thread.Turns[1])
+			}
+			if c.PermissionID() != "" {
+				t.Fatal("interrupted turn retained a pending permission change")
 			}
 		})
 	}

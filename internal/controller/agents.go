@@ -132,6 +132,7 @@ func (c *Controller) sendAgent(t *model.Thread, text, queuedID string) bool {
 		c.ReportError(err.Error())
 		return false
 	}
+	c.turnPermissions[t.ID] = o.Access
 	if c.agentRuns == nil {
 		c.agentRuns = map[string]context.CancelFunc{}
 	}
@@ -296,6 +297,9 @@ func (c *Controller) normalizeAgentEffort(t *model.Thread) bool {
 			value := m.ResolveEffort(t.AgentEffort)
 			if value != t.AgentEffort {
 				t.AgentEffort = value
+				if selection := &c.State.Settings.LastModelSelection; selection.Harness == t.Driver() && selection.Model == t.AgentModel {
+					selection.Effort = m.ResolveEffort(selection.Effort)
+				}
 				return true
 			}
 			break

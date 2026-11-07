@@ -114,9 +114,7 @@ func (v *View) codexModelPanel(c *ui.Context) {
 		selectedModel = t.AgentModel
 	}
 	v.modelCatalogPanel(c, "codex", v.C.Models, selectedModel, v.chooseModel, func(current codex.Model) {
-		ui.Text(c, v.texts().ReasoningEffort()).FontSize(11).TextColor(c.Theme().TextMuted).Padding(6, 8).Margin(0, 0, 3)
-		v.effortSlider(c, current)
-		v.speedOptions(c, current)
+		v.modelTuningOptions(c, "codex", current, nil)
 	})
 }
 
@@ -253,7 +251,7 @@ func (v *View) modelEffortSlider(c *ui.Context, m codex.Model, value *string) {
 			Label(v.texts().AdjustReasoningEffort()).Tooltip(efforts[int(index)].ReasoningEffort).
 			OnChange(func() {
 				*value = efforts[int(index)].ReasoningEffort
-				v.C.Save()
+				v.C.RememberModelSelection()
 			})
 		ui.Row(c).Justify(ui.SpaceBetween).TextColor(c.Theme().TextMuted).Children(func() {
 			ui.Text(c, efforts[0].ReasoningEffort).FontSize(10)
@@ -294,7 +292,7 @@ func (v *View) speedOptions(c *ui.Context, m codex.Model) {
 				if selected {
 					v.C.State.Settings.ServiceTier = ""
 				}
-				v.C.Save()
+				v.C.RememberModelSelection()
 			})
 		}
 	})
@@ -333,7 +331,7 @@ func (v *View) chooseModel(m codex.Model) {
 			settings.Effort = efforts[0]
 		}
 	}
-	v.C.Save()
+	v.C.RememberModelSelection()
 }
 
 func pickerOption(c *ui.Context, label string, selected bool) ui.Element {

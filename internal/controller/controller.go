@@ -262,19 +262,57 @@ func (c *Controller) NewThread(projectID string) {
 		c.ReportError("Project not found.")
 		return
 	}
-	// Reuse only untouched conversations in this project; preserve all drafts.
+	selection := c.State.Settings.LastModelSelection
+	if selection.Harness == "" {
+		selection = c.selectedModelConfiguration()
+	}
+	// Reuse only untouched conversations in this project and Harness; preserve all drafts.
 	for _, t := range c.State.Threads {
-		if t.Driver() == "codex" && t.HandoffFrom == "" && t.ProjectID == projectID && !t.Settled && len(t.Turns) == 0 && len(t.Queue) == 0 && strings.TrimSpace(t.Draft) == "" {
+		if t.Driver() == selection.Harness && t.ServerID == "" && t.HandoffFrom == "" && t.HandoffContext == "" && t.ProjectID == projectID && !c.Running[t.ID] && !t.Settled && len(t.Turns) == 0 && len(t.Queue) == 0 && strings.TrimSpace(t.Draft) == "" {
+			c.applyModelConfiguration(t, selection)
 			c.Select(t.ID)
 			c.SetProjectExpanded(projectID, true)
 			return
 		}
 	}
-	c.State.AddThread(projectID, cwd)
+	t := c.State.AddThread(projectID, cwd)
+	t.AgentAccess = c.State.Settings.AgentDefaultAccess(selection.Harness)
+	c.applyModelConfiguration(t, selection)
 	if projectID == "" {
 		c.State.NoProjectExpanded = true
 	}
 	c.Save()
+}
+
+func (c *Controller) selectedModelConfiguration() model.ModelSelection {
+	settings := c.State.Settings
+	selection := model.ModelSelection{Harness: "codex", Model: settings.Model, Effort: settings.Effort, ServiceTier: settings.ServiceTier}
+	if t := c.State.Thread(c.State.Selected); t != nil {
+		selection.Harness = t.Driver()
+		if t.AgentModel != "" || t.Driver() != "codex" {
+			selection.Model = t.AgentModel
+		}
+		if t.Driver() != "codex" {
+			selection.Effort, selection.ServiceTier = t.AgentEffort, ""
+		}
+	}
+	return selection
+}
+
+// RememberModelSelection records explicit picker changes, not conversation navigation.
+func (c *Controller) RememberModelSelection() {
+	c.State.Settings.LastModelSelection = c.selectedModelConfiguration()
+	c.Save()
+}
+
+func (c *Controller) applyModelConfiguration(t *model.Thread, selection model.ModelSelection) {
+	t.Harness, t.AgentModel = selection.Harness, selection.Model
+	if t.Driver() == "codex" {
+		c.State.Settings.Model, c.State.Settings.Effort, c.State.Settings.ServiceTier = selection.Model, selection.Effort, selection.ServiceTier
+	} else {
+		t.AgentEffort = selection.Effort
+		c.normalizeAgentEffort(t)
+	}
 }
 
 // SwitchProject transfers the unsent prompt without changing a server thread's workspace.

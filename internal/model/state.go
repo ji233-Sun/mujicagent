@@ -51,7 +51,12 @@ type Thread struct {
 }
 type ModelFavorite struct{ Harness, ModelID string }
 
+type ModelSelection struct {
+	Harness, Model, Effort, ServiceTier string
+}
+
 type Settings struct {
+	LastModelSelection                                                                    ModelSelection  `json:",omitzero"`
 	PiDefaultAccess, DroidDefaultAccess                                                   string          `json:",omitempty"`
 	ModelFavorites                                                                        []ModelFavorite `json:",omitempty"`
 	PiPath, DroidPath                                                                     string          `json:",omitempty"`
