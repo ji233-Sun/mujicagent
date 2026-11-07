@@ -39,8 +39,10 @@ description: 修改或新增任何 Harness 的安装、更新、安装来源识�
   | Codex | 官方原生包、大陆 npm 镜像、大陆免 Node 镜像包 |
   | Pi | 官方原生包、官方 npm、大陆 npm 镜像 |
   | Droid | 官方原生包、官方 npm、大陆 npm 镜像、大陆免 Node 镜像包 |
+  | Claude Code | 官方原生包、官方 npm、大陆 npm 镜像、大陆免 Node 镜像包 |
 
-- Pi 官方 npm 包为 `@earendil-works/pi-coding-agent`，要求 Node.js ≥ 22.19；Droid 为 `@factory/cli`，要求 Node.js ≥ 20。确认前检查运行时；缺失时提示选择原生包，不全局安装 Node。
+- Pi 官方 npm 包为 `@earendil-works/pi-coding-agent`，要求 Node.js ≥ 22.19；Droid 为 `@factory/cli`，要求 Node.js ≥ 20；Claude Code 为 `@anthropic-ai/claude-code`，要求 Node.js ≥ 22。确认前检查运行时；缺失时提示选择原生包，不全局安装 Node。
+- Claude Code 当前 npm 包必须运行官方 postinstall 才能安装平台二进制，不传 `--ignore-scripts`。Bun/pnpm 的构建脚本信任策略尚未自动适配，识别后显示通过原工具更新，不更改信任策略。官方用户目录布局使用 `claude install <版本>`；Homebrew 保留实际 `claude-code` / `claude-code@latest` cask；WinGet、Nix 由原工具管理。运行与目录探测设置 `DISABLE_AUTOUPDATER=1`，避免绕过产品确认。
 - 镜像主包与平台包可能不同步；缺包时保留错误和重试，不在确认后静默改用官方源。Pi 没有已核实的免 Node 镜像发行包，不展示该选项。
 - 在弹窗内展示当前选择的指令或原生下载动作，再由用户确认安装。选择改变立即废弃旧预览，准备完成前不能确认。
 - 无 npm 或 Windows 下的镜像原生包回退须体现在确认前的预览中，并保存实际采用的渠道。执行时不静默切换安装方式。
@@ -67,4 +69,4 @@ description: 修改或新增任何 Harness 的安装、更新、安装来源识�
 
 Pi 官方脚本安装按 `managed-install.json` 及入口归属识别，用 `pi update --self --no-approve`；此命令不提供版本锁定，执行后仍须核对预览版本。Droid 独立原生安装核对默认路径及官方版本摘要，使用 `droid update --version <版本>`；Homebrew 沿用 cask。Factory.app 内置 Droid 与 Nix store 由原工具管理，明确显示来源，不覆盖应用签名文件。Windows Pi 解析官方托管或已知 npm 脚本；Droid npm 解析平台包 exe，不能执行任意 `.cmd`。
 
-官方依据：[Pi 安装](https://pi.dev/)、[Droid 安装](https://docs.factory.com/droid-cli/quickstart)。扩展时重新核对官方当前版本及安装布局。
+官方依据：[Pi 安装](https://pi.dev/)、[Droid 安装](https://docs.factory.com/droid-cli/quickstart)、[Claude Code 安装](https://code.claude.com/docs/en/setup)。扩展时重新核对官方当前版本及安装布局。

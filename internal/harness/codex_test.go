@@ -89,6 +89,472 @@ func TestLocalManagerPreviewAndExecution(t *testing.T) {
 	}
 }
 
+// Exercises actual pipes and process cleanup without any account or model use.
+func TestClaudeProtocolChild(t *testing.T) {
+	mode := os.Getenv("MUJICAGENT_CLAUDE_CHILD")
+	if mode == "" {
+		return
+	}
+	dec, enc := json.NewDecoder(os.Stdin), json.NewEncoder(os.Stdout)
+	var init map[string]any
+	if dec.Decode(&init) != nil || init["type"] != "control_request" {
+		os.Exit(3)
+	}
+	enc.Encode(map[string]any{"type": "assistant", "message": map[string]any{"id": "history", "content": []any{map[string]string{"type": "text", "text": "Do not replay history"}}}})
+	enc.Encode(claudeControlResponse("initialize", map[string]any{"models": []any{
+		map[string]any{"value": "default", "resolvedModel": "resolved-model"},
+		map[string]any{"value": "opus", "resolvedModel": "resolved-model", "displayName": "Opus", "supportsEffort": true, "supportedEffortLevels": []string{"low", "high", "high"}},
+		map[string]any{"value": "custom-model", "displayName": "Custom"},
+	}}, ""))
+	if mode == "catalog" {
+		var next map[string]any
+		if dec.Decode(&next) == nil {
+			os.Exit(4) // Discovery must never submit a user message.
+		}
+		os.Exit(0)
+	}
+	var prompt struct {
+		Type, UUID string
+		Message    struct {
+			Content []struct {
+				Type   string
+				Source struct {
+					Type, Data string
+					MediaType  string `json:"media_type"`
+				}
+			}
+		}
+	}
+	if dec.Decode(&prompt) != nil || prompt.Type != "user" || prompt.UUID == "" {
+		os.Exit(5)
+	}
+	if mode == "reject" {
+		enc.Encode(map[string]any{"type": "result", "subtype": "error_during_execution", "is_error": true})
+		os.Exit(0)
+	}
+	if mode == "image" && (len(prompt.Message.Content) != 2 || prompt.Message.Content[1].Source.Type != "base64" || prompt.Message.Content[1].Source.MediaType != "image/png" || prompt.Message.Content[1].Source.Data == "") {
+		os.Exit(6)
+	}
+	enc.Encode(map[string]any{"type": "user", "uuid": prompt.UUID, "session_id": "claude-session", "message": map[string]string{"role": "user", "content": "accepted"}})
+	if mode == "steer" {
+		var next map[string]any
+		if dec.Decode(&next) != nil || next["type"] != "user" || next["uuid"] == nil {
+			os.Exit(7)
+		}
+		enc.Encode(map[string]any{"type": "user", "uuid": next["uuid"], "message": map[string]string{"role": "user", "content": "steer accepted"}})
+	}
+	if mode == "cancel" || mode == "stop" {
+		enc.Encode(map[string]any{"type": "control_request", "request_id": "blocked", "request": map[string]any{"subtype": "can_use_tool", "tool_name": "Bash", "input": map[string]string{"command": "pwd"}}})
+		if mode == "stop" {
+			var next any
+			dec.Decode(&next)
+			os.Exit(0)
+		}
+		enc.Encode(map[string]string{"type": "control_cancel_request", "request_id": "blocked"})
+	}
+	enc.Encode(map[string]any{"type": "system", "subtype": "session_state_changed", "state": "running"})
+	enc.Encode(map[string]any{"type": "system", "subtype": "task_started", "task_id": "background", "task_type": "local_agent"})
+	enc.Encode(map[string]any{"type": "result", "subtype": "success"})
+	enc.Encode(map[string]any{"type": "system", "subtype": "task_notification", "task_id": "background"})
+	enc.Encode(map[string]any{"type": "assistant", "message": map[string]any{"id": "reply", "content": []any{map[string]string{"type": "text", "text": "Finished after background task"}}}})
+	enc.Encode(map[string]any{"type": "result", "subtype": "success"})
+	enc.Encode(map[string]any{"type": "system", "subtype": "session_state_changed", "state": "idle"})
+	var next any
+	dec.Decode(&next)
+	os.Exit(0)
+}
+
+func TestClaudeSessionProtocol(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX launcher; Windows entry layouts are tested separately")
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, mode := range []string{"catalog", "turn", "reject", "steer", "cancel", "stop", "image"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Setenv("MUJICAGENT_CLAUDE_CHILD", mode)
+			dir := t.TempDir()
+			binary := filepath.Join(dir, "claude")
+			script := "#!/bin/sh\nexec '" + strings.ReplaceAll(exe, "'", "'\\''") + "' -test.run=^TestClaudeProtocolChild$ -- \"$@\"\n"
+			if err := os.WriteFile(binary, []byte(script), 0700); err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if mode == "catalog" {
+				models, err := DiscoverModels(ctx, "claude", binary, dir)
+				if err != nil || len(models) != 2 || models[0].ID != "resolved-model" || len(models[0].Efforts) != 2 || len(models[1].Efforts) != 0 {
+					t.Fatalf("catalog: %+v %v", models, err)
+				}
+				return
+			}
+			o := RunOptions{Driver: "claude", Binary: binary, Cwd: dir, Session: "claude-session", Model: "custom-model", Access: "acceptEdits", Effort: "high", Prompt: "Run", Control: &Control{}}
+			if mode == "image" {
+				path := filepath.Join(dir, "图像.png")
+				var data bytes.Buffer
+				if err := png.Encode(&data, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, data.Bytes(), 0600); err != nil {
+					t.Fatal(err)
+				}
+				o.Images = []string{path}
+			}
+			session, err := NewSession(ctx, o)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer session.Close()
+			var events []AgentEvent
+			steered := make(chan error, 1)
+			session.Run(func(e AgentEvent) {
+				events = append(events, e)
+				if e.Accepted && mode == "steer" {
+					go func() { steered <- session.Steer(ctx, TurnTarget{}, Input{{Type: "text", Text: "follow-up"}}) }()
+				}
+				if e.Interaction != nil && mode == "stop" {
+					cancel()
+				}
+			})
+			accepted, resolved, final := 0, 0, ""
+			var end *TurnResult
+			for _, e := range events {
+				if e.Accepted {
+					accepted++
+				}
+				if e.Resolved != nil {
+					resolved++
+				}
+				if e.ID == "history-0" {
+					t.Fatal("resume history replayed into turn")
+				}
+				if e.Kind == "agentMessage" {
+					final = e.Text
+				}
+				if e.End != nil {
+					end = e.End
+				}
+			}
+			if end == nil {
+				t.Fatal("no terminal result")
+			}
+			if mode == "reject" {
+				if accepted != 0 || end.Status != "failed" {
+					t.Fatal(events)
+				}
+				return
+			}
+			if accepted != 1 {
+				t.Fatalf("acceptances=%d", accepted)
+			}
+			if mode == "stop" {
+				if end.Status != "interrupted" || resolved != 1 {
+					t.Fatal(events)
+				}
+			} else if end.Status != "completed" || final != "Finished after background task" {
+				t.Fatal("settled before background work or failed", events)
+			}
+			if mode == "cancel" && resolved != 1 {
+				t.Fatal("cancelled interaction not resolved")
+			}
+			if mode == "steer" {
+				select {
+				case err := <-steered:
+					if err != nil {
+						t.Fatal(err)
+					}
+				case <-ctx.Done():
+					t.Fatal("steer acknowledgment missing")
+				}
+			}
+		})
+	}
+}
+
+func TestClaudeToolsAndCompaction(t *testing.T) {
+	var events []AgentEvent
+	p := claudeParser{emit: func(e AgentEvent) { events = append(events, e) }}
+	for _, raw := range []string{
+		`{"type":"stream_event","event":{"type":"message_start","message":{"id":"msg"}}}`,
+		`{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}`,
+		`{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"partial"}}}`,
+		`{"type":"assistant","message":{"id":"msg","content":[{"type":"text","text":"final"},{"type":"tool_use","id":"bash-1","name":"Bash","input":{"command":"pwd"}},{"type":"tool_use","id":"bash-2","name":"Bash","input":{"command":"ls"}},{"type":"tool_use","id":"edit","name":"Edit","input":{"file_path":"a.go","old_string":"old","new_string":"new"}},{"type":"tool_use","id":"write","name":"Write","input":{"file_path":"b.go","content":"new"}},{"type":"tool_use","id":"read","name":"Read","input":{"file_path":"b.go"}},{"type":"tool_use","id":"todo","name":"TodoWrite","input":{"todos":[{"content":"Verify","status":"in_progress"}]}},{"type":"tool_use","id":"mcp","name":"mcp__docs__lookup","input":{"query":"Go"}}]}}`,
+		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"bash-1","content":[{"type":"text","text":"workspace"}]},{"type":"tool_result","tool_use_id":"bash-2","is_error":true,"content":{"error":"Denied"}},{"type":"tool_result","tool_use_id":"read","content":"package main"}]}}`,
+		`{"type":"system","subtype":"status","status":"compacting"}`,
+		`{"type":"system","subtype":"compact_boundary","compact_metadata":{"pre_tokens":1000}}`,
+		`{"type":"system","subtype":"status","status":"compacting"}`,
+	} {
+		if err := p.line([]byte(raw)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	p.finishCompaction("interrupted", "")
+	tools := map[string]AgentEvent{}
+	compacts := map[string]AgentEvent{}
+	for _, e := range events {
+		if e.Tool != nil {
+			if old, ok := tools[e.ID]; ok && e.Tool.Arguments == nil {
+				e.Tool.Arguments = old.Tool.Arguments
+			}
+			tools[e.ID] = e
+		}
+		if e.Kind == "contextCompaction" {
+			compacts[e.ID] = e
+		}
+	}
+	for id, kind := range map[string]string{"bash-1": "execute", "bash-2": "execute", "edit": "edit", "write": "edit", "read": "read", "todo": "plan", "mcp": "mcp"} {
+		if tools[id].Tool == nil || tools[id].Tool.Kind != kind {
+			t.Fatal(id, tools[id])
+		}
+	}
+	if tools["bash-1"].Status != "completed" || tools["bash-2"].Status != "failed" || tools["mcp"].Tool.Server != "docs" || tools["mcp"].Tool.Name != "lookup" || len(compacts) != 2 || compacts["claude-compact-2"].Status != "interrupted" {
+		t.Fatal(tools, compacts)
+	}
+}
+
+func TestClaudeQuestionAndApproval(t *testing.T) {
+	for _, mode := range []string{"ask", "hook", "cancel", "allow", "deny", "unknown"} {
+		t.Run(mode, func(t *testing.T) {
+			req := claudeRequest{Subtype: "can_use_tool", ToolName: "Bash", Input: json.RawMessage(`{"command":"pwd"}`)}
+			if mode == "ask" || mode == "hook" || mode == "cancel" {
+				req.ToolName = "AskUserQuestion"
+				req.Input = json.RawMessage(`{"questions":[{"header":"Platform","question":"Choose platforms","multiSelect":true,"options":[{"label":"macOS"},{"label":"Windows"}]}]}`)
+			}
+			if mode == "hook" {
+				input, _ := json.Marshal(map[string]any{"tool_name": req.ToolName, "tool_input": req.Input})
+				req.Subtype, req.CallbackID, req.Input = "hook_callback", "ask-user", input
+			}
+			if mode == "unknown" {
+				req.Subtype = "unknown"
+			}
+			resolved := 0
+			value, err := claudeInteraction(context.Background(), func(e AgentEvent) {
+				if e.Resolved != nil {
+					resolved++
+				}
+				if e.Interaction == nil {
+					return
+				}
+				if req.ToolName == "AskUserQuestion" && (!e.Interaction.Request.Questions[0].MultiSelect || !e.Interaction.Request.Questions[0].IsOther) {
+					t.Fatal("lost multi/custom question")
+				}
+				answer := map[string]any{"decision": "cancel"}
+				if mode == "allow" {
+					answer["decision"] = "accept"
+				}
+				if mode == "ask" || mode == "hook" {
+					answer["answers"] = map[string]any{"0": map[string]any{"answers": []string{"macOS", "Windows", "Other"}}}
+				}
+				e.Interaction.Reply <- answer
+			}, req)
+			if mode == "unknown" {
+				if err == nil {
+					t.Fatal("unknown request accepted")
+				}
+				return
+			}
+			if err != nil || resolved != 1 {
+				t.Fatal(value, err, resolved)
+			}
+			raw, _ := json.Marshal(value)
+			if (mode == "ask" || mode == "hook") && !strings.Contains(string(raw), "macOS, Windows, Other") {
+				t.Fatal(string(raw))
+			}
+			if (mode == "deny" || mode == "cancel") && !strings.Contains(string(raw), `"deny"`) {
+				t.Fatal(string(raw))
+			}
+		})
+	}
+}
+
+func TestClaudeParallelBlocksAndTasks(t *testing.T) {
+	var events []AgentEvent
+	p := claudeParser{emit: func(e AgentEvent) { events = append(events, e) }}
+	for _, raw := range []string{
+		`{"type":"stream_event","event":{"type":"message_start","message":{"id":"main"}}}`,
+		`{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"read-main","name":"Read","input":{}}}}`,
+		`{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"file_path\":"}}}`,
+		`{"type":"stream_event","parent_tool_use_id":"agent","event":{"type":"message_start","message":{"id":"child"}}}`,
+		`{"type":"stream_event","parent_tool_use_id":"agent","event":{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"read-child","name":"Read","input":{}}}}`,
+		`{"type":"stream_event","parent_tool_use_id":"agent","event":{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"file_path\":\"child.go\"}"}}}`,
+		`{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"\"main.go\"}"}}}`,
+		`{"type":"stream_event","parent_tool_use_id":"agent","event":{"type":"content_block_stop","index":0}}`,
+		`{"type":"stream_event","event":{"type":"content_block_stop","index":0}}`,
+		`{"type":"assistant","message":{"id":"task","content":[{"type":"tool_use","id":"create","name":"TaskCreate","input":{"subject":"Verify","description":"Run checks"}}]}}`,
+		`{"type":"user","tool_use_result":{"task":{"id":"1"}},"message":{"content":[{"type":"tool_result","tool_use_id":"create","content":"Task #1 created"}]}}`,
+		`{"type":"assistant","message":{"id":"update","content":[{"type":"tool_use","id":"update","name":"TaskUpdate","input":{"taskId":"1","status":"in_progress"}}]}}`,
+		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"update","content":"Updated task"}]}}`,
+	} {
+		if err := p.line([]byte(raw)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	found := map[string]AgentEvent{}
+	for _, e := range events {
+		found[e.ID] = e
+	}
+	if string(found["read-main"].Tool.Arguments) != `{"file_path":"main.go"}` || string(found["read-child"].Tool.Arguments) != `{"file_path":"child.go"}` || found["read-child"].Tool.ParentID != "agent" {
+		t.Fatal("parallel input blocks mixed", found)
+	}
+	if plan := string(found["claude-tasks"].Tool.Arguments); !strings.Contains(plan, `"content":"Verify"`) || !strings.Contains(plan, `"status":"in_progress"`) {
+		t.Fatal("native task plan lost", plan)
+	}
+}
+
+func TestClaudeCompactionHookOrdering(t *testing.T) {
+	for _, postFirst := range []bool{false, true} {
+		t.Run(fmt.Sprint(postFirst), func(t *testing.T) {
+			var events []AgentEvent
+			p := claudeParser{emit: func(e AgentEvent) { events = append(events, e) }}
+			for n := 0; n < 2; n++ {
+				p.compactHook(claudeRequest{CallbackID: "compact-start"})
+				boundary := func() {
+					if err := p.line([]byte(`{"type":"system","subtype":"compact_boundary","compact_metadata":{"pre_tokens":1000}}`)); err != nil {
+						t.Fatal(err)
+					}
+				}
+				post := func() {
+					p.compactHook(claudeRequest{CallbackID: "compact-end", Input: json.RawMessage(`{"compact_summary":"Keep the task"}`)})
+				}
+				if postFirst {
+					post()
+					boundary()
+				} else {
+					boundary()
+					post()
+				}
+			}
+			starts, summaries := 0, 0
+			for _, e := range events {
+				if e.Status == "inProgress" {
+					starts++
+				}
+				if e.Text == "Keep the task" {
+					summaries++
+				}
+			}
+			if p.compactions != 2 || p.compacting || starts != 2 || summaries != 2 {
+				t.Fatal("compaction duplicated or summary lost", events)
+			}
+		})
+	}
+}
+
+func TestClaudeBackgroundSettlement(t *testing.T) {
+	p := claudeParser{emit: func(AgentEvent) {}}
+	for _, raw := range []string{
+		`{"type":"system","subtype":"session_state_changed","state":"running"}`,
+		`{"type":"system","subtype":"task_started","task_id":"child","task_type":"local_agent"}`,
+		`{"type":"result","subtype":"success"}`,
+		`{"type":"stream_event","parent_tool_use_id":"agent","event":{"type":"message_start","message":{"id":"child"}}}`,
+		`{"type":"assistant","parent_tool_use_id":"agent","message":{"id":"child","content":[{"type":"text","text":"Subagent complete"}]}}`,
+		`{"type":"system","subtype":"task_notification","task_id":"child"}`,
+	} {
+		if err := p.line([]byte(raw)); err != nil {
+			t.Fatal(err)
+		}
+		if p.done() {
+			t.Fatal("settled before session idle")
+		}
+	}
+	if err := p.line([]byte(`{"type":"system","subtype":"session_state_changed","state":"idle"}`)); err != nil || !p.done() {
+		t.Fatal("subagent output discarded parent completion", err)
+	}
+	if err := p.line([]byte(`{"type":"assistant","message":{"id":"follow-up","content":[{"type":"text","text":"Following up"}]}}`)); err != nil || p.done() {
+		t.Fatal("new parent turn reused an old result", err)
+	}
+}
+
+func TestClaudeUnsupportedImage(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "image.bmp")
+	if err := os.WriteFile(path, append([]byte("BM"), make([]byte, 64)...), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := imagePrompt(RunOptions{Driver: "claude", Images: []string{path}}); err == nil || !strings.Contains(err.Error(), "image/bmp") {
+		t.Fatal("unsupported image accepted", err)
+	}
+	c := Control{driver: "claude"}
+	if err := c.Steer(context.Background(), "image", []string{path}); err == nil || !strings.Contains(err.Error(), "image/bmp") {
+		t.Fatal("steer did not validate image type", err)
+	}
+}
+
+func TestClaudeInstallAndArguments(t *testing.T) {
+	for _, access := range []string{"", "acceptEdits", "bypassPermissions"} {
+		args, err := agentArgs(RunOptions{Driver: "claude", Access: access, Session: "native-session", Model: "exact-model", Effort: "high"})
+		if err != nil || !strings.Contains(strings.Join(args, " "), "--resume native-session --model exact-model --effort high") {
+			t.Fatal(args, err)
+		}
+		if slices.Contains(args, "--allow-dangerously-skip-permissions") != (access == "bypassPermissions") {
+			t.Fatal("permissions amplified", args)
+		}
+	}
+	if _, err := agentArgs(RunOptions{Driver: "claude", Access: "high"}); err == nil {
+		t.Fatal("unknown access accepted")
+	}
+	if _, err := agentArgs(RunOptions{Driver: "claude", Effort: "off"}); err == nil {
+		t.Fatal("invented effort accepted")
+	}
+	if version, err := installationVersion("claude", []byte("2.1.317 (Claude Code)\n")); err != nil || version != "2.1.317" {
+		t.Fatal(version, err)
+	}
+	for _, platform := range []string{"darwin", "linux", "windows"} {
+		for _, arch := range []string{"amd64", "arm64"} {
+			target, exe, err := claudePlatform(platform, arch)
+			if err != nil || target == "" || platform == "windows" && exe != "claude.exe" {
+				t.Fatal(target, exe, err)
+			}
+		}
+	}
+	i := Installation{Driver: "claude", Path: "/local/claude", Method: "native"}
+	cmd, args, err := managerAdapters["native"].update(i, "2.1.319")
+	if err != nil || cmd != i.Path || strings.Join(args, " ") != "install 2.1.319" {
+		t.Fatal(cmd, args, err)
+	}
+	for _, entry := range []string{"cli.js", "bin/claude.exe"} {
+		method, _ := classifyDriver("claude", filepath.FromSlash("/usr/local/lib/node_modules/@anthropic-ai/claude-code/"+entry), t.TempDir())
+		if method != "npm" {
+			t.Fatal("npm source lost", entry, method)
+		}
+	}
+	if slices.Contains(installerScriptArgs("claude", []string{"install", "--ignore-scripts"}), "--ignore-scripts") {
+		t.Fatal("native postinstall blocked")
+	}
+	brewPath := filepath.FromSlash("/opt/homebrew/Caskroom/claude-code@latest/2.1.319/claude")
+	if method, _ := classifyDriver("claude", brewPath, t.TempDir()); method != "brew" {
+		t.Fatal("latest cask ownership lost", method)
+	}
+	_, args, err = managerAdapters["brew"].update(Installation{Driver: "claude", Method: "brew", Path: brewPath, Prefix: "/opt/homebrew"}, "2.1.319")
+	if err != nil || !slices.Contains(args, "claude-code@latest") {
+		t.Fatal("latest cask replaced", args, err)
+	}
+	for _, method := range []string{"bun", "pnpm"} {
+		if _, _, err := globalPackageUpdate(Installation{Driver: "claude", Method: method, Manager: method, PackageRoot: "/packages"}, "2.1.319"); err == nil {
+			t.Fatal("build trust policy silently changed", method)
+		}
+	}
+}
+
+func TestInstalledClaudeCatalog(t *testing.T) {
+	if os.Getenv("MUJICAGENT_CLAUDE_PROBE_TEST") != "1" {
+		t.Skip("explicit read-only installed Claude Code probe")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	models, err := DiscoverModels(ctx, "claude", "claude", t.TempDir())
+	if err != nil || len(models) == 0 {
+		t.Fatal(models, err)
+	}
+	t.Logf("Claude Code: %d models; no inference requested", len(models))
+	for _, m := range models {
+		if m.ID == "default" {
+			t.Fatal("default-model placeholder leaked")
+		}
+	}
+}
+
 func TestNativeInstallerOwnership(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "bin", "pi")
@@ -389,7 +855,7 @@ func TestDownloadNativePackage(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Minute)
 	defer cancel()
 	lookupSource := source
-	if source == "cn" && driver == "droid" {
+	if source == "cn" && (driver == "droid" || driver == "claude") {
 		lookupSource = "native-mirror"
 	}
 	if source == "cn-npm" {

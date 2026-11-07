@@ -69,10 +69,10 @@ func Inspect(ctx context.Context, driver, binary, managed string) (Installation,
 		return Installation{}, err
 	}
 	if runtime.GOOS == "windows" {
-		if driver == "pi" && len(cmd.Args) > 1 && strings.HasSuffix(cmd.Args[1], ".js") {
+		if (driver == "pi" || driver == "claude") && len(cmd.Args) > 1 && strings.HasSuffix(cmd.Args[1], ".js") {
 			real = canonical(cmd.Args[1])
 		}
-		if driver == "droid" {
+		if driver == "droid" || driver == "claude" && strings.HasSuffix(cmd.Path, ".exe") && filepath.Base(cmd.Path) != "node.exe" {
 			real = canonical(cmd.Path)
 		}
 	}

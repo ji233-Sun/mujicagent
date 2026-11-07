@@ -15,7 +15,7 @@
 
 ---
 
-MujicAgent 是一个支持 Codex、Pi 和 Droid 的原生桌面客户端。把项目、对话、截图和执行过程放在同一个工作空间里，让你更方便地交代任务、补充想法、查看结果。
+MujicAgent 是一个支持 Codex、Pi、Droid 和 Claude Code 的原生桌面客户端。把项目、对话、截图和执行过程放在同一个工作空间里，让你更方便地交代任务、补充想法、查看结果。
 
 它连接本机的智能体 CLI，沿用各自已有的登录和配置。你可以围绕代码项目持续工作，也可以打开一个无项目会话，先把想法聊清楚。
 
@@ -45,11 +45,11 @@ Codex 工作时，你可以继续补充消息。后续任务进入队列，支�
 
 MujicAgent 使用 Go 和 [MyGo](https://github.com/egoist/mygo) 构建，界面由 MyGo Native UI 绘制。浅色界面、系统毛玻璃侧栏和原生设置面板，让项目与对话各有位置；支持简体中文与英文即时切换，并遵循系统的“减少动态效果”设置。
 
-会话数据保存在本机，登录凭据由 Codex 管理。模型请求仍通过 Codex 使用你配置的服务，具体能力和用量取决于 Codex 账户与配置。
+会话数据保存在本机，登录凭据由各智能体 CLI 管理。模型请求通过所选 CLI 使用你配置的服务，具体能力和用量取决于对应账户与配置。
 
 ## 开始使用
 
-1. 准备所用智能体的登录或 API 配置；也可先打开应用，在设置中安装 Codex、Pi 或 Droid。
+1. 准备所用智能体的登录或 API 配置；也可先打开应用，在设置中安装 Codex、Pi、Droid 或 Claude Code。
 2. 从 [GitHub Releases](https://github.com/ji233-Sun/mujicagent/releases/latest) 下载对应的安装包。
 3. 打开 MujicAgent，添加一个本地项目，或从“无项目”开始第一段对话。
 
@@ -62,7 +62,7 @@ MujicAgent 使用 Go 和 [MyGo](https://github.com/egoist/mygo) 构建，界面�
 
 当前主要运行验证环境为 macOS Apple Silicon。Windows 已提供安装包和 CI 构建检查，尚未完成运行验证；Linux 尚未做运行验证。Windows 安装器暂未配置 Authenticode 签名，可能出现未知发布者或 SmartScreen 提示。
 
-连接配置、附件操作和快捷键见[使用指南](docs/usage.md)。支持本机 Codex、Pi、Droid，以及携带可见对话上下文的跨智能体交接；各自能力边界见使用指南。尚不支持远程连接、worktree 管理或导入 CLI 全局历史。
+连接配置、附件操作和快捷键见[使用指南](docs/usage.md)。支持本机 Codex、Pi、Droid、Claude Code，以及携带可见对话上下文的跨智能体交接；各自能力边界见使用指南。尚不支持远程连接、worktree 管理或导入 CLI 全局历史。
 
 ## 发布与更新
 
@@ -74,7 +74,7 @@ MujicAgent 使用 Go 和 [MyGo](https://github.com/egoist/mygo) 构建，界面�
 
 欢迎通过 [Issues](https://github.com/ji233-Sun/mujicagent/issues) 提交问题和建议，选择 `bug` 或 `feature request` 作为主要分类。报告问题时，请附上系统、应用版本、复现步骤及实际与预期结果；功能建议请说明使用场景、期望行为和验收标准。
 
-涉及具体 Harness 的安装、认证、模型、会话或工具调用时，请写明 Harness 名称及 CLI 版本，并选择对应标签：Codex → `harness:codex`、Pi → `harness:pi`、Droid → `harness:droid`。跨 Harness 交接或影响多个 Harness 时选择所有相关标签；通用界面等无关问题无需选择。无法确认时请注明待确认，无标签权限时在正文说明，由维护者补充。完整规则见 [Issue 提报规范](.agents/skills/mujicagent-delivery/SKILL.md#issue-提报与关联)。
+涉及具体 Harness 的安装、认证、模型、会话或工具调用时，请写明 Harness 名称及 CLI 版本，并选择对应标签：Codex → `harness:codex`、Pi → `harness:pi`、Droid → `harness:droid`、Claude Code → `harness:claude`。跨 Harness 交接或影响多个 Harness 时选择所有相关标签；通用界面等无关问题无需选择。无法确认时请注明待确认，无标签权限时在正文说明，由维护者补充。完整规则见 [Issue 提报规范](.agents/skills/mujicagent-delivery/SKILL.md#issue-提报与关联)。
 
 想从源码运行或参与开发，请阅读[开发指南](docs/development.md)，了解环境要求、项目结构和验证命令。
 

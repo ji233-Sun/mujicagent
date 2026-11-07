@@ -1,4 +1,7 @@
 {
+  "claudeDefaultHint": "Claude Code asks before operations that require permission; uses your CLI rules.",
+  "claudeEditsHint": "Automatically accept file edits; other operations follow Claude Code permission rules.",
+  "claudeFullAccessHint": "Bypass Claude Code permission checks. This is not an operating system sandbox.",
   "harnessNative": "Official installer",
   "agentCLIAvailable": "Available",
   "agentCLIAuth": "Managed by CLI; sign-in is not verified",

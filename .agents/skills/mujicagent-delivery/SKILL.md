@@ -70,6 +70,7 @@ description: 本仓库任何变更任务开始时，以及提交、推送、创�
   | Codex | `harness:codex` |
   | Pi | `harness:pi` |
   | Droid | `harness:droid` |
+  | Claude Code | `harness:claude` |
 
 - 涉及具体 Harness 的安装、更新、认证、模型、会话执行或工具协议时，必须选择对应 Harness 标签，并在正文写明 Harness 名称与 CLI 版本。跨 Harness 交接或已确认影响多个 Harness 时选择所有相关标签，说明各自的复现或预期行为；不要仅凭模型名或 provider 推断 Harness。
 - 与 Harness 无关的通用界面、项目管理或文档问题无需选择 Harness 标签。范围尚未确认时在正文标明待确认，确认后补齐；提报者无标签权限时在正文写明 Harness，由维护者补充标签，不因此阻止提报。

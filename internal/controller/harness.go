@@ -247,6 +247,8 @@ func (c *Controller) HarnessInstalling() bool {
 }
 func (c *Controller) setHarnessPath(driver, path string) {
 	switch driver {
+	case "claude":
+		c.State.Settings.ClaudePath = path
 	case "pi":
 		c.State.Settings.PiPath = path
 	case "droid":

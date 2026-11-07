@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/ji233-Sun/mujicagent/internal/codex"
 )
@@ -21,11 +23,31 @@ type rpcProcess struct {
 }
 
 func startRPCProcess(ctx context.Context, binary, cwd string, args []string) (*rpcProcess, error) {
+	return startRPCProcessEnv(ctx, binary, cwd, args, nil)
+}
+
+func startRPCProcessEnv(ctx context.Context, binary, cwd string, args []string, env map[string]string) (*rpcProcess, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	cmd, err := codex.Command(ctx, binary, args...)
 	if err != nil {
 		cancel()
 		return nil, err
+	}
+	if len(env) != 0 {
+		base := cmd.Env
+		if base == nil {
+			base = os.Environ()
+		}
+		cmd.Env = nil
+		for _, entry := range base {
+			key, _, _ := strings.Cut(entry, "=")
+			if _, replace := env[key]; !replace {
+				cmd.Env = append(cmd.Env, entry)
+			}
+		}
+		for key, value := range env {
+			cmd.Env = append(cmd.Env, key+"="+value)
+		}
 	}
 	cmd.Dir, cmd.Stderr = cwd, io.Discard
 	in, err := cmd.StdinPipe()

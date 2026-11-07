@@ -2,7 +2,7 @@
 
 [开发指南](development.md) · [接入与维护 Skill](../.agents/skills/harness-maintenance/SKILL.md)
 
-MujicAgent 把会话的产品行为放在共享 Controller 中，把 CLI 的协议翻译放在驱动中。Codex、Pi、Droid 使用同一套发送、队列确认、停止入口、结束处理、事件归并和持久化流程。
+MujicAgent 把会话的产品行为放在共享 Controller 中，把 CLI 的协议翻译放在驱动中。Codex、Pi、Droid、Claude Code 使用同一套发送、队列确认、停止入口、结束处理、事件归并和持久化流程。
 
 ## 边界
 
@@ -14,9 +14,11 @@ flowchart TD
     Session --> Codex[Codex App Server]
     Session --> Pi[Pi RPC]
     Session --> Droid[Droid JSON-RPC]
+    Session --> Claude[Claude Code stream-json]
     Codex --> Events[AgentEvent / ToolEvent / Interaction]
     Pi --> Events
     Droid --> Events
+    Claude --> Events
     Events --> Queue[Controller 事件队列]
     Queue --> Merge[applyTurnEvent / mergeAgentEvent / finishTurn]
     Merge --> Model[model.State / 流式快照]
@@ -30,7 +32,8 @@ flowchart TD
 | Codex 协议 | `internal/harness/codex_session.go`、`internal/codex/` | 权限校验、thread/start/resume、turn/start、通知解析、原生控制与连接 |
 | Pi 协议 | `internal/harness/pi.go`、`pi_events.go` | prompt/steer、扩展交互、工具与消息事件、agent_settled |
 | Droid 协议 | `internal/harness/droid.go`、`droid_interaction.go` | initialize/load/settings、双向请求、通知、历史过滤、Script 子调用 |
-| 进程与输入 | `internal/harness/rpc_process.go`、`input.go` | Pi/Droid 运行及模型探测共用的管道、扫描器、进程树取消与回收、图片编码 |
+| Claude Code 协议 | `internal/harness/claude.go`、`claude_events.go`、`claude_interaction.go` | initialize/resume、UUID 输入确认、流式消息、工具权限、提问 hooks、压缩及后台任务收尾 |
+| 进程与输入 | `internal/harness/rpc_process.go`、`input.go` | Pi/Droid/Claude Code 运行及模型探测共用的管道、扫描器、进程树取消与回收、图片编码 |
 | 产品生命周期 | `internal/controller/turns.go`、`queue.go` | 一次运行的归属、确认、排队、收尾、失败与停止策略 |
 | 事件归并 | `internal/controller/agent_events.go` | 所有驱动共用的稳定 Item、增量/快照、工具详情脱敏、压缩状态 |
 | 独立管理能力 | `internal/harness/models.go`、`installers.go` | 官方模型目录、安装来源与更新适配，不与发送消息绑定 |
@@ -39,7 +42,7 @@ flowchart TD
 
 ## 一次运行的生命周期
 
-`sendThread` 为三种驱动统一准备工作目录、模型与权限快照，先保存本地回合，再在后台转换附件、导出标注图片并启动 `Session.Run`。保存失败会恢复本地状态，不启动 CLI；附件准备期间也能取消。运行实例由 `turnRun` 持有，后台回调必须仍属于这个实例才能修改状态。流式内容、输入确认和最终状态复用后台快照保存，避免在 UI 线程编码整个历史。
+`sendThread` 为所有驱动统一准备工作目录、模型与权限快照，先保存本地回合，再在后台转换附件、导出标注图片并启动 `Session.Run`。保存失败会恢复本地状态，不启动 CLI；附件准备期间也能取消。运行实例由 `turnRun` 持有，后台回调必须仍属于这个实例才能修改状态。流式内容、输入确认和最终状态复用后台快照保存，避免在 UI 线程编码整个历史。
 
 接受和结束是两件独立的事：
 
@@ -48,9 +51,9 @@ flowchart TD
 3. `End` 统一交给 `finishTurn`。成功只在接受已确认后继续队列；失败或停止保留未被接受的消息，并清除发送标记。待答请求和未结束工具也在这里收尾。
 4. Codex 的完成通知可能先于 turn/start 的回复到达。此时保留运行记录，等待确认后再释放；其间不能删除、交接、更新 CLI 或把它当作空闲会话。重复完成通知不能再次推进队列。
 
-Codex 的 `Session.Run` 在提交被接受后返回，最终状态来自常驻连接的通知；Pi/Droid 的 `Session.Run` 持续消费 RPC，直到原生协议确认整个任务结束。这个差异留在驱动与会话层，Controller 只消费 `Accepted` 和 `End`。
+Codex 的 `Session.Run` 在提交被接受后返回，最终状态来自常驻连接的通知；Pi/Droid/Claude Code 的 `Session.Run` 持续消费协议流，直到原生协议确认整个任务结束。Claude Code 的 result 可能早于后台任务完成，需同时等待会话空闲及已启动任务收尾。这个差异留在驱动与会话层，Controller 只消费 `Accepted` 和 `End`。
 
-Pi/Droid 取消会回收本轮进程树。Codex 使用 turn/interrupt，保留 App Server 连接。关闭应用会取消运行实例及目录探测，再关闭原生连接。
+Pi/Droid/Claude Code 取消会回收本轮进程树。Codex 使用 turn/interrupt，保留 App Server 连接。关闭应用会取消运行实例及目录探测，再关闭原生连接。
 
 ## 事件与身份
 
@@ -68,15 +71,15 @@ Pi 使用应用数据目录下的会话文件，Droid/Codex 使用各自返回�
 
 ## 能力不等价
 
-| 能力 | Codex | Pi | Droid |
-| --- | --- | --- | --- |
-| 传输 | 常驻 App Server，复用连接 | 每轮 RPC 进程，复用会话文件 | 每轮 JSON-RPC 进程，load_session 续聊 |
-| 整轮结束 | turn/completed | agent_settled，agent_end 不算结束 | agent_turn_completed |
-| 输入被接受 | turn/start 回复 | prompt 成功回复 | add_user_message 成功回复 |
-| 思考强度 | model/list | get_available_models | droid.list_models |
-| 计划执行模式 | collaborationMode | 当前未接入 | 当前未接入 |
-| 速度服务 | 模型目录明确提供时可用 | 当前未接入 | 当前未接入 |
-| 权限 | 服务端权限 Profile | 只读内置工具 / 本机配置 | 原生 autonomyLevel 与逐次审批 |
+| 能力 | Codex | Pi | Droid | Claude Code |
+| --- | --- | --- | --- | --- |
+| 传输 | 常驻 App Server，复用连接 | 每轮 RPC 进程，复用会话文件 | 每轮 JSON-RPC 进程，load_session 续聊 | 每轮 stream-json 进程，--resume 续聊 |
+| 整轮结束 | turn/completed | agent_settled，agent_end 不算结束 | agent_turn_completed | result、会话 idle、后台任务收尾 |
+| 输入被接受 | turn/start 回复 | prompt 成功回复 | add_user_message 成功回复 | 匹配 UUID 的 user 回显 |
+| 模型/思考目录 | model/list | get_available_models | droid.list_models | control initialize models |
+| 计划执行模式 | collaborationMode | 当前未接入 | 当前未接入 | 当前未接入 |
+| 速度服务 | 模型目录明确提供时可用 | 当前未接入 | 当前未接入 | 当前未接入 |
+| 权限 | 服务端权限 Profile | 只读内置工具 / 本机配置 | 原生 autonomyLevel 与逐次审批 | default/acceptEdits/bypassPermissions 与 can_use_tool |
 
 驱动声明的是协议能力；具体模型的思考档位和速度选项继续来自官方目录。传入未支持的计划模式、速度档位或输入类型会明确报错，不能静默忽略，也不能推断另一种 CLI 的权限等价。
 

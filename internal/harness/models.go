@@ -32,6 +32,9 @@ func (m AgentModel) ResolveEffort(current string) string {
 // DiscoverModels uses the same read-only RPCs as the official CLI SDKs.
 // No session or turn is created. Each probe owns and reaps its process tree.
 func DiscoverModels(ctx context.Context, driver, binary, cwd string) ([]AgentModel, error) {
+	if driver == "claude" {
+		return discoverClaudeModels(ctx, binary, cwd)
+	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	args := []string{"--mode", "rpc", "--no-session", "--no-extensions"}

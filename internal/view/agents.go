@@ -18,6 +18,9 @@ func (v *View) agentsPane(c *ui.Context) {
 	if id == "droid" {
 		path = &v.C.State.Settings.DroidPath
 	}
+	if id == "claude" {
+		path = &v.C.State.Settings.ClaudePath
+	}
 	services := c.Services()
 	for _, driver := range harness.Drivers {
 		if driver.ID != id {
@@ -89,6 +92,9 @@ func (v *View) agentsPane(c *ui.Context) {
 						endpoint := "https://pi.dev/docs/quickstart"
 						if id == "droid" {
 							endpoint = "https://docs.factory.com/droid-cli/quickstart"
+						}
+						if id == "claude" {
+							endpoint = "https://code.claude.com/docs/en/authentication"
 						}
 						services.OpenURL(endpoint)
 					}

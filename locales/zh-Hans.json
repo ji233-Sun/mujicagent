@@ -1,4 +1,7 @@
 {
+  "claudeDefaultHint": "需授权的操作由你确认，沿用 Claude Code 的本机权限规则。",
+  "claudeEditsHint": "自动接受文件编辑，其他操作遵循 Claude Code 权限规则。",
+  "claudeFullAccessHint": "跳过 Claude Code 权限检查，不提供操作系统沙箱。",
   "harnessNative": "官方安装",
   "agentCLIAvailable": "可用",
   "agentCLIAuth": "由 CLI 管理，尚未验证登录",

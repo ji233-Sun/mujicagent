@@ -31,11 +31,14 @@ const piPackage = "@earendil-works/pi-coding-agent"
 const droidPackage = "@factory/cli"
 const piEntry = "dist/bundle/cli.js"
 const droidEntry = "bin/droid"
+const claudePackage = "@anthropic-ai/claude-code"
+const claudeEntry = "bin/claude.exe"
 
 var installerAdapters = map[string]installerAdapter{
-	"codex": {packageName: "@openai/codex", entry: "bin/codex.js", cask: "codex", versionPrefix: "codex-cli ", sources: []string{"", "cn", "native-mirror"}, helpArgs: []string{"app-server", "--help"}, latest: codexLatest},
-	"pi":    {packageName: piPackage, entry: piEntry, sources: []string{"", "npm", "cn"}, helpArgs: []string{"--help"}, helpContains: "--mode", latest: piLatest},
-	"droid": {packageName: droidPackage, entry: droidEntry, cask: "droid", sources: []string{"", "npm", "cn", "native-mirror"}, helpArgs: []string{"exec", "--help"}, helpContains: "stream-jsonrpc", latest: droidLatest},
+	"codex":  {packageName: "@openai/codex", entry: "bin/codex.js", cask: "codex", versionPrefix: "codex-cli ", sources: []string{"", "cn", "native-mirror"}, helpArgs: []string{"app-server", "--help"}, latest: codexLatest},
+	"pi":     {packageName: piPackage, entry: piEntry, sources: []string{"", "npm", "cn"}, helpArgs: []string{"--help"}, helpContains: "--mode", latest: piLatest},
+	"droid":  {packageName: droidPackage, entry: droidEntry, cask: "droid", sources: []string{"", "npm", "cn", "native-mirror"}, helpArgs: []string{"exec", "--help"}, helpContains: "stream-jsonrpc", latest: droidLatest},
+	"claude": {packageName: claudePackage, entry: claudeEntry, cask: "claude-code", sources: []string{"", "npm", "cn", "native-mirror"}, helpArgs: []string{"--help"}, helpContains: "--replay-user-messages", latest: claudeLatest},
 }
 
 func InstallSources(driver string) []string { return slices.Clone(installerAdapters[driver].sources) }
@@ -67,6 +70,9 @@ func installationVersion(driver string, output []byte) (string, error) {
 		return "", fmt.Errorf("unrecognized %s version", driver)
 	}
 	version := strings.TrimPrefix(value, a.versionPrefix)
+	if driver == "claude" {
+		version = strings.TrimSuffix(version, " (Claude Code)")
+	}
 	if !versionPattern.MatchString(version) {
 		return "", fmt.Errorf("unrecognized %s version", driver)
 	}
@@ -113,11 +119,16 @@ func classifyDriver(driver, path, managed string) (string, string) {
 	a := installerAdapters[driver]
 	slash := filepath.ToSlash(path)
 	if a.cask != "" {
+		if driver == "claude" {
+			if i := strings.Index(slash, "/Caskroom/claude-code@latest/"); i >= 0 {
+				return "brew", filepath.FromSlash(slash[:i])
+			}
+		}
 		if i := strings.Index(slash, "/Caskroom/"+a.cask+"/"); i >= 0 {
 			return "brew", filepath.FromSlash(slash[:i])
 		}
 	}
-	for _, entry := range []string{a.entry, "dist/cli.js"} {
+	for _, entry := range []string{a.entry, "dist/cli.js", "cli.js"} {
 		suffix := "/lib/node_modules/" + a.packageName + "/" + entry
 		if strings.HasSuffix(slash, suffix) {
 			return "npm", filepath.FromSlash(strings.TrimSuffix(slash, suffix))
@@ -138,6 +149,21 @@ func inspectNative(ctx context.Context, current Installation, real string) Insta
 	if strings.Contains(slash, "/nix/store/") {
 		current.Method, current.UpdateIssue = "nix", "unsupported"
 		return current
+	}
+	if current.Driver == "claude" {
+		home, _ := os.UserHomeDir()
+		launcher := filepath.Join(home, ".local", "bin", "claude")
+		version := filepath.Join(home, ".local", "share", "claude", "versions", current.Version)
+		if runtime.GOOS == "windows" {
+			launcher += ".exe"
+			version += ".exe"
+		}
+		if home != "" && filepath.Clean(current.Path) == launcher && real == version {
+			current.Method = "native"
+		}
+		if strings.Contains(slash, "/Microsoft/WinGet/Packages/Anthropic.ClaudeCode_") {
+			current.Method, current.UpdateIssue = "WinGet", "unsupported"
+		}
 	}
 	if current.Driver == "pi" {
 		launcher := canonical(current.Path)
@@ -189,6 +215,70 @@ func inspectNative(ctx context.Context, current Installation, real string) Insta
 		}
 	}
 	return current
+}
+
+const claudeDownloads = "https://downloads.claude.ai/claude-code-releases"
+
+func claudePlatform(goos, arch string) (string, string, error) {
+	cpu := map[string]string{"amd64": "x64", "arm64": "arm64"}[arch]
+	platform := map[string]string{"darwin": "darwin", "linux": "linux", "windows": "win32"}[goos]
+	if cpu == "" || platform == "" {
+		return "", "", fmt.Errorf("unsupported Claude Code platform: %s/%s", goos, arch)
+	}
+	exe := "claude"
+	if goos == "windows" {
+		exe += ".exe"
+	}
+	if goos == "linux" {
+		if matches, _ := filepath.Glob("/lib/ld-musl-*.so.1"); len(matches) != 0 {
+			cpu += "-musl"
+		}
+	}
+	return platform + "-" + cpu, exe, nil
+}
+
+func claudeLatest(ctx context.Context, source string) (Release, error) {
+	platform, exe, err := claudePlatform(runtime.GOOS, runtime.GOARCH)
+	if err != nil {
+		return Release{}, err
+	}
+	if source != "" {
+		base, err := npmRelease(ctx, claudePackage, claudeEntry, source)
+		if err != nil {
+			return Release{}, err
+		}
+		var native struct {
+			Dist struct{ Tarball, Integrity string }
+		}
+		if err = getJSON(ctx, registry(source)+"/@anthropic-ai%2Fclaude-code-"+platform+"/"+base.Version, &native); err != nil {
+			return Release{}, fmt.Errorf("Claude Code %s platform package unavailable: %w", base.Version, err)
+		}
+		if source == "native-mirror" {
+			return Release{base.Version, native.Dist.Tarball, native.Dist.Integrity, "package/" + exe}, nil
+		}
+		return base, nil
+	}
+	version, err := getText(ctx, claudeDownloads+"/latest")
+	if err != nil {
+		return Release{}, err
+	}
+	if !versionPattern.MatchString(version) {
+		return Release{}, fmt.Errorf("invalid Claude Code release version")
+	}
+	var manifest struct {
+		Platforms map[string]struct{ Checksum string }
+	}
+	if err = getJSON(ctx, claudeDownloads+"/"+version+"/manifest.json", &manifest); err != nil {
+		return Release{}, err
+	}
+	digest := manifest.Platforms[platform].Checksum
+	if len(digest) != 64 {
+		return Release{}, fmt.Errorf("Claude Code platform checksum unavailable")
+	}
+	if _, err = hex.DecodeString(digest); err != nil {
+		return Release{}, fmt.Errorf("invalid Claude Code checksum")
+	}
+	return Release{version, claudeDownloads + "/" + version + "/" + platform + "/" + exe, "sha256:" + digest, exe}, nil
 }
 
 func npmRelease(ctx context.Context, packageName, entry, source string) (Release, error) {

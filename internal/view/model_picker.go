@@ -100,7 +100,7 @@ func (v *View) modelPanel(c *ui.Context) {
 				v.favoriteModelPanel(c)
 				return
 			}
-			if v.pickerHarness == "pi" || v.pickerHarness == "droid" {
+			if v.pickerHarness == "pi" || v.pickerHarness == "droid" || v.pickerHarness == "claude" {
 				v.agentModelPanel(c)
 				return
 			}

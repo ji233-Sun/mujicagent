@@ -48,7 +48,7 @@ func TestAgentStreamBurst(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX fake process")
 	}
-	for _, driver := range []string{"pi", "droid"} {
+	for _, driver := range []string{"pi", "droid", "claude"} {
 		t.Run(driver, func(t *testing.T) {
 			dir := t.TempDir()
 			s := model.New()
@@ -72,11 +72,24 @@ printf '%s\n' '{"id":"request-3","result":{}}'
 			} else {
 				script += "printf '%s\\n' '{\"type\":\"response\",\"id\":\"prompt\",\"success\":true}'\n"
 			}
+			if driver == "claude" {
+				script = `#!/bin/sh
+read request
+printf '%s\n' '{"type":"control_response","response":{"subtype":"success","request_id":"initialize","response":{}}}'
+read request
+id=${request##*\"uuid\":\"}
+id=${id%%\"*}
+printf '{"type":"user","uuid":"%s","session_id":"burst"}\n' "$id"
+printf '%s\n' '{"type":"stream_event","event":{"type":"message_start","message":{"id":"m"}}}' '{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}'
+`
+				delta = `{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"x"}}}`
+				finish = `{"type":"result","subtype":"success"}`
+			}
 			script += "i=0\nwhile [ \"$i\" -lt 2048 ]; do\nprintf '%s\\n' '" + delta + "'\ni=$((i+1))\ndone\nprintf '%s\\n' '" + finish + "'\nsleep 20\n"
 			if err := os.WriteFile(binary, []byte(script), 0700); err != nil {
 				t.Fatal(err)
 			}
-			s.Settings.PiPath, s.Settings.DroidPath = binary, binary
+			s.Settings.PiPath, s.Settings.DroidPath, s.Settings.ClaudePath = binary, binary, binary
 			c := New(dir, s, nil)
 			defer c.Close()
 			start := time.Now()
@@ -142,10 +155,11 @@ printf '%s\n' '{"id":"request-3","result":{}}'
 func TestAgentDefaultPermissions(t *testing.T) {
 	s := model.New()
 	s.Settings.PiDefaultAccess, s.Settings.DroidDefaultAccess = "native", "medium"
+	s.Settings.ClaudeDefaultAccess = "acceptEdits"
 	c := New(t.TempDir(), s, nil)
 	defer c.Close()
 	s.AddThread("", t.TempDir())
-	for _, driver := range []string{"pi", "droid", "pi"} {
+	for _, driver := range []string{"pi", "droid", "claude", "pi"} {
 		if !c.Handoff(driver, "model") {
 			t.Fatal("handoff failed")
 		}
@@ -163,11 +177,12 @@ func TestAgentDefaultPermissions(t *testing.T) {
 	}
 	c.Save()
 	loaded, err := model.Load(filepath.Join(c.Dir, "state.json"))
-	if err != nil || loaded.Settings.AgentDefaultAccess("droid") != "medium" || loaded.Thread(existing.ID).AgentAccess != "native" {
+	if err != nil || loaded.Settings.AgentDefaultAccess("droid") != "medium" || loaded.Settings.AgentDefaultAccess("claude") != "acceptEdits" || loaded.Thread(existing.ID).AgentAccess != "native" {
 		t.Fatal("permissions did not persist", err)
 	}
 	s.Settings.PiDefaultAccess, s.Settings.DroidDefaultAccess = "unknown", "native"
-	if s.Settings.AgentDefaultAccess("pi") != "" || s.Settings.AgentDefaultAccess("droid") != "" {
+	s.Settings.ClaudeDefaultAccess = "high"
+	if s.Settings.AgentDefaultAccess("pi") != "" || s.Settings.AgentDefaultAccess("droid") != "" || s.Settings.AgentDefaultAccess("claude") != "" {
 		t.Fatal("unknown default increased access")
 	}
 }
@@ -1441,7 +1456,7 @@ func TestAnnotatedImageInput(t *testing.T) {
 }
 
 func TestNewThreadInheritsSelectedHarness(t *testing.T) {
-	for _, driver := range []string{"pi", "droid"} {
+	for _, driver := range []string{"pi", "droid", "claude"} {
 		t.Run(driver, func(t *testing.T) {
 			c := New(t.TempDir(), model.New(), nil)
 			defer c.Close()
@@ -1465,6 +1480,7 @@ func TestNewThreadRemembersExplicitModelSelection(t *testing.T) {
 		{Harness: "pi", Model: "provider/model", Effort: "off"},
 		{Harness: "droid", Model: "custom:model", Effort: "high"},
 		{Harness: "droid", Model: "custom:default"},
+		{Harness: "claude", Model: "custom-claude", Effort: "high"},
 	} {
 		t.Run(selection.Harness+"-"+selection.Effort+"-"+selection.ServiceTier, func(t *testing.T) {
 			dir := t.TempDir()
@@ -1527,7 +1543,7 @@ func TestNewThreadRemembersExplicitModelSelection(t *testing.T) {
 }
 
 func TestNewThreadNormalizesRememberedEffort(t *testing.T) {
-	for _, driver := range []string{"pi", "droid"} {
+	for _, driver := range []string{"pi", "droid", "claude"} {
 		t.Run(driver, func(t *testing.T) {
 			c := New(t.TempDir(), model.New(), nil)
 			defer c.Close()
@@ -1622,7 +1638,7 @@ func TestSwitchProjectPreservesPromptAndHistory(t *testing.T) {
 }
 
 func TestHarnessInstallGuardAndFailure(t *testing.T) {
-	for _, driver := range []string{"codex", "pi", "droid"} {
+	for _, driver := range []string{"codex", "pi", "droid", "claude"} {
 		t.Run(driver, func(t *testing.T) {
 			c := New(t.TempDir(), model.New(), nil)
 			original := c.State.Settings.AgentPath(driver)
@@ -1711,7 +1727,7 @@ func TestHarnessInstallGuardAndFailure(t *testing.T) {
 }
 
 func TestHarnessPreviewCancellationAndStaleResult(t *testing.T) {
-	for _, driver := range []string{"codex", "pi", "droid"} {
+	for _, driver := range []string{"codex", "pi", "droid", "claude"} {
 		t.Run(driver, func(t *testing.T) {
 			c := New(t.TempDir(), model.New(), nil)
 			c.Connection = "Connected"
@@ -1784,13 +1800,26 @@ func TestAgentHandoffOwnership(t *testing.T) {
 	if c.HarnessFor("pi") == c.HarnessFor("codex") {
 		t.Fatal("shared harness state")
 	}
+	last.Turns = []model.Turn{{Status: "completed", Prompt: "third", Items: []model.Item{{Kind: "agentMessage", Text: "third answer"}}}}
+	last.ServerID = "droid-server"
+	if !c.Handoff("claude", "claude-model") {
+		t.Fatal("Claude handoff failed")
+	}
+	claude := c.State.Thread(c.State.Selected)
+	if claude.ServerID != "" || claude.HandoffFrom != last.ID || !strings.Contains(claude.HandoffContext, "third answer") || !strings.Contains(claude.HandoffContext, "new answer") {
+		t.Fatal("Claude handoff lost ancestry or inherited native session", claude)
+	}
+	claude.ServerID = "claude-session"
+	if !c.Handoff("codex", "codex-model") || c.State.Thread(c.State.Selected).ServerID != "" {
+		t.Fatal("Claude session leaked to Codex")
+	}
 }
 
 func TestAgentProcessLifecycle(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Unix fake CLI; Windows argument resolution tested separately")
 	}
-	for _, driver := range []string{"pi", "droid"} {
+	for _, driver := range []string{"pi", "droid", "claude"} {
 		t.Run(driver, func(t *testing.T) {
 			dir := t.TempDir()
 			t.Setenv("MUJICAGENT_DATA_DIR", dir)
@@ -1814,6 +1843,18 @@ printf '%s\n' '{"method":"droid.session_notification","params":{"sessionId":"own
 sleep 20
 `
 			}
+			if driver == "claude" {
+				script = `#!/bin/sh
+read request
+printf '%s\n' '{"type":"control_response","response":{"subtype":"success","request_id":"initialize","response":{}}}'
+read request
+id=${request##*\"uuid\":\"}
+id=${id%%\"*}
+printf '{"type":"user","uuid":"%s","session_id":"owned-claude"}\n' "$id"
+printf '%s\n' '{"type":"assistant","message":{"id":"m","content":[{"type":"text","text":"done"}]}}' '{"type":"result","subtype":"success"}'
+sleep 20
+`
+			}
 			if err := os.WriteFile(binary, []byte(script), 0700); err != nil {
 				t.Fatal(err)
 			}
@@ -1821,6 +1862,7 @@ sleep 20
 			defer c.Close()
 			c.State.Settings.PiPath = binary
 			c.State.Settings.DroidPath = binary
+			c.State.Settings.ClaudePath = binary
 			thread := c.State.AddThread("project", dir)
 			thread.Harness = driver
 			thread.AgentModel = "custom"
@@ -1830,6 +1872,8 @@ sleep 20
 			full := "high"
 			if driver == "pi" {
 				full = "native"
+			} else if driver == "claude" {
+				full = "bypassPermissions"
 			}
 			thread.AgentAccess = full
 			if c.PermissionID() != "" || c.NextPermissionID() != full {
@@ -2249,7 +2293,7 @@ func TestCodexDisconnectIsolatesOtherDrivers(t *testing.T) {
 		t.Fatal("native session identity crossed a driver boundary")
 	}
 	notify(c, "transport/closed", `{}`)
-	if len(c.Requests) != 2 || len(c.agentReplies) != 2 {
+	if len(c.Requests) != len(harness.Drivers)-1 || len(c.agentReplies) != len(harness.Drivers)-1 {
 		t.Fatal("Codex disconnect removed external pending answers")
 	}
 	for id, thread := range threads {

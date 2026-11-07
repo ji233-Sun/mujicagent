@@ -40,6 +40,8 @@ var managerAdapters = map[string]managerAdapter{
 			return i.Path, []string{"update", "--self", "--no-approve"}, nil
 		case "droid":
 			return i.Path, []string{"update", "--version", v}, nil
+		case "claude":
+			return i.Path, []string{"install", v}, nil
 		default:
 			return "", nil, fmt.Errorf("unsupported native updater")
 		}
@@ -49,6 +51,7 @@ var managerAdapters = map[string]managerAdapter{
 	}},
 	"npm": {name: "npm", update: func(i Installation, v string) (string, []string, error) {
 		args := []string{"install", "--global", "--prefix", i.Prefix, packageFor(i.Driver) + "@" + v, "--ignore-scripts", "--no-audit", "--no-fund"}
+		args = installerScriptArgs(i.Driver, args)
 		if runtime.GOOS == "windows" {
 			node, cli, err := windowsNpmRuntime(i.Prefix)
 			return node, append([]string{cli}, args...), err
@@ -56,7 +59,11 @@ var managerAdapters = map[string]managerAdapter{
 		return filepath.Join(i.Prefix, "bin", "npm"), args, nil
 	}},
 	"brew": {name: "Homebrew", update: func(i Installation, v string) (string, []string, error) {
-		return filepath.Join(i.Prefix, "bin", "brew"), []string{"upgrade", "--cask", installerAdapters[driverID(i.Driver)].cask}, nil
+		cask := installerAdapters[driverID(i.Driver)].cask
+		if i.Driver == "claude" && strings.Contains(filepath.ToSlash(canonical(i.Path)), "/Caskroom/claude-code@latest/") {
+			cask = "claude-code@latest"
+		}
+		return filepath.Join(i.Prefix, "bin", "brew"), []string{"upgrade", "--cask", cask}, nil
 	}},
 	"bun": {name: "Bun", rootArgs: []string{"pm", "--global", "ls"}, binArgs: []string{"pm", "bin", "--global"},
 		update: globalPackageUpdate},
@@ -86,7 +93,19 @@ func globalPackageUpdate(i Installation, version string) (string, []string, erro
 	if i.Manager == "" || i.PackageRoot == "" {
 		return "", nil, fmt.Errorf("package manager ownership is not verified")
 	}
+	if i.Driver == "claude" {
+		// These managers have separate build-script trust policies. Do not
+		// silently change those policies or leave the native launcher stub.
+		return "", nil, fmt.Errorf("Claude Code requires its native postinstall; update with the original %s tool and its build-script policy", i.Method)
+	}
 	return i.Manager, []string{"add", "--global", packageFor(i.Driver) + "@" + version, "--ignore-scripts"}, nil
+}
+
+func installerScriptArgs(driver string, args []string) []string {
+	if driver == "claude" {
+		return slices.DeleteFunc(args, func(arg string) bool { return arg == "--ignore-scripts" })
+	}
+	return args
 }
 
 // Resolve known Node launchers without executing .cmd through a shell.
@@ -321,6 +340,9 @@ func inspectPackageManager(ctx context.Context, current Installation, real strin
 		matches = append(matches, match)
 	}
 	if len(matches) == 1 {
+		if current.Driver == "claude" {
+			matches[0].UpdateIssue = "unsupported"
+		}
 		return matches[0]
 	}
 	if len(matches) > 1 {
