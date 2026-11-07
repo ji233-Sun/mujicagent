@@ -21,6 +21,18 @@ func desktopCommand(ctx context.Context, binary string, args ...string) (*exec.C
 				return nil, err
 			}
 			if strings.EqualFold(filepath.Ext(resolved), ".cmd") || strings.EqualFold(filepath.Ext(resolved), ".bat") {
+				if strings.EqualFold(strings.TrimSuffix(filepath.Base(resolved), filepath.Ext(resolved)), "pi") {
+					script, err := windowsPiScript(resolved)
+					if err != nil {
+						return nil, err
+					}
+					node, err := exec.LookPath("node.exe")
+					if err != nil {
+						return nil, err
+					}
+					cmd := exec.Command(node, append([]string{script}, args...)...)
+					return cmd, cmd.Err
+				}
 				native, err := windowsCodexNative(resolved, runtime.GOARCH)
 				if err != nil {
 					return nil, err
@@ -111,7 +123,7 @@ func Command(ctx context.Context, binary string, args ...string) (*exec.Cmd, err
 	if err != nil {
 		return nil, err
 	}
-	run := exec.CommandContext(ctx, cmd.Path, args...)
+	run := exec.CommandContext(ctx, cmd.Path, cmd.Args[1:]...)
 	run.Env = cmd.Env
 	run.WaitDelay = time.Second
 	return run, nil
@@ -136,6 +148,17 @@ func windowsCodexNative(wrapper, arch string) (string, error) {
 	for _, candidate := range candidates {
 		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
 			return candidate, nil
+		}
+	}
+	return "", &exec.Error{Name: wrapper, Err: exec.ErrNotFound}
+}
+
+// Resolve only known npm package layouts; never execute arbitrary shell wrappers.
+func windowsPiScript(wrapper string) (string, error) {
+	for _, scope := range []string{"@earendil-works", "@mariozechner"} {
+		path := filepath.Join(filepath.Dir(wrapper), "node_modules", scope, "pi-coding-agent", "dist", "cli.js")
+		if info, err := os.Stat(path); err == nil && !info.IsDir() {
+			return path, nil
 		}
 	}
 	return "", &exec.Error{Name: wrapper, Err: exec.ErrNotFound}

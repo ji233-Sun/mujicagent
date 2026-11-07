@@ -18,7 +18,8 @@ import (
 
 type Controller struct {
 	AppUpdates                          AppUpdateState
-	Harness                             HarnessState
+	Harnesses                           map[string]*HarnessState
+	agentRuns                           map[string]context.CancelFunc
 	State                               *model.State
 	Dir                                 string
 	Error, Connection, Version, Account string
@@ -75,6 +76,17 @@ func (c *Controller) Close() {
 	c.once.Do(func() {
 		close(c.stop)
 		c.CancelHarness()
+		for _, cancel := range c.agentRuns {
+			cancel()
+		}
+		for _, h := range c.Harnesses {
+			if h.modelsCancel != nil {
+				h.modelsCancel()
+			}
+			if h.cancel != nil {
+				h.cancel()
+			}
+		}
 		if c.client != nil {
 			c.client.Close()
 		}
@@ -91,7 +103,7 @@ func (c *Controller) AnyRunning() bool {
 }
 
 func (c *Controller) Connect() {
-	if c.Connection == "Connecting" || c.AnyRunning() || c.Harness.Installing {
+	if c.Connection == "Connecting" || c.AnyRunning() || c.HarnessFor("codex").Installing {
 		return
 	}
 	if c.client != nil {
@@ -227,7 +239,7 @@ func (c *Controller) NewThread(projectID string) {
 	}
 	// Reuse only untouched conversations in this project; preserve all drafts.
 	for _, t := range c.State.Threads {
-		if t.ProjectID == projectID && !t.Settled && len(t.Turns) == 0 && len(t.Queue) == 0 && strings.TrimSpace(t.Draft) == "" {
+		if t.Driver() == "codex" && t.HandoffFrom == "" && t.ProjectID == projectID && !t.Settled && len(t.Turns) == 0 && len(t.Queue) == 0 && strings.TrimSpace(t.Draft) == "" {
 			c.Select(t.ID)
 			c.SetProjectExpanded(projectID, true)
 			return
@@ -259,7 +271,9 @@ func (c *Controller) SwitchProject(projectID string) bool {
 		}
 	}
 	draft := ""
+	driver, agentModel, access, effort := "", "", "", ""
 	if t != nil {
+		driver, agentModel, access, effort = t.Harness, t.AgentModel, t.AgentAccess, t.AgentEffort
 		draft = t.Draft
 	}
 	if t == nil || t.ServerID != "" || len(t.Turns) != 0 || len(t.Queue) != 0 || c.Running[t.ID] || t.Settled {
@@ -272,6 +286,7 @@ func (c *Controller) SwitchProject(projectID string) bool {
 		// Permissions are scoped to the target workspace.
 		t.PermissionProfile = c.State.Settings.DefaultPermissionProfile
 	}
+	t.Harness, t.AgentModel, t.AgentAccess, t.AgentEffort = driver, agentModel, access, effort
 	t.Draft = draft
 	t.Updated = time.Now()
 	c.Save()
@@ -342,9 +357,10 @@ func (c *Controller) Settle(id string, settled bool) {
 	c.Save()
 }
 
-func (c *Controller) serviceTier() string {
+func (c *Controller) serviceTier() string { return c.serviceTierFor(c.State.Settings.Model) }
+func (c *Controller) serviceTierFor(modelID string) string {
 	for _, m := range c.Models {
-		if m.Model == c.State.Settings.Model && m.SupportsSpeed(c.State.Settings.ServiceTier) {
+		if m.Model == modelID && m.SupportsSpeed(c.State.Settings.ServiceTier) {
 			return c.State.Settings.ServiceTier
 		}
 	}
@@ -369,7 +385,7 @@ func (c *Controller) Send(text string, plan bool) bool {
 		}
 		return false
 	}
-	if c.client == nil || c.Connection != "Connected" {
+	if c.State.Thread(c.State.Selected).Driver() == "codex" && (c.client == nil || c.Connection != "Connected") {
 		c.ReportError("Connect Codex in Settings before sending.")
 		return false
 	}
@@ -393,7 +409,10 @@ func (c *Controller) Send(text string, plan bool) bool {
 }
 
 func (c *Controller) sendThread(t *model.Thread, text string, plan bool, queuedID string) bool {
-	if c.Harness.Installing || c.client == nil || c.Connection != "Connected" || c.Running[t.ID] || c.permissionUpdates[t.ID] {
+	if t.Driver() != "codex" {
+		return c.sendAgent(t, text, queuedID)
+	}
+	if c.HarnessFor("codex").Installing || c.client == nil || c.Connection != "Connected" || c.Running[t.ID] || c.permissionUpdates[t.ID] {
 		return false
 	}
 	if err := c.prepareWorkspace(t, text); err != nil {
@@ -408,7 +427,7 @@ func (c *Controller) sendThread(t *model.Thread, text string, plan bool, queuedI
 		c.ReportError(directoryErr.Error())
 		return false
 	}
-	if len(t.Turns) == 0 {
+	if len(t.Turns) == 0 && t.HandoffFrom == "" {
 		t.Title = model.MessageTitle(text)
 	}
 	t.Settled = false
@@ -419,8 +438,13 @@ func (c *Controller) sendThread(t *model.Thread, text string, plan bool, queuedI
 	c.Save()
 	id, serverID, cwd := t.ID, t.ServerID, t.Cwd
 	loaded := c.loaded[id]
+	handoff := t.HandoffContext
+	fresh := !t.HandoffSent
 	settings := c.State.Settings
-	serviceTier := c.serviceTier()
+	if t.AgentModel != "" {
+		settings.Model = t.AgentModel
+	}
+	serviceTier := c.serviceTierFor(settings.Model)
 	permissionID := t.PermissionProfile
 	if permissionID == "" {
 		permissionID = c.State.Settings.DefaultPermissionProfile
@@ -475,7 +499,11 @@ func (c *Controller) sendThread(t *model.Thread, text string, plan bool, queuedI
 				}
 			})
 		}
-		input, err := messageInput(text, c.Dir)
+		prompt := text
+		if fresh {
+			prompt = handoff + text
+		}
+		input, err := messageInput(prompt, c.Dir)
 		if err != nil {
 			c.fail(id, epoch, err)
 			return
@@ -507,6 +535,7 @@ func (c *Controller) sendThread(t *model.Thread, text string, plan bool, queuedI
 			if epoch == c.epoch {
 				turn := &t.Turns[turnIndex]
 				c.removeQueued(t, queuedID)
+				t.HandoffSent = true
 				if turn.ID == "" {
 					turn.ID = result.Turn.ID
 				}
@@ -538,6 +567,10 @@ func (c *Controller) fail(id string, epoch int, err error) {
 	})
 }
 func (c *Controller) Interrupt() {
+	if cancel := c.agentRuns[c.State.Selected]; cancel != nil {
+		cancel()
+		return
+	}
 	t := c.State.Thread(c.State.Selected)
 	if t == nil || !c.Running[t.ID] || c.client == nil || len(t.Turns) == 0 {
 		return
@@ -637,7 +670,7 @@ func (c *Controller) handle(m codex.Message) {
 			}
 		}
 		for id, b := range c.Running {
-			if b {
+			if b && c.State.Thread(id).Driver() == "codex" {
 				t := c.State.Thread(id)
 				if t != nil && len(t.Turns) > 0 {
 					turn := &t.Turns[len(t.Turns)-1]

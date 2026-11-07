@@ -18,44 +18,46 @@ import (
 )
 
 type View struct {
-	C                          *controller.Controller
-	Window                     *mygo.Window
-	Settings                   bool
-	section                    string
-	draft                      string
-	shelf                      bool
-	settledList                ui.ListState
-	settling                   map[string]time.Time
-	projectLists               map[string]*ui.ListState
-	projectPicker              bool
-	projectSearch              string
-	projectList                ui.ListState
-	sidebarHandles             map[string]*ui.Handle
-	projectFlight              *projectFlight
-	modelPicker                bool
-	modelSearch                string
-	modelList                  ui.ListState
-	permissionPicker           bool
-	permissionTarget           string
-	confirmFullAccess          bool
-	deleteID                   string
-	confirmDelete              bool
-	expanded                   map[string]*bool
-	answers                    map[string]map[string]string
-	scroll                     map[string]*ui.ScrollState
-	md                         markdown.Options
-	attachments                map[string]*attachmentPreview
-	attachmentOpen             bool
-	attachment                 model.Attachment
-	attachmentThread           string
-	annotation                 *annotationEditor
-	attachmentQueue            string
-	editor                     *richtext.Document
-	editorHandle               ui.Handle
-	composerMenu               *mygo.Menu
-	composerMenuLanguage       string
-	editorSource, editorThread string
-	editorQueue                string
+	C                                            *controller.Controller
+	Window                                       *mygo.Window
+	Settings                                     bool
+	settingsModelPicker                          bool
+	section                                      string
+	agentSection, pickerHarness, agentModelDraft string
+	draft                                        string
+	shelf                                        bool
+	settledList                                  ui.ListState
+	settling                                     map[string]time.Time
+	projectLists                                 map[string]*ui.ListState
+	projectPicker                                bool
+	projectSearch                                string
+	projectList                                  ui.ListState
+	sidebarHandles                               map[string]*ui.Handle
+	projectFlight                                *projectFlight
+	modelPicker                                  bool
+	modelSearch                                  string
+	modelList                                    ui.ListState
+	permissionPicker                             bool
+	permissionTarget                             string
+	confirmFullAccess                            bool
+	deleteID                                     string
+	confirmDelete                                bool
+	expanded                                     map[string]*bool
+	answers                                      map[string]map[string]string
+	scroll                                       map[string]*ui.ScrollState
+	md                                           markdown.Options
+	attachments                                  map[string]*attachmentPreview
+	attachmentOpen                               bool
+	attachment                                   model.Attachment
+	attachmentThread                             string
+	annotation                                   *annotationEditor
+	attachmentQueue                              string
+	editor                                       *richtext.Document
+	editorHandle                                 ui.Handle
+	composerMenu                                 *mygo.Menu
+	composerMenuLanguage                         string
+	editorSource, editorThread                   string
+	editorQueue                                  string
 }
 
 func New(c *controller.Controller) *View {
@@ -302,6 +304,9 @@ func (v *View) conversation(c *ui.Context) {
 	ui.Row(c).Height(50).Shrink(0).Padding(0, 18).Gap(9).AlignItems(ui.Center).DragWindow().Children(func() {
 		ui.Icon(c, chat).Size(18, 18).TextColor(c.Theme().TextMuted)
 		ui.Text(c, title).Bold().SingleLine().Grow(1).MinWidth(0)
+		if t != nil && t.HandoffFrom != "" {
+			ui.Button(c, tx.HandoffSource()).Height(26).FontSize(11).OnClick(func() { v.C.Select(t.HandoffFrom) })
+		}
 		if t != nil && t.Settled {
 			ui.Button(c, tx.Restore()).OnClick(func() { v.C.Settle(t.ID, false) })
 		}
@@ -311,7 +316,7 @@ func (v *View) conversation(c *ui.Context) {
 		ui.Column(c).Grow(1).Center().Gap(14).Children(func() {
 			ui.Icon(c, spark).Size(36, 36).TextColor(c.Theme().TextMuted)
 			ui.Text(c, tx.StartIdea()).FontSize(22).Bold()
-			if v.C.Connection != "Connected" {
+			if t.Driver() == "codex" && v.C.Connection != "Connected" {
 				ui.Button(c, tx.ConnectCodex()).OnClick(func() { v.Settings = true; v.section = "Agents" })
 			}
 		})
@@ -453,7 +458,11 @@ func (v *View) composer(c *ui.Context, t *model.Thread) {
 			})
 			ui.Row(c).AlignItems(ui.Center).Gap(6).Children(func() {
 				v.modelSelector(c)
-				v.permissionSelector(c)
+				if t.Driver() == "codex" {
+					v.permissionSelector(c)
+				} else if t != nil {
+					v.agentPermissions(c, t)
+				}
 				ui.Box(c).Grow(1)
 				iconButton(c, tx.AttachFile(), plus, v.pickAttachments).Disabled(t == nil)
 				if busy {
@@ -467,7 +476,7 @@ func (v *View) composer(c *ui.Context, t *model.Thread) {
 					if editing {
 						label = tx.QueueSave()
 					}
-					ui.PrimaryButton(c, "").Label(label).Tooltip(label).Size(30, 30).Padding(0).Gap(0).Center().Radius(15).Disabled(t == nil || strings.TrimSpace(*draft) == "" || (!editing && v.C.Connection != "Connected")).Children(func() { ui.Icon(c, arrow).Size(16, 16).Shrink(0) }).OnClick(func() {
+					ui.PrimaryButton(c, "").Label(label).Tooltip(label).Size(30, 30).Padding(0).Gap(0).Center().Radius(15).Disabled(t == nil || strings.TrimSpace(*draft) == "" || (!editing && t.Driver() == "codex" && v.C.Connection != "Connected")).Children(func() { ui.Icon(c, arrow).Size(16, 16).Shrink(0) }).OnClick(func() {
 						if v.C.Send(*draft, false) {
 							v.draft = ""
 						}

@@ -36,18 +36,25 @@ type QueuedMessage struct {
 }
 
 type Thread struct {
-	Queue                               []QueuedMessage `json:",omitempty"`
-	ID, ServerID, ProjectID, Title, Cwd string
-	Settled                             bool
-	Updated                             time.Time
-	Created                             time.Time
-	Turns                               []Turn
-	Draft                               string
-	PermissionProfile                   string
+	HandoffSent                                   bool            `json:",omitempty"`
+	Harness, AgentModel, AgentAccess, AgentEffort string          `json:",omitempty"`
+	HandoffFrom, HandoffContext                   string          `json:",omitempty"`
+	Queue                                         []QueuedMessage `json:",omitempty"`
+	ID, ServerID, ProjectID, Title, Cwd           string
+	Settled                                       bool
+	Updated                                       time.Time
+	Created                                       time.Time
+	Turns                                         []Turn
+	Draft                                         string
+	PermissionProfile                             string
 }
+type ModelFavorite struct{ Harness, ModelID string }
+
 type Settings struct {
-	HarnessSource                                                                         string `json:",omitempty"`
-	DisableHarnessAutoCheck                                                               bool   `json:",omitempty"`
+	ModelFavorites                                                                        []ModelFavorite `json:",omitempty"`
+	PiPath, DroidPath, PiModel, DroidModel                                                string          `json:",omitempty"`
+	HarnessSource                                                                         string          `json:",omitempty"`
+	DisableHarnessAutoCheck                                                               bool            `json:",omitempty"`
 	CodexPath, Model, Effort, ServiceTier, Appearance, Language, DefaultPermissionProfile string
 	DeveloperMode                                                                         bool
 }
@@ -79,7 +86,7 @@ func (s *State) Thread(id string) *Thread {
 	return nil
 }
 func (s *State) AddThread(projectID, cwd string) *Thread {
-	t := &Thread{ID: ID(), ProjectID: projectID, Cwd: cwd, Title: "New conversation", Updated: time.Now(), Created: time.Now(), PermissionProfile: s.Settings.DefaultPermissionProfile}
+	t := &Thread{AgentModel: s.Settings.Model, ID: ID(), ProjectID: projectID, Cwd: cwd, Title: "New conversation", Updated: time.Now(), Created: time.Now(), PermissionProfile: s.Settings.DefaultPermissionProfile}
 	s.Threads = append([]*Thread{t}, s.Threads...)
 	s.Selected = t.ID
 	return t
@@ -175,4 +182,48 @@ func Save(path string, s *State) error {
 		return err
 	}
 	return os.Rename(name, path)
+}
+
+// Empty IDs in existing snapshots retain Codex ownership.
+func (t *Thread) Driver() string {
+	if t == nil || t.Harness == "" {
+		return "codex"
+	}
+	return t.Harness
+}
+func (s Settings) AgentPath(id string) string {
+	switch id {
+	case "pi":
+		if s.PiPath != "" {
+			return s.PiPath
+		}
+		return "pi"
+	case "droid":
+		if s.DroidPath != "" {
+			return s.DroidPath
+		}
+		return "droid"
+	}
+	return s.CodexPath
+}
+
+func (s *State) IsModelFavorite(key ModelFavorite) bool {
+	for _, favorite := range s.Settings.ModelFavorites {
+		if favorite == key {
+			return true
+		}
+	}
+	return false
+}
+func (s *State) ToggleModelFavorite(key ModelFavorite) {
+	if key.ModelID == "" || key.Harness != "codex" && key.Harness != "pi" && key.Harness != "droid" {
+		return
+	}
+	for i, favorite := range s.Settings.ModelFavorites {
+		if favorite == key {
+			s.Settings.ModelFavorites = append(s.Settings.ModelFavorites[:i], s.Settings.ModelFavorites[i+1:]...)
+			return
+		}
+	}
+	s.Settings.ModelFavorites = append(s.Settings.ModelFavorites, key)
 }

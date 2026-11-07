@@ -28,7 +28,7 @@ import (
 
 type Driver struct{ ID, Name string }
 
-var Drivers = []Driver{{ID: "codex", Name: "Codex"}}
+var Drivers = []Driver{{ID: "codex", Name: "Codex"}, {ID: "pi", Name: "Pi"}, {ID: "droid", Name: "Droid"}}
 
 type Installation struct{ Path, Version, Method, Prefix string }
 type Release struct{ Version, URL, Digest, Entry string }

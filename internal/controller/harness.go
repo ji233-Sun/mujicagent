@@ -12,13 +12,18 @@ import (
 )
 
 type HarnessState struct {
-	Checking, Installing bool
-	CheckedAt            time.Time
-	Installation         harness.Installation
-	Release              harness.Release
-	Error                string
-	Source, Binary       string
-	cancel               context.CancelFunc
+	Models                       []harness.AgentModel
+	ModelsLoading, ModelsChecked bool
+	ModelsError, ModelsKey       string
+	modelsRequest                uint64
+	modelsCancel                 context.CancelFunc
+	Checking, Installing         bool
+	CheckedAt                    time.Time
+	Installation                 harness.Installation
+	Release                      harness.Release
+	Error                        string
+	Source, Binary               string
+	cancel                       context.CancelFunc
 }
 
 func (c *Controller) StartHarnessUpdates() {
@@ -41,7 +46,7 @@ func (c *Controller) StartHarnessUpdates() {
 	}()
 }
 func (c *Controller) CheckHarness() {
-	u := &c.Harness
+	u := c.HarnessFor("codex")
 	if u.Checking || u.Installing {
 		return
 	}
@@ -81,12 +86,12 @@ func (c *Controller) CheckHarness() {
 	}()
 }
 func (c *Controller) CancelHarness() {
-	if c.Harness.cancel != nil {
-		c.Harness.cancel()
+	if c.HarnessFor("codex").cancel != nil {
+		c.HarnessFor("codex").cancel()
 	}
 }
 func (c *Controller) InstallHarness() {
-	u := &c.Harness
+	u := c.HarnessFor("codex")
 	if u.Checking || u.Installing || c.Connection == "Connecting" || c.AnyRunning() || u.Release.Version == "" || u.Binary != c.State.Settings.CodexPath || u.Source != c.State.Settings.HarnessSource {
 		return
 	}

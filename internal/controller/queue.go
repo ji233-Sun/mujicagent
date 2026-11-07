@@ -119,7 +119,7 @@ func (c *Controller) ResumeQueue(threadID string) {
 }
 
 func (c *Controller) CanSteer(t *model.Thread) bool {
-	return t != nil && c.client != nil && c.Connection == "Connected" && c.Running[t.ID] && len(t.Turns) > 0 && t.Turns[len(t.Turns)-1].ID != ""
+	return t != nil && t.Driver() == "codex" && c.client != nil && c.Connection == "Connected" && c.Running[t.ID] && len(t.Turns) > 0 && t.Turns[len(t.Turns)-1].ID != ""
 }
 
 func (c *Controller) Steer(threadID, id string) {

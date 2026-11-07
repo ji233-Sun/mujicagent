@@ -1,0 +1,138 @@
+package harness
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"strings"
+
+	"github.com/ji233-Sun/mujicagent/internal/codex"
+)
+
+// AgentModel contains only display/selection data, never endpoints or credentials.
+type AgentModel struct {
+	ID, Name, Provider, DefaultEffort string
+	Efforts                           []string
+}
+
+// DiscoverModels uses the same read-only RPCs as the official CLI SDKs.
+// No session or turn is created. Each probe owns and reaps its process tree.
+func DiscoverModels(ctx context.Context, driver, binary, cwd string) ([]AgentModel, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	args := []string{"--mode", "rpc", "--no-session", "--no-extensions"}
+	request := map[string]any{"id": "models", "type": "get_available_models"}
+	if driver == "droid" {
+		args = []string{"exec", "--input-format", "stream-jsonrpc", "--output-format", "stream-jsonrpc"}
+		request = map[string]any{"id": "models", "jsonrpc": "2.0", "type": "request", "factoryApiVersion": "1.0.0", "factoryProtocolVersion": "1.269.0", "method": "droid.list_models", "params": map[string]any{}}
+	} else if driver != "pi" {
+		return nil, fmt.Errorf("unsupported agent: %s", driver)
+	}
+	cmd, err := codex.Command(ctx, binary, args...)
+	if err != nil {
+		return nil, err
+	}
+	cmd.Dir = cwd
+	cmd.Stderr = io.Discard
+	in, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, err
+	}
+	defer in.Close()
+	out, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	prepareProcess(cmd)
+	if err = cmd.Start(); err != nil {
+		return nil, err
+	}
+	defer func() { cancel(); _ = cmd.Wait() }()
+	if err = json.NewEncoder(in).Encode(request); err != nil {
+		return nil, err
+	}
+	scanner := bufio.NewScanner(out)
+	scanner.Buffer(make([]byte, 4096), 8<<20)
+	for scanner.Scan() {
+		var envelope struct {
+			ID           string
+			Success      bool
+			Data, Result json.RawMessage
+			Error        json.RawMessage
+		}
+		if err = json.Unmarshal(scanner.Bytes(), &envelope); err != nil {
+			return nil, fmt.Errorf("invalid model catalog response")
+		}
+		if envelope.ID != "models" {
+			continue
+		}
+		if len(envelope.Error) > 0 && string(envelope.Error) != "null" || driver == "pi" && !envelope.Success {
+			// Do not surface raw process errors: custom provider diagnostics may contain secrets.
+			return nil, fmt.Errorf("model discovery failed; check CLI login/configuration and update the CLI")
+		}
+		data := envelope.Data
+		if driver == "droid" {
+			data = envelope.Result
+		}
+		return parseModelCatalog(driver, data)
+	}
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	if err = scanner.Err(); err != nil {
+		return nil, err
+	}
+	return nil, fmt.Errorf("CLI exited without a model catalog; update the CLI and retry")
+}
+func parseModelCatalog(driver string, data []byte) ([]AgentModel, error) {
+	var catalog struct {
+		Models []struct {
+			ID, Name, Provider, DisplayName, ModelProvider, DefaultReasoningEffort string
+			SupportedReasoningEfforts                                              []string
+			ThinkingLevelMap                                                       map[string]json.RawMessage
+			Reasoning, Disabled                                                    bool
+		}
+	}
+	if err := json.Unmarshal(data, &catalog); err != nil {
+		return nil, fmt.Errorf("invalid model catalog")
+	}
+	var models []AgentModel
+	seen := map[string]bool{}
+	for _, raw := range catalog.Models {
+		if raw.ID == "" || raw.Disabled {
+			continue
+		}
+		m := AgentModel{ID: raw.ID, Name: raw.DisplayName, Provider: raw.ModelProvider, Efforts: raw.SupportedReasoningEfforts, DefaultEffort: raw.DefaultReasoningEffort}
+		if driver == "pi" {
+			if raw.Provider == "" {
+				continue
+			}
+			m.ID = raw.Provider + "/" + raw.ID
+			m.Name = raw.Name
+			m.Provider = raw.Provider
+			if raw.Reasoning {
+				for _, effort := range []string{"off", "minimal", "low", "medium", "high", "xhigh", "max"} {
+					if len(raw.ThinkingLevelMap) > 0 {
+						if _, ok := raw.ThinkingLevelMap[effort]; !ok && effort != "off" {
+							continue
+						}
+					} else if effort == "xhigh" || effort == "max" {
+						continue
+					}
+					m.Efforts = append(m.Efforts, effort)
+				}
+			}
+		}
+		if seen[m.ID] {
+			continue
+		}
+		seen[m.ID] = true
+		if strings.TrimSpace(m.Name) == "" {
+			m.Name = m.ID
+		}
+		models = append(models, m)
+	}
+	return models, nil
+}

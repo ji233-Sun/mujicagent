@@ -2,7 +2,9 @@ package view
 
 import (
 	_ "embed"
+	"github.com/ji233-Sun/mujicagent/internal/model"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -18,14 +20,24 @@ var openAIIcon = ui.MustParseSVG(openAISVG)
 func (v *View) modelSelector(c *ui.Context) {
 	tx := v.texts()
 	settings := &v.C.State.Settings
+	t := v.C.State.Thread(v.C.State.Selected)
 	label := settings.Model
+	if t != nil && t.AgentModel != "" {
+		label = t.AgentModel
+	}
+	if t.Driver() != "codex" {
+		label = agentName(t.Driver())
+		if t.AgentModel != "" {
+			label += " · " + t.AgentModel
+		}
+	}
 	if label == "" {
 		label = tx.ChooseModel()
-	} else if settings.Effort != "" {
+	} else if t.Driver() == "codex" && settings.Effort != "" {
 		label += " · " + settings.Effort
 	}
 	for _, model := range v.C.Models {
-		if model.Model != settings.Model || !model.SupportsSpeed(settings.ServiceTier) {
+		if t.Driver() != "codex" || model.Model != settings.Model || !model.SupportsSpeed(settings.ServiceTier) {
 			continue
 		}
 		for _, tier := range model.ServiceTiers {
@@ -38,12 +50,12 @@ func (v *View) modelSelector(c *ui.Context) {
 	}
 	button := ui.ButtonBase(c.Key("model-selector")).Height(30).MaxWidth(380).Shrink(1).
 		Padding(0, 8).Gap(7).Radius(8).AlignItems(ui.Center).Label(tx.ModelAndEffort()).
-		Tooltip(label).Disabled(len(v.C.Models) == 0).Transition(hoverTransition)
+		Tooltip(label).Transition(hoverTransition)
 	if button.Hovered() || v.modelPicker {
 		button.Background(c.Theme().SurfaceHover).TextColor(c.Theme().Accent)
 	}
 	button.Children(func() {
-		modelIcon(c, settings.Model, 16)
+		agentGlyph(c, t.Driver())
 		ui.Text(c, label).FontSize(12).SingleLine().MinWidth(0).Shrink(1)
 		angle := float32(90)
 		if v.modelPicker {
@@ -56,8 +68,14 @@ func (v *View) modelSelector(c *ui.Context) {
 		v.modelPicker = !v.modelPicker
 		v.permissionPicker = false
 		v.modelSearch = ""
+		v.pickerHarness = t.Driver()
+		v.C.LoadAgentModels(v.pickerHarness, false)
+		v.agentModelDraft = ""
+		if t != nil {
+			v.agentModelDraft = t.AgentModel
+		}
 	})
-	pickerPopover(c.Key("model-picker"), button, &v.modelPicker, tx.ModelPicker(), 448, func() { v.modelPanel(c) })
+	pickerPopover(c.Key("model-picker"), button, &v.modelPicker, tx.ModelPicker(), 492, func() { v.modelPanel(c) })
 }
 
 func pickerPopover(c *ui.Context, anchor ui.Element, open *bool, label string, width float32, content func()) {
@@ -79,19 +97,72 @@ func pickerPopover(c *ui.Context, anchor ui.Element, open *bool, label string, w
 }
 
 func (v *View) modelPanel(c *ui.Context) {
+	ui.Row(c).Gap(8).AlignItems(ui.Stretch).Children(func() {
+		ui.Column(c).Width(32).Shrink(0).Gap(4).Children(func() { v.harnessRail(c) })
+		ui.Box(c).Width(1).Background(c.Theme().Border)
+		ui.Column(c).Grow(1).MinWidth(0).Children(func() {
+			if v.pickerHarness == "favorites" {
+				v.favoriteModelPanel(c)
+				return
+			}
+			if v.pickerHarness == "pi" || v.pickerHarness == "droid" {
+				v.agentModelPanel(c)
+				return
+			}
+			v.codexModelPanel(c)
+		})
+	})
+}
+func (v *View) codexModelPanel(c *ui.Context) {
+	selectedModel := v.C.State.Settings.Model
+	if t := v.C.State.Thread(v.C.State.Selected); t != nil && t.AgentModel != "" && t.Driver() == "codex" {
+		selectedModel = t.AgentModel
+	}
+	v.modelCatalogPanel(c, "codex", v.C.Models, selectedModel, v.chooseModel, func(current codex.Model) {
+		ui.Text(c, v.texts().ReasoningEffort()).FontSize(11).TextColor(c.Theme().TextMuted).Padding(6, 8).Margin(0, 0, 3)
+		v.effortSlider(c, current)
+		v.speedOptions(c, current)
+	})
+}
+
+type modelChoice struct {
+	Driver string
+	Model  codex.Model
+}
+
+func (m modelChoice) key() model.ModelFavorite {
+	return model.ModelFavorite{Harness: m.Driver, ModelID: m.Model.Model}
+}
+func (v *View) modelCatalogPanel(c *ui.Context, driver string, catalog []codex.Model, selectedModel string, choose func(codex.Model), side func(codex.Model)) {
+	choices := make([]modelChoice, 0, len(catalog))
+	for _, m := range catalog {
+		choices = append(choices, modelChoice{driver, m})
+	}
+	v.modelChoicesPanel(c, choices, model.ModelFavorite{Harness: driver, ModelID: selectedModel}, func(m modelChoice) { choose(m.Model) }, side, false)
+}
+func (v *View) modelChoicesPanel(c *ui.Context, catalog []modelChoice, selectedModel model.ModelFavorite, choose func(modelChoice), side func(codex.Model), showHarness bool) {
 	tx := v.texts()
-	models := make([]codex.Model, 0, len(v.C.Models))
+	models := make([]modelChoice, 0, len(catalog))
 	var current codex.Model
-	for _, m := range v.C.Models {
-		if m.Model == v.C.State.Settings.Model {
-			current = m
+	for _, m := range catalog {
+		if m.key() == selectedModel {
+			current = m.Model
 		}
-		if strings.Contains(strings.ToLower(m.Model+" "+m.DisplayName), strings.ToLower(v.modelSearch)) {
+		if strings.Contains(strings.ToLower(m.Model.Model+" "+m.Model.DisplayName+" "+m.Driver), strings.ToLower(v.modelSearch)) {
 			models = append(models, m)
 		}
 	}
+	sort.SliceStable(models, func(i, j int) bool {
+		return v.C.State.IsModelFavorite(models[i].key()) && !v.C.State.IsModelFavorite(models[j].key())
+	})
 	ui.Row(c).Gap(8).AlignItems(ui.Stretch).Children(func() {
-		ui.Column(c).Width(274).Gap(5).Children(func() {
+		list := ui.Column(c).Gap(5)
+		if side != nil {
+			list.Width(274)
+		} else {
+			list.Grow(1).MinWidth(0)
+		}
+		list.Children(func() {
 			ui.Row(c).Height(28).Padding(0, 8).Gap(14).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, tx.Models()).FontSize(11).TextColor(c.Theme().TextMuted).Grow(1)
 				search := ui.Row(c.Key("model-search")).Width(156).Height(26).Gap(6).AlignItems(ui.Center)
@@ -106,51 +177,80 @@ func (v *View) modelPanel(c *ui.Context) {
 						Placeholder(tx.SearchModels()).Label(tx.SearchModels())
 				})
 			})
-			listHeight := float32(min(5, max(1, len(v.C.Models))) * 36)
+			listHeight := float32(min(5, max(1, len(catalog))) * 36)
 			ui.List(c.Key("models"), &v.modelList, len(models)).Height(listHeight).Label(tx.ModelList()).
-				ItemKey(func(i int) any { return models[i].Model }).Rows(func(row ui.ListRow) {
+				ItemKey(func(i int) any { return models[i].key() }).Rows(func(row ui.ListRow) {
 				m := models[row.Index]
 				c := row.Context
-				selected := m.Model == v.C.State.Settings.Model
-				b := pickerOption(c, m.Model, selected)
-				b.Children(func() {
-					modelIcon(c, m.Model, 18)
-					ui.Text(c, m.Model).FontSize(12).SingleLine().Grow(1).MinWidth(0)
-					if selected {
-						ui.Icon(c, checkIcon).Size(14, 14).TextColor(c.Theme().Accent)
+				selected := m.key() == selectedModel
+				label := m.Model.DisplayName
+				if label == "" {
+					label = m.Model.Model
+				}
+				ui.Row(c).Height(36).Gap(2).AlignItems(ui.Center).Children(func() {
+					b := pickerOption(c, m.Model.Model, selected).Grow(1).MinWidth(0).Tooltip(m.Driver + " · " + m.Model.Model)
+					if showHarness {
+						b.Label(agentName(m.Driver) + " · " + m.Model.Model)
+					}
+					b.Children(func() {
+						if showHarness {
+							agentGlyph(c, m.Driver)
+						}
+						ui.Text(c, label).FontSize(12).SingleLine().Grow(1).MinWidth(0)
+						if selected {
+							ui.Icon(c, checkIcon).Size(14, 14).TextColor(c.Theme().Accent)
+						}
+					})
+					b.Disabled(v.C.Running[v.C.State.Selected]).OnClick(func() { choose(m) })
+					if m.Model.Model != "" {
+						favorite := v.C.State.IsModelFavorite(m.key())
+						hint := tx.FavoriteModel()
+						if favorite {
+							hint = tx.UnfavoriteModel()
+						}
+						star := iconButton(c, hint+" "+agentName(m.Driver)+" · "+m.Model.Model, starIcon, func() { v.C.State.ToggleModelFavorite(m.key()); v.C.Save() }).Size(24, 24)
+						if favorite {
+							star.TextColor(c.Theme().Accent).Background(c.Theme().Surface)
+						} else {
+							star.TextColor(c.Theme().TextMuted)
+						}
 					}
 				})
-				b.OnClick(func() { v.chooseModel(m) })
 			}).Children(func() {
 				if len(models) == 0 {
 					ui.Text(c, tx.NoModels()).FontSize(12).TextColor(c.Theme().TextMuted).Padding(6, 8)
 				}
 			})
 		})
-		ui.Box(c).Width(1).Background(c.Theme().Border).Margin(5, 0)
-		ui.Column(c).Grow(1).Gap(2).Children(func() {
-			ui.Text(c, tx.ReasoningEffort()).FontSize(11).TextColor(c.Theme().TextMuted).Padding(6, 8).Margin(0, 0, 3)
-			v.effortSlider(c, current)
-			v.speedOptions(c, current)
-		})
+		if side != nil {
+			ui.Box(c).Width(1).Background(c.Theme().Border).Margin(5, 0)
+			ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() { side(current) })
+		}
 	})
 }
 
 func (v *View) effortSlider(c *ui.Context, m codex.Model) {
+	v.modelEffortSlider(c, m, &v.C.State.Settings.Effort)
+}
+func (v *View) modelEffortSlider(c *ui.Context, m codex.Model, value *string) {
 	efforts := m.SupportedReasoningEfforts
 	if len(efforts) == 0 {
 		return
 	}
 	index := float64(0)
 	for i, effort := range efforts {
-		if effort.ReasoningEffort == v.C.State.Settings.Effort {
+		if effort.ReasoningEffort == *value || *value == "" && effort.ReasoningEffort == m.DefaultReasoningEffort {
 			index = float64(i)
 		}
 	}
 	ui.Column(c.Key(m.Model)).Padding(0, 8, 6).Gap(6).Children(func() {
 		ui.Row(c).AlignItems(ui.Center).Gap(6).Children(func() {
 			ui.Icon(c, thinkingIcon).Size(14, 14).TextColor(c.Theme().TextMuted)
-			ui.Text(c, efforts[int(index)].ReasoningEffort).FontSize(13).Grow(1)
+			label := efforts[int(index)].ReasoningEffort
+			if *value == "" && m.DefaultReasoningEffort == "" {
+				label = v.texts().AgentDefaultEffort()
+			}
+			ui.Text(c, label).FontSize(13).Grow(1)
 		})
 		if len(efforts) == 1 {
 			return
@@ -158,7 +258,7 @@ func (v *View) effortSlider(c *ui.Context, m codex.Model) {
 		ui.StepSlider(c, &index, 0, float64(len(efforts)-1), 1).
 			Label(v.texts().AdjustReasoningEffort()).Tooltip(efforts[int(index)].ReasoningEffort).
 			OnChange(func() {
-				v.C.State.Settings.Effort = efforts[int(index)].ReasoningEffort
+				*value = efforts[int(index)].ReasoningEffort
 				v.C.Save()
 			})
 		ui.Row(c).Justify(ui.SpaceBetween).TextColor(c.Theme().TextMuted).Children(func() {
@@ -207,6 +307,21 @@ func (v *View) speedOptions(c *ui.Context, m codex.Model) {
 }
 
 func (v *View) chooseModel(m codex.Model) {
+	if v.C.Running[v.C.State.Selected] {
+		return
+	}
+	t := v.C.State.Thread(v.C.State.Selected)
+	if t != nil && t.Driver() != "codex" {
+		if !v.C.Handoff("codex", m.Model) {
+			return
+		}
+		v.modelPicker = false
+		t = v.C.State.Thread(v.C.State.Selected)
+	}
+	if t != nil {
+		t.AgentModel = m.Model
+	}
+
 	settings := &v.C.State.Settings
 	settings.Model = m.Model
 	if !m.SupportsSpeed(settings.ServiceTier) {
@@ -237,12 +352,4 @@ func pickerOption(c *ui.Context, label string, selected bool) ui.Element {
 		b.Background(c.Theme().SurfaceHover)
 	}
 	return b
-}
-
-func modelIcon(c *ui.Context, name string, size float32) {
-	icon := agentIcon
-	if strings.HasPrefix(name, "gpt-") || strings.HasPrefix(name, "chatgpt-") || strings.HasPrefix(name, "o1") || strings.HasPrefix(name, "o3") || strings.HasPrefix(name, "o4") {
-		icon = openAIIcon
-	}
-	ui.Icon(c, icon).Size(size, size).Shrink(0).TextColor(ui.Hex("#202524"))
 }

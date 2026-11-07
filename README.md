@@ -1,6 +1,6 @@
 <h1 align="center">MujicAgent</h1>
 
-<p align="center"><strong>让 Codex 成为桌面上顺手的工作伙伴。</strong></p>
+<p align="center"><strong>让智能体成为桌面上顺手的工作伙伴。</strong></p>
 
 <p align="center">
   原生界面 · 项目会话 · 图片标注 · 随时引导
@@ -15,9 +15,9 @@
 
 ---
 
-MujicAgent 是一个面向 Codex 用户的原生桌面客户端。把项目、对话、截图和执行过程放在同一个工作空间里，让你更方便地交代任务、补充想法、查看结果。
+MujicAgent 是一个支持 Codex、Pi 和 Droid 的原生桌面客户端。把项目、对话、截图和执行过程放在同一个工作空间里，让你更方便地交代任务、补充想法、查看结果。
 
-它连接本机的 Codex，沿用已有的登录和配置。你可以围绕代码项目持续工作，也可以打开一个无项目会话，先把想法聊清楚。
+它连接本机的智能体 CLI，沿用各自已有的登录和配置。你可以围绕代码项目持续工作，也可以打开一个无项目会话，先把想法聊清楚。
 
 ## 为日常协作而设计
 
@@ -62,7 +62,7 @@ MujicAgent 使用 Go 和 [MyGo](https://github.com/egoist/mygo) 构建，界面�
 
 当前主要运行验证环境为 macOS Apple Silicon。Windows 已提供安装包和 CI 构建检查，尚未完成运行验证；Linux 尚未做运行验证。Windows 安装器暂未配置 Authenticode 签名，可能出现未知发布者或 SmartScreen 提示。
 
-连接配置、附件操作和快捷键见[使用指南](docs/usage.md)。目前聚焦单个本地 Codex，尚不支持其他 Agent、远程连接、worktree 管理或导入 Codex 全局历史。
+连接配置、附件操作和快捷键见[使用指南](docs/usage.md)。支持本机 Codex、Pi、Droid，以及携带可见对话上下文的跨智能体交接；各自能力边界见使用指南。尚不支持远程连接、worktree 管理或导入 CLI 全局历史。
 
 ## 发布与更新
 

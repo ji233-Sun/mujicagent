@@ -2307,3 +2307,223 @@ func HarnessProviderAuth() string { return In(i18n.Locale()).HarnessProviderAuth
 func (msgs Messages) HarnessProviderAuth() string {
 	return Catalog.Format(msgs.locale, "harnessProviderAuth", nil)
 }
+
+// AgentPath says "可执行路径"
+// in the language the app shows.
+func AgentPath() string { return In(i18n.Locale()).AgentPath() }
+
+// AgentPath says "可执行路径"
+// in the language of msgs.
+func (msgs Messages) AgentPath() string {
+	return Catalog.Format(msgs.locale, "agentPath", nil)
+}
+
+// AgentModel says "模型 ID"
+// in the language the app shows.
+func AgentModel() string { return In(i18n.Locale()).AgentModel() }
+
+// AgentModel says "模型 ID"
+// in the language of msgs.
+func (msgs Messages) AgentModel() string {
+	return Catalog.Format(msgs.locale, "agentModel", nil)
+}
+
+// AgentSetup says "安装与登录"
+// in the language the app shows.
+func AgentSetup() string { return In(i18n.Locale()).AgentSetup() }
+
+// AgentSetup says "安装与登录"
+// in the language of msgs.
+func (msgs Messages) AgentSetup() string {
+	return Catalog.Format(msgs.locale, "agentSetup", nil)
+}
+
+// AgentProbe says "检测"
+// in the language the app shows.
+func AgentProbe() string { return In(i18n.Locale()).AgentProbe() }
+
+// AgentProbe says "检测"
+// in the language of msgs.
+func (msgs Messages) AgentProbe() string {
+	return Catalog.Format(msgs.locale, "agentProbe", nil)
+}
+
+// AgentSwitch says "使用此模型"
+// in the language the app shows.
+func AgentSwitch() string { return In(i18n.Locale()).AgentSwitch() }
+
+// AgentSwitch says "使用此模型"
+// in the language of msgs.
+func (msgs Messages) AgentSwitch() string {
+	return Catalog.Format(msgs.locale, "agentSwitch", nil)
+}
+
+// AgentHandoff says "交接到此模型"
+// in the language the app shows.
+func AgentHandoff() string { return In(i18n.Locale()).AgentHandoff() }
+
+// AgentHandoff says "交接到此模型"
+// in the language of msgs.
+func (msgs Messages) AgentHandoff() string {
+	return Catalog.Format(msgs.locale, "agentHandoff", nil)
+}
+
+// AgentHandoffHint says "保留原会话，以可见对话创建新会话；发送下一条消息时交接。"
+// in the language the app shows.
+func AgentHandoffHint() string { return In(i18n.Locale()).AgentHandoffHint() }
+
+// AgentHandoffHint says "保留原会话，以可见对话创建新会话；发送下一条消息时交接。"
+// in the language of msgs.
+func (msgs Messages) AgentHandoffHint() string {
+	return Catalog.Format(msgs.locale, "agentHandoffHint", nil)
+}
+
+// AgentBusyHint says "停止当前任务后可交接。"
+// in the language the app shows.
+func AgentBusyHint() string { return In(i18n.Locale()).AgentBusyHint() }
+
+// AgentBusyHint says "停止当前任务后可交接。"
+// in the language of msgs.
+func (msgs Messages) AgentBusyHint() string {
+	return Catalog.Format(msgs.locale, "agentBusyHint", nil)
+}
+
+// HandoffSource says "原会话"
+// in the language the app shows.
+func HandoffSource() string { return In(i18n.Locale()).HandoffSource() }
+
+// HandoffSource says "原会话"
+// in the language of msgs.
+func (msgs Messages) HandoffSource() string {
+	return Catalog.Format(msgs.locale, "handoffSource", nil)
+}
+
+// AgentNoTools says "禁用工具"
+// in the language the app shows.
+func AgentNoTools() string { return In(i18n.Locale()).AgentNoTools() }
+
+// AgentNoTools says "禁用工具"
+// in the language of msgs.
+func (msgs Messages) AgentNoTools() string {
+	return Catalog.Format(msgs.locale, "agentNoTools", nil)
+}
+
+// AgentNativeTools says "Pi 原生工具"
+// in the language the app shows.
+func AgentNativeTools() string { return In(i18n.Locale()).AgentNativeTools() }
+
+// AgentNativeTools says "Pi 原生工具"
+// in the language of msgs.
+func (msgs Messages) AgentNativeTools() string {
+	return Catalog.Format(msgs.locale, "agentNativeTools", nil)
+}
+
+// AgentPiToolsHint says "Pi 原生工具可读写文件和执行命令，无 Codex 沙箱或审批。"
+// in the language the app shows.
+func AgentPiToolsHint() string { return In(i18n.Locale()).AgentPiToolsHint() }
+
+// AgentPiToolsHint says "Pi 原生工具可读写文件和执行命令，无 Codex 沙箱或审批。"
+// in the language of msgs.
+func (msgs Messages) AgentPiToolsHint() string {
+	return Catalog.Format(msgs.locale, "agentPiToolsHint", nil)
+}
+
+// AgentDroidAccess says "Droid 自主等级"
+// in the language the app shows.
+func AgentDroidAccess() string { return In(i18n.Locale()).AgentDroidAccess() }
+
+// AgentDroidAccess says "Droid 自主等级"
+// in the language of msgs.
+func (msgs Messages) AgentDroidAccess() string {
+	return Catalog.Format(msgs.locale, "agentDroidAccess", nil)
+}
+
+// AgentDefaultModel says "默认模型"
+// in the language the app shows.
+func AgentDefaultModel() string { return In(i18n.Locale()).AgentDefaultModel() }
+
+// AgentDefaultModel says "默认模型"
+// in the language of msgs.
+func (msgs Messages) AgentDefaultModel() string {
+	return Catalog.Format(msgs.locale, "agentDefaultModel", nil)
+}
+
+// AgentRefreshModels says "刷新"
+// in the language the app shows.
+func AgentRefreshModels() string { return In(i18n.Locale()).AgentRefreshModels() }
+
+// AgentRefreshModels says "刷新"
+// in the language of msgs.
+func (msgs Messages) AgentRefreshModels() string {
+	return Catalog.Format(msgs.locale, "agentRefreshModels", nil)
+}
+
+// AgentLoadingModels says "读取中…"
+// in the language the app shows.
+func AgentLoadingModels() string { return In(i18n.Locale()).AgentLoadingModels() }
+
+// AgentLoadingModels says "读取中…"
+// in the language of msgs.
+func (msgs Messages) AgentLoadingModels() string {
+	return Catalog.Format(msgs.locale, "agentLoadingModels", nil)
+}
+
+// AgentModelsFailed says "读取失败"
+// in the language the app shows.
+func AgentModelsFailed() string { return In(i18n.Locale()).AgentModelsFailed() }
+
+// AgentModelsFailed says "读取失败"
+// in the language of msgs.
+func (msgs Messages) AgentModelsFailed() string {
+	return Catalog.Format(msgs.locale, "agentModelsFailed", nil)
+}
+
+// AgentCustomModel says "自定义"
+// in the language the app shows.
+func AgentCustomModel() string { return In(i18n.Locale()).AgentCustomModel() }
+
+// AgentCustomModel says "自定义"
+// in the language of msgs.
+func (msgs Messages) AgentCustomModel() string {
+	return Catalog.Format(msgs.locale, "agentCustomModel", nil)
+}
+
+// FavoriteModels says "收藏模型"
+// in the language the app shows.
+func FavoriteModels() string { return In(i18n.Locale()).FavoriteModels() }
+
+// FavoriteModels says "收藏模型"
+// in the language of msgs.
+func (msgs Messages) FavoriteModels() string {
+	return Catalog.Format(msgs.locale, "favoriteModels", nil)
+}
+
+// FavoriteModel says "收藏"
+// in the language the app shows.
+func FavoriteModel() string { return In(i18n.Locale()).FavoriteModel() }
+
+// FavoriteModel says "收藏"
+// in the language of msgs.
+func (msgs Messages) FavoriteModel() string {
+	return Catalog.Format(msgs.locale, "favoriteModel", nil)
+}
+
+// UnfavoriteModel says "取消收藏"
+// in the language the app shows.
+func UnfavoriteModel() string { return In(i18n.Locale()).UnfavoriteModel() }
+
+// UnfavoriteModel says "取消收藏"
+// in the language of msgs.
+func (msgs Messages) UnfavoriteModel() string {
+	return Catalog.Format(msgs.locale, "unfavoriteModel", nil)
+}
+
+// AgentDefaultEffort says "默认"
+// in the language the app shows.
+func AgentDefaultEffort() string { return In(i18n.Locale()).AgentDefaultEffort() }
+
+// AgentDefaultEffort says "默认"
+// in the language of msgs.
+func (msgs Messages) AgentDefaultEffort() string {
+	return Catalog.Format(msgs.locale, "agentDefaultEffort", nil)
+}
