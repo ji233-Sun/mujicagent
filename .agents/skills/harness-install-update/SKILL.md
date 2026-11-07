@@ -11,10 +11,11 @@ description: 修改或新增任何 Harness 的安装、更新、安装来源识�
 
 - 沿用实际连接的可执行路径解析，尊重显式路径。区分原始启动器、符号链接目标和包管理器；不要因为最终是原生二进制就认定为独立安装。
 - 用真实布局、启动器目标或包管理器的只读信息确认归属，不因 PATH 中恰好有某个工具就让它接管更新。
-- 优先沿用用户本地安装工具。VP 安装使用 VP，npm 使用原 prefix 的 npm，Homebrew 使用对应 Homebrew；新增来源先验证其官方命令或本机 `--help`。
+- 优先沿用用户本地安装工具。通过统一适配器登记名称、只读归属探测和更新参数，避免在 Controller、UI 各自维护白名单。当前支持 VP、npm、Bun、pnpm、Homebrew；新增来源先验证其官方命令或本机 `--help`，按同一契约扩展，不宣称能自动执行任意未知工具。
+- Bun/pnpm 使用工具报告的全局包目录、bin 目录以及真实包入口相互校验，支持自定义目录与 pnpm 启动器；安装根的 `packageManager` 或锁文件可提供来源证据，不能拿 Codex 包本身的开发工具字段当作安装来源。确认前重新核对归属与目录。
 - VP 的 Codex 入口可能是指向 `vp` 的符号链接；保留 `codex` 启动器调用，不把它替换为最终的 `vp` 路径。
 - 更新只针对当前 Harness 包，不升级包管理器本身、不升级全部全局包、不改变用户 registry、PATH 或安装归属。
-- 未识别来源时提示通过原安装工具更新；不猜测命令，不覆盖原文件，也不把“更新”变成安装并切换托管版。
+- 未识别、不支持、工具不可用、归属无法确认或来源冲突时，在设置页明确展示相应原因和下一步，即使版本检查失败也不能隐藏提示；不提供自动更新按钮，不猜测命令、不覆盖原文件、不切换托管版。已知名称但无适配器的小众工具要显示工具名。
 - 应用托管安装记录实际安装渠道，后续沿用该渠道。旧数据没有渠道记录时，根据确定的目录布局兼容处理；无法推断的旧原生托管包使用官方渠道。
 
 ## 预览与执行分开
@@ -44,10 +45,11 @@ description: 修改或新增任何 Harness 的安装、更新、安装来源识�
 - 用真实本机 CLI 的只读探测确认报告的安装布局；这不是包管理器真实升级成功的证据。
 - Windows 单独检查原生 exe、npm 启动器、空格与中文路径及参数数组，不能用 shell 拼接路径。
 - UI 场景直接设置状态，以 `ui.NewTester` 渲染中英文 PNG。PR 附本次所有相关情形的截图，注明 CPU 离屏、命令、尺寸和平台；不以编译或历史截图替代。
+- Mock Bun/pnpm 的确认预览、小众未适配工具、未知来源、工具不可用、归属不符和冲突状态，截图一并加入 PR。用隔离替身验证扩展适配器无需修改 Controller/UI，也能贯通检测、预览与执行。
 
 ## 当前参考实现
 
-- 来源与计划：`internal/harness/codex.go`、`internal/harness/install.go`
+- 来源、统一适配器与计划：`internal/harness/codex.go`、`internal/harness/managers.go`、`internal/harness/install.go`
 - 准备、确认、取消与过期保护：`internal/controller/harness.go`
 - 设置入口与确认弹窗：`internal/view/agents.go`、`internal/view/harness_install.go`
 - 回归：`internal/harness/codex_test.go`、`internal/controller/controller_test.go`、`internal/view/agent_picker_test.go`

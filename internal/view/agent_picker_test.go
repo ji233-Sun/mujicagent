@@ -21,6 +21,7 @@ func TestHarnessInstallScreenshots(t *testing.T) {
 		"managed-official-confirm", "managed-npm-confirm", "managed-mirror-confirm",
 		"unknown", "missing", "install-official", "install-npm", "install-mirror", "install-npm-fallback",
 		"preparing", "preview-error", "installing", "install-error", "cancelled", "running",
+		"bun-confirm", "pnpm-confirm", "unsupported-manager", "manager-unavailable", "manager-unverified", "manager-ambiguous",
 	}
 	for _, lang := range []string{"zh-Hans", "en"} {
 		for _, scene := range scenes {
@@ -52,6 +53,24 @@ func TestHarnessInstallScreenshots(t *testing.T) {
 					u.Installation.Method = "npm"
 					u.Installation.Path = "/usr/local/bin/codex"
 					u.Installation.Prefix = "/usr/local"
+				case "bun-confirm", "pnpm-confirm":
+					id := strings.TrimSuffix(scene, "-confirm")
+					u.Installation.Method = id
+					u.Installation.Path = "/Users/demo/." + id + "/bin/codex"
+					u.Installation.Manager = "/Users/demo/." + id + "/bin/" + id
+					u.Installation.PackageRoot = "/Users/demo/." + id + "/global/node_modules"
+				case "unsupported-manager":
+					u.Installation.Method = "vlt"
+					u.Installation.UpdateIssue = "unsupported"
+					u.Installation.Path = "/Users/demo/.vlt/bin/codex"
+				case "manager-unavailable", "manager-unverified":
+					u.Installation.Method = "pnpm"
+					u.Installation.UpdateIssue = strings.TrimPrefix(scene, "manager-")
+					u.Installation.Path = "/Users/demo/.local/share/pnpm/codex"
+				case "manager-ambiguous":
+					u.Installation.Method = "ambiguous"
+					u.Installation.UpdateIssue = "ambiguous"
+					u.Release = harness.Release{} // Warning must survive a failed version lookup.
 				case "brew-confirm":
 					u.Installation.Method = "brew"
 					u.Installation.Path = "/opt/homebrew/bin/codex"
@@ -85,6 +104,8 @@ func TestHarnessInstallScreenshots(t *testing.T) {
 						p.Args = []string{"install", "--global", "--prefix", "/usr/local", "@openai/codex@0.168.0", "--ignore-scripts", "--no-audit", "--no-fund"}
 					case "brew":
 						p.Command, p.Args = "/opt/homebrew/bin/brew", []string{"upgrade", "--cask", "codex"}
+					case "bun", "pnpm":
+						p.Command, p.Args = u.Installation.Manager, []string{"add", "--global", "@openai/codex@0.168.0", "--ignore-scripts"}
 					default:
 						p.Stage, p.Path = stage, stage+"/bin/codex"
 						if strings.Contains(scene, "mirror") || strings.Contains(scene, "npm") {
@@ -145,6 +166,26 @@ func TestHarnessInstallScreenshots(t *testing.T) {
 				}
 				if scene == "unknown" && !tt.HasText(tx.HarnessUnknownManager()) {
 					t.Fatal("unknown manager missing guidance")
+				}
+				if u.Installation.Path != "" && !u.Installation.CanUpdate() {
+					if slices.Contains(tt.Texts(), tx.HarnessUpdate()) {
+						t.Fatal("unsupported installation offers an update")
+					}
+					message := tx.HarnessUnsupportedManager("vlt")
+					switch scene {
+					case "unknown":
+						message = tx.HarnessUnknownManager()
+					case "manager-unavailable":
+						message = tx.HarnessManagerUnavailable("pnpm")
+					case "manager-unverified":
+						message = tx.HarnessManagerUnverified("pnpm")
+					case "manager-ambiguous":
+						message = tx.HarnessManagerAmbiguous()
+					}
+					b, ok := tt.Find(message)
+					if !ok || b.X+b.W > 1060 || b.Y+b.H > 720 {
+						t.Fatalf("unsupported warning missing or clipped: %+v", b)
+					}
 				}
 				if scene == "missing" && !tt.HasText(tx.HarnessInstall()) {
 					t.Fatal("missing install entry")

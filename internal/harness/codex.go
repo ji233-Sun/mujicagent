@@ -29,7 +29,7 @@ type Driver struct{ ID, Name string }
 
 var Drivers = []Driver{{ID: "codex", Name: "Codex"}, {ID: "pi", Name: "Pi"}, {ID: "droid", Name: "Droid"}}
 
-type Installation struct{ Path, Version, Method, Prefix, Source string }
+type Installation struct{ Path, Version, Method, Prefix, Source, Manager, PackageRoot, BinDir, UpdateIssue string }
 type Release struct{ Version, URL, Digest, Entry string }
 
 var versionPattern = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
@@ -79,6 +79,9 @@ func Inspect(ctx context.Context, binary, managed string) (Installation, error) 
 		}
 	}
 	current := Installation{Path: cmd.Path, Version: fields[1], Method: method, Prefix: prefix}
+	if method == "custom" || method == "npm" {
+		current = inspectPackageManager(ctx, current, real)
+	}
 	if method == "managed" {
 		rel, _ := filepath.Rel(managed, real)
 		stage := filepath.Join(managed, strings.Split(rel, string(filepath.Separator))[0])

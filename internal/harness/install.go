@@ -22,6 +22,7 @@ type InstallPlan struct {
 	Source, Stage, Path string
 	Command             string
 	Args                []string
+	Dir                 string
 }
 
 func validSource(source string) bool {
@@ -32,8 +33,8 @@ func PrepareInstall(ctx context.Context, root, source string, release Release, c
 	if !versionPattern.MatchString(release.Version) {
 		return nil, fmt.Errorf("invalid release version")
 	}
-	if current.Path != "" && current.Method != "managed" && current.Method != "npm" && current.Method != "brew" && current.Method != "vp" {
-		return nil, fmt.Errorf("installation manager not recognized")
+	if current.Path != "" && !current.CanUpdate() {
+		return nil, fmt.Errorf("automatic update unavailable for %s; use the original package manager", current.Method)
 	}
 	if current.Method == "managed" {
 		source = current.Source
@@ -45,25 +46,16 @@ func PrepareInstall(ctx context.Context, root, source string, release Release, c
 		return nil, fmt.Errorf("invalid installation source")
 	}
 	p := &InstallPlan{Current: current, Release: release, Source: source, Path: current.Path}
-	switch current.Method {
-	case "vp":
-		p.Command = current.Prefix
-		p.Args = []string{"update", "--global", "@openai/codex@" + release.Version}
-	case "npm":
-		p.Command = filepath.Join(current.Prefix, "bin", "npm")
-		p.Args = []string{"install", "--global", "--prefix", current.Prefix, "@openai/codex@" + release.Version, "--ignore-scripts", "--no-audit", "--no-fund"}
-		if runtime.GOOS == "windows" {
-			node, cli, err := windowsNpmRuntime(current.Prefix)
-			if err != nil {
-				return nil, err
-			}
-			p.Command = node
-			p.Args = append([]string{cli}, p.Args...)
+	if adapter, ok := managerAdapters[current.Method]; ok {
+		var err error
+		p.Command, p.Args, err = adapter.update(current, release.Version)
+		if err != nil {
+			return nil, err
 		}
-	case "brew":
-		p.Command = filepath.Join(current.Prefix, "bin", "brew")
-		p.Args = []string{"upgrade", "--cask", "codex"}
-	default:
+		if current.Manager != "" {
+			p.Dir, _ = os.UserHomeDir()
+		}
+	} else {
 		p.Stage = filepath.Join(root, fmt.Sprintf("release-%s-%d", release.Version, time.Now().UnixNano()))
 		p.Path = filepath.Join(p.Stage, filepath.FromSlash(release.Entry))
 		if source == "cn" && runtime.GOOS != "windows" {
@@ -81,7 +73,7 @@ func PrepareInstall(ctx context.Context, root, source string, release Release, c
 		}
 	}
 	if p.Command != "" {
-		cmd, err := codex.Command(ctx, p.Command, p.Args...)
+		cmd, err := managerCommand(ctx, p.Command, p.Args...)
 		if err != nil {
 			return nil, err
 		}
@@ -157,6 +149,7 @@ func (p *InstallPlan) Execute(ctx context.Context) (string, error) {
 		if err != nil {
 			return "", err
 		}
+		cmd.Dir = p.Dir
 		if err = runInstaller(cmd); err != nil {
 			return "", fmt.Errorf("installation failed: %w", err)
 		}

@@ -41,7 +41,13 @@ func (v *View) agentsPane(c *ui.Context) {
 							version = tx.HarnessMissing()
 						}
 					}
-					method := map[string]string{"managed": tx.HarnessManaged(), "custom": tx.HarnessCustom(), "npm": "npm", "brew": "Homebrew", "vp": "VP"}[u.Installation.Method]
+					method := harness.ManagerName(u.Installation.Method)
+					if u.Installation.Method == "managed" {
+						method = tx.HarnessManaged()
+					}
+					if method == "" && u.Installation.Method != "" {
+						method = tx.HarnessCustom()
+					}
 					if method != "" {
 						version += " · " + method
 					}
@@ -75,9 +81,7 @@ func (v *View) agentsPane(c *ui.Context) {
 								if u.Missing {
 									label = tx.HarnessInstall()
 								}
-								if u.Installation.Method == "custom" {
-									ui.Text(c, tx.HarnessUnknownManager()).FontSize(12).TextColor(c.Theme().TextMuted)
-								} else {
+								if u.Missing || u.Installation.CanUpdate() {
 									ui.Button(c, label).Height(28).FontSize(12).Radius(6).Disabled(u.Checking || u.Installing || u.Preparing || v.C.AnyRunning() || v.C.Connection == "Connecting" || u.Binary != v.C.State.Settings.CodexPath).OnClick(v.openHarnessInstall)
 								}
 							}
@@ -93,6 +97,25 @@ func (v *View) agentsPane(c *ui.Context) {
 					if u.Error != "" && !v.harnessDialog {
 						ui.Text(c, u.Error).FontSize(12).TextColor(c.Theme().Danger).Selectable()
 					}
+				})
+			}
+			if u.Installation.Path != "" && !u.Installation.CanUpdate() {
+				message := tx.HarnessUnknownManager()
+				name := harness.ManagerName(u.Installation.Method)
+				if name != "" {
+					message = tx.HarnessUnsupportedManager(name)
+				}
+				switch u.Installation.UpdateIssue {
+				case "unavailable":
+					message = tx.HarnessManagerUnavailable(name)
+				case "unverified":
+					message = tx.HarnessManagerUnverified(name)
+				case "ambiguous":
+					message = tx.HarnessManagerAmbiguous()
+				}
+				ui.Row(c.Key("unsupported-update")).Margin(0, 14, 12).Padding(10).Gap(8).Radius(8).Background(c.Theme().Surface).AlignItems(ui.Start).Children(func() {
+					ui.Icon(c, failureIcon).Size(15, 15).Shrink(0).TextColor(ui.Hex("#a06b12"))
+					ui.Text(c, message).FontSize(12).Grow(1).MinWidth(0).TextColor(ui.Hex("#a06b12"))
 				})
 			}
 			ui.Divider(c)

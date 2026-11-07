@@ -116,8 +116,8 @@ func (c *Controller) PrepareHarness(source string) {
 			source = current.Source
 		}
 		var plan *harness.InstallPlan
-		if err == nil && current.Method == "custom" {
-			err = fmt.Errorf("installation manager not recognized")
+		if err == nil && current.Path != "" && !current.CanUpdate() {
+			err = fmt.Errorf("automatic update unavailable for %s; use the original package manager", current.Method)
 		}
 		if err == nil {
 			lookup := source
