@@ -9,7 +9,7 @@ import (
 func (v *View) settingsDialog(c *ui.Context) {
 	dialog := ui.DialogBase(c.Key("settings-dialog"), &v.Settings, func(backdrop, panel ui.Element) {
 		backdrop.Background(ui.RGBA(0, 0, 0, 0.18))
-		panel.Width(900).Height(420).MaxWidthPercent(94).MaxHeightPercent(90).
+		panel.WidthPercent(96).HeightPercent(90).
 			Radius(18).Border(1, c.Theme().Border).Background(c.Theme().Background).
 			Shadow(0, 16, 50, 0, ui.RGBA(0, 0, 0, 0.22)).Clip().Label(v.texts().SettingsPanel()).
 			Transition(ui.ElementTransition{Duration: 180 * time.Millisecond, Enter: &ui.Motion{Y: 8, Scale: 0.98}})

@@ -2,8 +2,13 @@ package view
 
 import (
 	"fmt"
+	"image/png"
+	"math"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"github.com/egoist/mygo/ui"
@@ -139,28 +144,48 @@ func BenchmarkActivityOutputFrame(b *testing.B) {
 
 func TestCompactAgentSettings(t *testing.T) {
 	for _, language := range []string{"zh-Hans", "en"} {
-		t.Run(language, func(t *testing.T) {
-			v := New(controller.New(t.TempDir(), model.New(), nil))
-			v.C.State.Settings.Language = language
-			v.Settings = true
-			*v.openState("harness-codex") = true
-			tt := ui.NewTester(func(c *ui.Context) { v.settingsDialog(c) }, 840, 560)
-			tt.SetLocale(language)
-			tt.Frame()
-			panel, ok := tt.Find(v.texts().SettingsPanel())
-			if !ok {
-				t.Fatal("missing settings")
-			}
-			for _, label := range []string{v.texts().CheckForUpdates(), v.texts().Connect(), v.texts().HarnessAuto(), v.texts().CodexPath(), v.texts().CodexDefaultPermissions()} {
-				bounds, ok := tt.Find(label)
-				if !ok || bounds.X < panel.X || bounds.Y < panel.Y || bounds.X+bounds.W > panel.X+panel.W || bounds.Y+bounds.H > panel.Y+panel.H {
-					t.Fatalf("%s outside compact settings: %+v panel=%+v", label, bounds, panel)
+		for _, size := range [][2]int{{840, 560}, {1140, 780}, {1882, 1311}} {
+			t.Run(fmt.Sprintf("%s-%dx%d", language, size[0], size[1]), func(t *testing.T) {
+				v := New(controller.New(t.TempDir(), model.New(), nil))
+				v.C.State.Settings.Language = language
+				v.Settings = true
+				*v.openState("harness-codex") = true
+				tt := ui.NewTester(v.Render, size[0], size[1])
+				tt.SetLocale(language)
+				tt.Frame()
+				tt.Advance(time.Second)
+				panel, ok := tt.Find(v.texts().SettingsPanel())
+				if !ok {
+					t.Fatal("missing settings")
 				}
-			}
-			if tt.HasText("安装到应用私有目录") || tt.HasText("Installs privately") {
-				t.Fatal("removed installation prose is still visible")
-			}
-		})
+				if math.Abs(float64(panel.W)-float64(size[0])*0.96) > 1 || math.Abs(float64(panel.H)-float64(size[1])*0.90) > 1 ||
+					math.Abs(float64(panel.X)-float64(size[0])*0.02) > 1 || math.Abs(float64(panel.Y)-float64(size[1])*0.05) > 1 {
+					t.Fatalf("settings should fill the window with centered margins: %+v", panel)
+				}
+				for _, label := range []string{v.texts().CheckForUpdates(), v.texts().Connect(), v.texts().HarnessAuto(), v.texts().CodexPath(), v.texts().CodexDefaultPermissions()} {
+					bounds, ok := tt.Find(label)
+					if !ok || bounds.X < panel.X || bounds.Y < panel.Y || bounds.X+bounds.W > panel.X+panel.W || bounds.Y+bounds.H > panel.Y+panel.H {
+						t.Fatalf("%s outside compact settings: %+v panel=%+v", label, bounds, panel)
+					}
+				}
+				if tt.HasText("安装到应用私有目录") || tt.HasText("Installs privately") {
+					t.Fatal("removed installation prose is still visible")
+				}
+				if output := os.Getenv("MUJICAGENT_SETTINGS_SCREENSHOTS"); output != "" {
+					if err := os.MkdirAll(output, 0700); err != nil {
+						t.Fatal(err)
+					}
+					f, err := os.Create(filepath.Join(output, fmt.Sprintf("%s-%dx%d.png", language, size[0], size[1])))
+					if err != nil {
+						t.Fatal(err)
+					}
+					defer f.Close()
+					if err := png.Encode(f, tt.Image()); err != nil {
+						t.Fatal(err)
+					}
+				}
+			})
+		}
 	}
 	v := New(controller.New(t.TempDir(), model.New(), nil))
 	v.Settings = true
