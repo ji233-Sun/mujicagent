@@ -443,7 +443,7 @@ func (v *View) composer(c *ui.Context, t *model.Thread) {
 			editing := t != nil && v.C.QueueEdit(t.ID) != nil
 			if editing {
 				ui.Row(c.Key("queue-edit-banner")).AlignItems(ui.Center).Gap(8).Transition(hoverTransition).Children(func() {
-					ui.Text(c, tx.QueueEditing()).TextColor(c.Theme().Accent).Grow(1)
+					ui.Box(c).Grow(1)
 					ui.Button(c, tx.Cancel()).OnClick(func() { v.C.CancelQueueEdit(t.ID) })
 				})
 			}

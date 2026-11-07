@@ -172,7 +172,6 @@
   "queueSending": "Sending…",
   "queueResume": "Resume queue",
   "queueEdit": "Edit queued message",
-  "queueEditing": "Editing queued message · keeps its position",
   "queueSave": "Save to original position",
   "attachmentLoading": "Loading attachment…",
   "annotationSidebar": "Toggle comments sidebar",

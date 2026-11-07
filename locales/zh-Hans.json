@@ -172,7 +172,6 @@
   "queueSending": "提交中…",
   "queueResume": "继续发送",
   "queueEdit": "编辑待发送消息",
-  "queueEditing": "正在编辑待发送消息 · 保存后保留原位",
   "queueSave": "保存到原位",
   "attachmentLoading": "正在加载附件…",
   "annotationSidebar": "显示或收起评论栏",
