@@ -226,7 +226,7 @@ func piLatest(ctx context.Context, source string) (Release, error) {
 	arch := map[string]string{"amd64": "x64", "arm64": "arm64"}[runtime.GOARCH]
 	ext, entry := ".tar.gz", "pi/pi"
 	if runtime.GOOS == "windows" {
-		ext, entry = ".zip", "pi/pi.exe"
+		ext, entry = ".zip", "pi.exe"
 	}
 	name := "pi-" + runtime.GOOS + "-" + arch + ext
 	for _, asset := range release.Assets {

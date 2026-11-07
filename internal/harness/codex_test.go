@@ -122,7 +122,7 @@ func TestNativeInstallerOwnership(t *testing.T) {
 }
 
 func TestPiZipExtraction(t *testing.T) {
-	for _, name := range []string{"pi/pi.exe", "../escape", "/absolute", `pi\..\escape`, "C:/escape", "link"} {
+	for _, name := range []string{"pi.exe", "../escape", "/absolute", `pi\..\escape`, "C:/escape", "link"} {
 		t.Run(name, func(t *testing.T) {
 			var archive bytes.Buffer
 			z := zip.NewWriter(&archive)
@@ -143,7 +143,7 @@ func TestPiZipExtraction(t *testing.T) {
 			}
 			root := t.TempDir()
 			err = extractZip(bytes.NewReader(archive.Bytes()), int64(archive.Len()), root)
-			if (err == nil) != (name == "pi/pi.exe") {
+			if (err == nil) != (name == "pi.exe") {
 				t.Fatalf("unsafe ZIP acceptance: %v", err)
 			}
 			if err == nil {
