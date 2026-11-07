@@ -2003,3 +2003,60 @@ func TestModelDiscoveryReplacesStaleRequest(t *testing.T) {
 		t.Fatal("cache ignored")
 	}
 }
+
+func TestCompactionUpdatesAndRecovery(t *testing.T) {
+	s := model.New()
+	thread := s.AddThread("", "")
+	turn := model.Turn{ID: "turn", Status: "inProgress"}
+	mergeAgentEvent(&turn, harness.AgentEvent{ID: "c1", Kind: "contextCompaction", Status: "inProgress", Compaction: model.CompactionStats{Before: 120000, BeforeKnown: true}})
+	mergeAgentEvent(&turn, harness.AgentEvent{ID: "c1", Kind: "contextCompaction", Status: "completed"})
+	mergeAgentEvent(&turn, harness.AgentEvent{ID: "message", Kind: "agentMessage", Text: "after"})
+	mergeAgentEvent(&turn, harness.AgentEvent{ID: "c1", Kind: "contextCompaction", Status: "inProgress"})
+	mergeAgentEvent(&turn, harness.AgentEvent{ID: "c1", Kind: "contextCompaction", Compaction: model.CompactionStats{After: 24000, AfterKnown: true}})
+	mergeAgentEvent(&turn, harness.AgentEvent{ID: "c2", Kind: "contextCompaction", Status: "inProgress"})
+	if len(turn.Items) != 3 || turn.Items[0].Status != "completed" || turn.Items[1].ID != "message" || turn.Items[2].Compaction.BeforeKnown {
+		t.Fatal(turn.Items)
+	}
+	thread.Turns = []model.Turn{turn}
+	path := filepath.Join(t.TempDir(), "history.json")
+	if err := model.Save(path, s); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := model.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := restored.Thread(thread.ID).Turns[0].Items
+	if items[0].Compaction.After != 24000 || !items[0].Compaction.BeforeKnown || items[2].Status != "unknown" {
+		t.Fatal(items)
+	}
+	mergeAgentEvent(&restored.Thread(thread.ID).Turns[0], harness.AgentEvent{ID: "c2", Kind: "contextCompaction", Status: "completed"})
+	if items[2].Status != "completed" {
+		t.Fatal("reliable correction lost")
+	}
+}
+
+func TestCodexCompactionNotifications(t *testing.T) {
+	c := New(t.TempDir(), model.New(), nil)
+	defer c.Close()
+	thread := c.State.AddThread("", "")
+	thread.ServerID = "server"
+	thread.Turns = []model.Turn{{ID: "turn", Status: "inProgress"}}
+	c.Running[thread.ID] = true
+	for _, method := range []string{"item/started", "item/completed", "item/started", "item/completed"} {
+		notify(c, method, `{"threadId":"server","turnId":"turn","item":{"id":"compact","type":"contextCompaction"}}`)
+	}
+	if items := thread.Turns[0].Items; len(items) != 1 || items[0].Status != "completed" {
+		t.Fatal(items)
+	}
+	notify(c, "item/started", `{"threadId":"server","turnId":"turn","item":{"id":"pending","type":"contextCompaction"}}`)
+	notify(c, "transport/closed", `{}`)
+	if thread.Turns[0].Items[1].Status != "unknown" {
+		t.Fatal(thread.Turns)
+	}
+	thread.Turns = append(thread.Turns, model.Turn{ID: "next"})
+	notify(c, "item/completed", `{"threadId":"server","turnId":"turn","item":{"id":"pending","type":"contextCompaction"}}`)
+	if thread.Turns[0].Items[1].Status != "completed" || len(thread.Turns[1].Items) != 0 || !c.streamDirty || !c.streamFinal {
+		t.Fatal(thread.Turns)
+	}
+}

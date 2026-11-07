@@ -766,6 +766,7 @@ func (c *Controller) handle(m codex.Message) {
 					turn := &t.Turns[len(t.Turns)-1]
 					turn.Status = "interrupted"
 					turn.Error = "Connection lost. Reconnect to continue."
+					markPendingCompactions(turn, "unknown")
 				}
 				c.Running[id] = false
 			}
@@ -826,7 +827,17 @@ func (c *Controller) handle(m codex.Message) {
 	}
 	turn := &t.Turns[len(t.Turns)-1]
 	if p.TurnID != "" && turn.ID != "" && p.TurnID != turn.ID {
-		return
+		if (m.Method == "item/started" || m.Method == "item/completed") && decodeItem(p.Item).Kind == "contextCompaction" {
+			for i := range t.Turns {
+				if t.Turns[i].ID == p.TurnID {
+					turn = &t.Turns[i]
+					break
+				}
+			}
+		}
+		if turn.ID != p.TurnID {
+			return
+		}
 	}
 	switch m.Method {
 	case "turn/started":
@@ -837,6 +848,11 @@ func (c *Controller) handle(m codex.Message) {
 		}
 		turn.ID = p.Turn.ID
 		turn.Status = p.Turn.Status
+		compactStatus := "unknown"
+		if turn.Status == "interrupted" {
+			compactStatus = "interrupted"
+		}
+		markPendingCompactions(turn, compactStatus)
 		if p.Turn.Error != nil {
 			turn.Error = p.Turn.Error.Message
 		}
@@ -861,6 +877,21 @@ func (c *Controller) handle(m codex.Message) {
 		}
 	case "item/started", "item/completed":
 		item := decodeItem(p.Item)
+		if item.Kind == "contextCompaction" {
+			status := item.Status
+			if status == "" {
+				status = "inProgress"
+				if m.Method == "item/completed" {
+					status = "completed"
+				}
+			}
+			mergeAgentEvent(turn, harness.AgentEvent{ID: item.ID, Kind: item.Kind, Status: status, Text: item.Text})
+			c.streamDirty = true
+			if status != "inProgress" {
+				c.streamFinal = true
+			}
+			break
+		}
 		if item.Kind == "userMessage" || item.ID == "" {
 			return
 		}

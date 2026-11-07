@@ -38,13 +38,17 @@ func (p *agentParser) activity(line []byte, emit func(AgentEvent)) error {
 			e.Text, e.Delta, e.Status = a.Content, false, "completed"
 		}
 	case "compaction_start", "auto_compaction_start", "compaction_end", "auto_compaction_end":
-		if !p.compacting {
+		if !p.compacting && (!strings.HasSuffix(v.Type, "_end") || p.compactions == 0) {
 			p.compactions++
 		}
 		p.compacting = true
 		e.ID, e.Kind = fmt.Sprintf("compaction-%d", p.compactions), "contextCompaction"
 		if strings.HasSuffix(v.Type, "_end") {
 			p.compacting = false
+			var result struct{ TokensBefore *int64 }
+			if json.Unmarshal(v.Result, &result) == nil && result.TokensBefore != nil && *result.TokensBefore >= 0 {
+				e.Compaction.Before, e.Compaction.BeforeKnown = *result.TokensBefore, true
+			}
 			e.Status = "completed"
 			if v.Aborted {
 				e.Status = "interrupted"

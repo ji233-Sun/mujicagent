@@ -306,10 +306,11 @@ func (a *droidRPC) update(raw json.RawMessage) error {
 			}
 			a.summaries[summary.SummaryID] = true
 		}
-		if !a.compacting {
+		if !a.compacting && (a.compactions == 0 || a.compactionSummary != "") {
 			a.compactions++
 		}
 		a.compacting = false
+		a.compactionSummary = summary.SummaryID
 		e.ID = fmt.Sprintf("compaction-%d", a.compactions)
 		e.Kind = "contextCompaction"
 		e.Status = "completed"
@@ -326,6 +327,7 @@ func (a *droidRPC) update(raw json.RawMessage) error {
 			a.compactions++
 		}
 		a.compacting = true
+		a.compactionSummary = ""
 		e.ID = fmt.Sprintf("compaction-%d", a.compactions)
 		e.Kind = "contextCompaction"
 	case "agent_turn_completed":
@@ -337,11 +339,16 @@ func (a *droidRPC) update(raw json.RawMessage) error {
 			a.finishCompaction(status)
 			return fmt.Errorf("Droid stopped: %s", v.Reason)
 		}
-		a.finishCompaction("completed")
+		a.finishCompaction("unknown")
 		a.done = true
 		return nil
 	case "error":
-		a.finishCompaction("failed")
+		if a.compacting {
+			var reason string
+			_ = json.Unmarshal(v.Message, &reason)
+			a.emit(AgentEvent{ID: fmt.Sprintf("compaction-%d", a.compactions), Kind: "contextCompaction", Status: "failed", Text: reason})
+			a.compacting = false
+		}
 		return fmt.Errorf("Droid reported a session error; check CLI configuration")
 	default:
 		return nil

@@ -18,8 +18,16 @@ type Project struct {
 }
 type Item struct {
 	ID, Kind, Text, Status string
-	ParentID               string   `json:",omitempty"`
-	MCP                    *MCPCall `json:",omitempty"`
+	ParentID               string          `json:",omitempty"`
+	Compaction             CompactionStats `json:",omitzero"`
+	MCP                    *MCPCall        `json:",omitempty"`
+}
+
+// CompactionStats only contains context counts explicitly tied to this item.
+// Missing counts are distinct from a measured zero; usage and estimates do not belong here.
+type CompactionStats struct {
+	Before, After           int64
+	BeforeKnown, AfterKnown bool
 }
 
 // MCPCall contains display data with credentials redacted before storage.
@@ -153,6 +161,12 @@ func Load(path string) (*State, error) {
 			t.PermissionProfile = s.Settings.DefaultPermissionProfile
 		}
 		for i := range t.Turns {
+			for j := range t.Turns[i].Items {
+				item := &t.Turns[i].Items[j]
+				if item.Kind == "contextCompaction" && (item.Status == "" || item.Status == "inProgress") {
+					item.Status = "unknown"
+				}
+			}
 			if t.Turns[i].Status == "inProgress" {
 				t.Turns[i].Status = "interrupted"
 				t.Turns[i].Error = "App closed before this turn finished."

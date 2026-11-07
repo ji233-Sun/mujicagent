@@ -131,7 +131,7 @@ func TestDroidScriptBatchScreenshots(t *testing.T) {
 			tt.Frame()
 			tt.Advance(time.Second)
 			tt.Frame()
-			if !tt.HasText("Read · main.go") || !tt.HasText("Read · go.mod") || !tt.HasText("Skill") || !tt.HasText(v.texts().Compaction()) || tt.HasText(v.texts().McpUnknownTool()) {
+			if !tt.HasText("Read · main.go") || !tt.HasText("Read · go.mod") || !tt.HasText("Skill") || !tt.HasText(v.texts().CompactionCompleted()) || !tt.HasText(v.texts().CompactionCancelled()) || tt.HasText(v.texts().McpUnknownTool()) {
 				t.Fatal("Script children or Compact missing, or native tools fell back to unknown MCP")
 			}
 			if dir := os.Getenv("MUJICAGENT_AGENTS_SCREENSHOTS"); dir != "" {
@@ -294,7 +294,7 @@ func TestAgentPendingPermissionLabel(t *testing.T) {
 func TestHarnessTimelineScreenshots(t *testing.T) {
 	for _, lang := range []string{"zh-Hans", "en"} {
 		for _, driver := range []string{"codex", "pi", "droid"} {
-			for _, scene := range []string{"collapsed", "expanded", "long-output", "failed", "approval", "running", "stopped", "compact", "compact-running", "compact-failed", "compact-stopped", "script-nested"} {
+			for _, scene := range []string{"collapsed", "expanded", "long-output", "failed", "approval", "running", "stopped", "compact", "compact-running", "compact-failed", "compact-stopped", "compact-stats", "compact-narrow", "compact-unknown", "script-nested"} {
 				t.Run(lang+"-"+driver+"-"+scene, func(t *testing.T) {
 					s := model.New()
 					s.Settings.Language = lang
@@ -323,8 +323,16 @@ func TestHarnessTimelineScreenshots(t *testing.T) {
 						if scene == "compact-failed" {
 							compact.Status, compact.Text = "failed", "Context compaction failed"
 						}
+						if scene == "compact-stats" || scene == "compact-narrow" {
+							compact.Compaction = model.CompactionStats{Before: 120000, After: 24000, BeforeKnown: true, AfterKnown: true}
+						}
+						if scene == "compact-unknown" {
+							compact.Status = "unknown"
+						}
 						thread.Turns[0].Items[1] = compact
-						thread.Turns[0].Items = append(thread.Turns[0].Items, model.Item{ID: "compact-2", Kind: "contextCompaction", Status: status})
+						if scene != "compact-running" {
+							thread.Turns[0].Items = append(thread.Turns[0].Items, tool, model.Item{ID: "after", Kind: "agentMessage", Status: "completed", Text: "Continuing after compaction."})
+						}
 					}
 					if scene == "script-nested" {
 						thread.Turns[0].Items[1].ParentID = "script"
@@ -341,15 +349,32 @@ func TestHarnessTimelineScreenshots(t *testing.T) {
 					if scene == "approval" {
 						c.Requests = []*codex.Request{{ID: json.RawMessage(`"approval"`), ThreadID: thread.ID, Method: "item/commandExecution/requestApproval", Reason: "Run pwd in this project", Command: "pwd", AvailableDecisions: []json.RawMessage{json.RawMessage(`"accept"`), json.RawMessage(`"cancel"`)}}}
 					}
-					tt := ui.NewTester(v.Render, 1100, 800)
+					width := 1100
+					if scene == "compact-narrow" {
+						width = 600
+					}
+					tt := ui.NewTester(v.Render, width, 800)
 					tt.Frame()
 					tt.Advance(time.Second)
 					tt.Frame()
 					if !strings.HasPrefix(scene, "compact") && !tt.HasText(v.texts().AgentToolCall()) {
 						t.Fatal("tool category missing")
 					}
-					if strings.HasPrefix(scene, "compact") && !tt.HasText(v.texts().Compaction()) {
-						t.Fatal("compaction did not use the shared timeline")
+					if strings.HasPrefix(scene, "compact") {
+						label, _, _ := v.compactionLabel(&thread.Turns[0].Items[1], status == "inProgress")
+						if !tt.HasText(label) {
+							t.Fatal("compaction separator missing", label)
+						}
+						bounds, found := tt.Find(label)
+						if !found || bounds.X < 246 || bounds.X+bounds.W > float32(width) || bounds.H < 12 {
+							t.Fatalf("separator outside content: %+v", bounds)
+						}
+						if scene == "compact-running" && tt.HasText(agentName(driver)) {
+							t.Fatal("duplicate running indicator")
+						}
+						if tt.HasText(v.texts().Compaction() + " × 1") {
+							t.Fatal("compaction grouped as a tool")
+						}
 					}
 					if scene == "running" && !tt.HasText(agentName(driver)) {
 						t.Fatal("wrong running harness")
@@ -1264,5 +1289,61 @@ func TestFavoritePickerTuning(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestCompactionStatistics(t *testing.T) {
+	s := model.New()
+	s.Settings.Language = "zh-Hans"
+	c := controller.New(t.TempDir(), s, nil)
+	defer c.Close()
+	v := New(c)
+	for _, tc := range []struct {
+		before, after int64
+		known         bool
+		status, want  string
+	}{
+		{120000, 24000, true, "completed", "已压缩上下文：120k → 24k（减少 80%）"},
+		{1234, 567, true, "completed", "已压缩上下文：1.2k → 567（减少 54.1%）"},
+		{1000, 1000, true, "completed", "已压缩上下文：1k → 1k（减少 0%）"},
+		{1000, 1200, true, "completed", "已压缩上下文：1k → 1.2k（减少 -20%）"},
+		{0, 0, true, "completed", "已压缩上下文"},
+		{1000, -1, true, "completed", "已压缩上下文"},
+		{120000, 0, false, "completed", "已压缩上下文"},
+		{120000, 24000, true, "failed", "上下文压缩失败"},
+		{120000, 24000, true, "interrupted", "上下文压缩已取消"},
+		{120000, 24000, true, "inProgress", "上下文压缩状态未知"},
+	} {
+		item := model.Item{Status: tc.status, Compaction: model.CompactionStats{Before: tc.before, After: tc.after, BeforeKnown: true, AfterKnown: tc.known}}
+		label, _, active := v.compactionLabel(&item, false)
+		if label != tc.want || active {
+			t.Fatalf("%+v: %q", tc, label)
+		}
+	}
+}
+
+func TestCompactionPreservesHistoryScroll(t *testing.T) {
+	s := model.New()
+	thread := s.AddThread("", "")
+	items := []model.Item{}
+	for i := range 30 {
+		items = append(items, model.Item{ID: fmt.Sprint(i), Kind: "agentMessage", Status: "completed", Text: strings.Repeat("History message. ", 8)})
+	}
+	items = append(items, model.Item{ID: "compact", Kind: "contextCompaction", Status: "inProgress"})
+	thread.Turns = []model.Turn{{Status: "inProgress", Items: items}}
+	c := controller.New(t.TempDir(), s, nil)
+	defer c.Close()
+	v := New(c)
+	tt := ui.NewTester(func(ctx *ui.Context) { ui.Column(ctx).Fill().Children(func() { v.timeline(ctx, thread) }) }, 600, 400)
+	tt.Frame()
+	scroll := v.scroll[thread.ID]
+	scroll.Y = 100
+	tt.Frame()
+	before := scroll.Y
+	thread.Turns[0].Items[len(items)-1].Status = "completed"
+	thread.Turns[0].Items = append(thread.Turns[0].Items, model.Item{ID: "next", Kind: "agentMessage", Text: "Continue"})
+	tt.Frame()
+	if scroll.Y != before {
+		t.Fatalf("history reader moved: %v → %v", before, scroll.Y)
 	}
 }

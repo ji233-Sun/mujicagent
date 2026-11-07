@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/ji233-Sun/mujicagent/internal/codex"
+	"github.com/ji233-Sun/mujicagent/internal/model"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,6 +17,7 @@ type RunOptions struct {
 	Images                                                      []string
 }
 type AgentEvent struct {
+	Compaction       model.CompactionStats
 	Text, Session    string
 	ID, Kind, Status string
 	Interaction      *Interaction

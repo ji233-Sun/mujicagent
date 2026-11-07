@@ -1150,3 +1150,39 @@ func TestInstalledAgentTurns(t *testing.T) {
 		})
 	}
 }
+
+func TestCompactionDuplicateCompletions(t *testing.T) {
+	var events []AgentEvent
+	p := agentParser{driver: "pi"}
+	emit := func(e AgentEvent) { events = append(events, e) }
+	for _, raw := range []string{
+		`{"type":"compaction_start"}`,
+		`{"type":"compaction_end","result":{"tokensBefore":120000,"estimatedTokensAfter":24000,"usage":{"input":999}}}`,
+		`{"type":"compaction_end","result":{"tokensBefore":120000}}`,
+		`{"type":"compaction_start"}`,
+		`{"type":"compaction_end","aborted":true}`,
+	} {
+		if err := p.line([]byte(raw), emit); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(events) != 5 || events[0].ID != events[2].ID || events[3].ID == events[0].ID || events[1].Compaction.Before != 120000 || events[1].Compaction.AfterKnown {
+		t.Fatal(events)
+	}
+	events = nil
+	a := droidRPC{emit: emit}
+	for _, raw := range []string{
+		`{"type":"droid_working_state_changed","newState":"compacting_conversation"}`,
+		`{"type":"droid_working_state_changed","newState":"streaming_assistant_message"}`,
+		`{"type":"session_compacted","summaryId":"one","removedCount":4}`,
+		`{"type":"session_compacted","summaryId":"one","removedCount":4}`,
+		`{"type":"session_compacted","summaryId":"two","removedCount":5}`,
+	} {
+		if err := a.update([]byte(raw)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(events) != 4 || events[0].ID != events[2].ID || events[3].ID == events[0].ID {
+		t.Fatal(events)
+	}
+}

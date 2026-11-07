@@ -369,18 +369,18 @@ func (v *View) timeline(c *ui.Context, t *model.Thread) {
 				ui.Column(c).Gap(14).Children(func() {
 					for j := 0; j < len(turn.Items); {
 						key := fmt.Sprintf("%s-%d-%d", t.ID, i, j)
-						if turn.Items[j].Kind == "agentMessage" || turn.Items[j].Kind == "steerMessage" {
+						if timelineStandalone(turn.Items[j].Kind) {
 							v.item(c, &turn.Items[j], key, turn.Status == "inProgress")
 							j++
 							continue
 						}
 						start := j
-						for j < len(turn.Items) && turn.Items[j].Kind != "agentMessage" && turn.Items[j].Kind != "steerMessage" {
+						for j < len(turn.Items) && !timelineStandalone(turn.Items[j].Kind) {
 							j++
 						}
 						v.activityGroup(c, turn.Items[start:j], key, turn.Status == "inProgress")
 					}
-					if turn.Status == "inProgress" {
+					if turn.Status == "inProgress" && !compactionRunning(turn) {
 						ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 							ui.Spinner(c).Size(13, 13)
 							ui.Text(c, agentName(t.Driver())).FontSize(12).TextColor(c.Theme().TextMuted)
@@ -399,6 +399,10 @@ func (v *View) timeline(c *ui.Context, t *model.Thread) {
 }
 func (v *View) item(c *ui.Context, item *model.Item, key string, running bool) {
 	tx := v.texts()
+	if item.Kind == "contextCompaction" {
+		v.compactionDivider(c, item, key, running)
+		return
+	}
 	if item.Kind == "mcpToolCall" || item.Kind == "toolCall" && item.MCP != nil && !nativeTool(item) {
 		v.mcpItem(c, item, key, running)
 		return

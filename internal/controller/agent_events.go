@@ -32,11 +32,20 @@ func mergeAgentEvent(turn *model.Turn, e harness.AgentEvent) {
 	if e.Status != "" && !(e.Status == "inProgress" && (item.Status == "completed" || item.Status == "failed" || item.Status == "interrupted")) {
 		item.Status = e.Status
 	}
+	if e.Compaction.BeforeKnown {
+		item.Compaction.Before, item.Compaction.BeforeKnown = e.Compaction.Before, true
+	}
+	if e.Compaction.AfterKnown {
+		item.Compaction.After, item.Compaction.AfterKnown = e.Compaction.After, true
+	}
 	if e.Tool == nil {
 		if e.Delta {
 			item.Text += e.Text
-		} else {
+		} else if e.Text != "" || item.Kind != "contextCompaction" {
 			item.Text = e.Text
+			if item.Kind == "contextCompaction" {
+				item.Text = redactMCPText(item.Text)
+			}
 		}
 		return
 	}
@@ -127,4 +136,14 @@ func agentPlanText(raw json.RawMessage) string {
 		lines = append(lines, fmt.Sprintf("%d. [%s] %s", i+1, entry.Status, text))
 	}
 	return strings.Join(lines, "\n")
+}
+
+// A turn ending or transport disappearing does not prove compaction succeeded.
+func markPendingCompactions(turn *model.Turn, status string) {
+	for i := range turn.Items {
+		item := &turn.Items[i]
+		if item.Kind == "contextCompaction" && (item.Status == "" || item.Status == "inProgress") {
+			item.Status = status
+		}
+	}
 }
