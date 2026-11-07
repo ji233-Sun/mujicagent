@@ -24,6 +24,15 @@ description: 为 MujicAgent 添加或维护 harness、模型发现与收藏、�
 
 先确认官方 CLI/SDK 的当前协议：模型目录、会话创建与续聊、模型/思考强度参数、停止、输入附件、工具权限、流式或最终结果。记录真实支持范围，只有 CLI 版本探测不能证明认证或推理成功。能力缺失时不假装与 Codex 等价；未实现的附件类型需明确拒绝，权限不能静默放大。
 
+## 新增 Harness 的权限与附件验收
+
+- 权限入口复用 Codex 的 `pickerOption`、`pickerPopover`、权限图标、选中标记和高权限确认，不向用户展示工具开关或无解释的 low/medium/high。名称按真实能力映射，不能把不同 Harness 的执行权限说成同一种 OS 沙箱。
+- Pi 当前「只读」只启用内置 read/grep/find/ls，并关闭扩展和 MCP；「完全访问」沿用本机工具配置。没有原生沙箱时不添加假工作区权限。参考 Pi 官方 permission-gate 扩展和其他客户端实现时，先验证当前安装版本的实际能力；不要仅注入 prompt 声称权限已受限。
+- Droid 当前使用 `exec --output-format acp`。先 initialize 检查 promptCapabilities.image/loadSession，再 session/new 或 session/load；每轮显式 session/set_mode、set_model 和 reasoning_effort，不能继承全局配置或恢复会话的高权限。normal/auto-low/auto-medium/auto-high 对应只读/文件编辑/开发权限/完全访问；超出自动授权范围的请求返回 cancelled，不静默批准。
+- ACP 图片通过 MIME + base64 content block 发送，普通文件复用已有本地路径输入，标注发送原图与导出图。先实测原生能力；确实不支持时才考虑托管文件及 URI 映射，并定义模型可访问的解析规则、生命周期和错误反馈，不能只生成模型无法读取的自定义 URL。
+- 事件负载按事件类型解析：工具结果可能为对象或数组，不得强制解码为文本。恢复会话的历史通知不能重复追加到当前回复；停止、错误、缺失能力和未知客户端请求必须有明确结果，子进程必须回收。
+- 在既有测试补权限默认值、未知值拒绝、图片内容、通知类型、恢复和取消回归。获得实际 token 授权后，用用户指定的精确模型验证读取普通文件、图片识别和第二轮续聊；只读目录探测不能替代这些证据。`MUJICAGENT_AGENT_LIVE_TEST=1 go test ./internal/harness -run TestInstalledAgentTurns -v -count=1` 会调用 Pi 的 magpie/workbuddy/deepseek-v4.1-flash 和 Droid 的 custom:magpie/codex-fast/gpt-6.1-sol，产生用量。
+
 ## 模型选择与紧凑界面
 
 - 模型选择以 Codex 为参照，复用 `modelCatalogPanel` / `modelChoicesPanel` 和 `modelEffortSlider`。在对话输入栏选择具体模型，不新增「默认模型」、手填模型 ID 或设置页 Models 控件。设置页只放版本、安装/登录入口及折叠连接详情，不铺满协议解释文字；异常通过简短状态和可重试入口表达。

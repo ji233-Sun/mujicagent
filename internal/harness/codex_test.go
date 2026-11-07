@@ -2,12 +2,19 @@ package harness
 
 import (
 	"archive/tar"
+	"bufio"
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/base64"
+	"encoding/json"
+	"image"
+	"image/color"
+	"image/png"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -114,9 +121,7 @@ func TestAgentProtocol(t *testing.T) {
 		{"pi", `{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"done"}]}}`, "done", false},
 		{"pi", `{"type":"message_end","message":{"role":"assistant","stopReason":"error","errorMessage":"bad model"}}`, "", true},
 		{"pi", `broken`, "", true},
-		{"droid", `{"type":"result","result":"done","session_id":"session-1","is_error":false}`, "done", false},
-		{"droid", `{"type":"result","result":"bad login","is_error":true}`, "", true},
-		{"droid", `{"type":"result","result":"missing session"}`, "", true},
+		{"pi", `{"type":"tool_execution_end","result":{"content":[{"type":"text","text":"file"}]}}`, "", false},
 	} {
 		p := agentParser{driver: tc.driver}
 		text := ""
@@ -223,5 +228,151 @@ func TestInstalledModelCatalog(t *testing.T) {
 			t.Fatal(driver, err)
 		}
 		t.Logf("%s: %d models", driver, len(models))
+	}
+}
+
+func TestAgentPermissionsAndImages(t *testing.T) {
+	args, err := agentArgs(RunOptions{Driver: "pi"})
+	if err != nil || !strings.Contains(strings.Join(args, " "), "--no-extensions --no-mcp --tools read,grep,find,ls") {
+		t.Fatal(args, err)
+	}
+	if _, err := agentArgs(RunOptions{Driver: "pi", Access: "invalid"}); err == nil {
+		t.Fatal("unknown access accepted")
+	}
+	path := filepath.Join(t.TempDir(), "red.png")
+	img := image.NewRGBA(image.Rect(0, 0, 64, 64))
+	for y := 0; y < 64; y++ {
+		for x := 0; x < 64; x++ {
+			img.Set(x, y, color.RGBA{R: 255, A: 255})
+		}
+	}
+	f, _ := os.Create(path)
+	if err := png.Encode(f, img); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	parts, err := droidPrompt(RunOptions{Prompt: "color?", Images: []string{path}})
+	if err != nil || len(parts) != 2 {
+		t.Fatal(parts, err)
+	}
+	part := parts[1].(map[string]string)
+	data, _ := os.ReadFile(path)
+	if part["mimeType"] != "image/png" || part["data"] != base64.StdEncoding.EncodeToString(data) {
+		t.Fatal("image lost")
+	}
+	var output bytes.Buffer
+	a := droidACP{in: json.NewEncoder(&output), out: bufio.NewScanner(strings.NewReader(`{"jsonrpc":"2.0","id":"approval","method":"session/request_permission"}
+{"jsonrpc":"2.0","id":1,"result":{}}
+`))}
+	if err := a.call("session/set_mode", map[string]string{"modeId": "normal"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), `"outcome":"cancelled"`) {
+		t.Fatal(output.String())
+	}
+}
+
+func TestDroidACPNotifications(t *testing.T) {
+	for _, method := range []string{"session/load", "session/prompt"} {
+		t.Run(method, func(t *testing.T) {
+			var output bytes.Buffer
+			var text string
+			a := droidACP{in: json.NewEncoder(&output), session: "s", emit: func(e AgentEvent) { text += e.Text }, out: bufio.NewScanner(strings.NewReader(`{"method":"session/update","params":{"sessionId":"s","update":{"sessionUpdate":"tool_call_update","content":[{"type":"content"}]}}}
+{"method":"session/update","params":{"sessionId":"other","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"wrong"}}}}
+{"method":"session/update","params":{"sessionId":"s","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"answer"}}}}
+{"id":1,"result":{"stopReason":"end_turn"}}
+`))}
+			if err := a.call(method, map[string]any{}, nil); err != nil {
+				t.Fatal(err)
+			}
+			want := ""
+			if method == "session/prompt" {
+				want = "answer"
+			}
+			if text != want {
+				t.Fatal(text)
+			}
+		})
+	}
+	for _, response := range []string{`{"id":1,"error":{"code":-32602}}`, "", `broken`} {
+		a := droidACP{in: json.NewEncoder(&bytes.Buffer{}), out: bufio.NewScanner(strings.NewReader(response))}
+		if err := a.call("session/new", map[string]any{}, nil); err == nil {
+			t.Fatal("failure accepted", response)
+		}
+	}
+}
+
+func TestInstalledAgentTurns(t *testing.T) {
+	if os.Getenv("MUJICAGENT_AGENT_LIVE_TEST") != "1" {
+		t.Skip("explicit paid Pi/Droid test")
+	}
+	for _, driver := range []string{"pi", "droid"} {
+		t.Run(driver, func(t *testing.T) {
+			dir := t.TempDir()
+			o := RunOptions{Driver: driver, Binary: driver, Cwd: dir, Prompt: "Read proof.txt and report its exact contents. Do not modify any files.", Effort: "low"}
+			if err := os.WriteFile(filepath.Join(dir, "proof.txt"), []byte("MujicProof719"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			o.Model = "magpie/workbuddy/deepseek-v4.1-flash"
+			if driver == "pi" {
+				o.Session = filepath.Join(dir, "session.jsonl")
+			} else {
+				o.Model = "custom:magpie/codex-fast/gpt-6.1-sol"
+				img := image.NewRGBA(image.Rect(0, 0, 64, 64))
+				for y := 0; y < 64; y++ {
+					for x := 0; x < 64; x++ {
+						img.Set(x, y, color.RGBA{R: 255, A: 255})
+					}
+				}
+				path := filepath.Join(dir, "image.png")
+				f, _ := os.Create(path)
+				png.Encode(f, img)
+				f.Close()
+				o.Images = []string{path}
+				o.Prompt += " Also identify the dominant color of the attached image."
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+			var answer string
+			emit := func(e AgentEvent) {
+				if e.Delta {
+					answer += e.Text
+				} else {
+					answer = e.Text
+				}
+				if e.Session != "" {
+					o.Session = e.Session
+				}
+			}
+			if err := Run(ctx, o, emit); err != nil {
+				t.Fatal(err)
+			}
+			t.Log(driver, answer)
+			if !strings.Contains(answer, "MujicProof719") {
+				t.Fatal("file not read")
+			}
+			if driver == "droid" && !strings.Contains(strings.ToLower(answer), "red") {
+				t.Fatal("image not recognized")
+			}
+			o.Images = nil
+			o.Prompt = "Without reading files again, repeat the proof token from our previous turn."
+			answer = ""
+			if err := Run(ctx, o, emit); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(answer, "MujicProof719") {
+				t.Fatal("session not restored", answer)
+			}
+			o.Prompt = "Create a file named forbidden.txt containing hello in the current directory. Use a tool to do it."
+			answer = ""
+			if err := Run(ctx, o, emit); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(filepath.Join(dir, "forbidden.txt")); !os.IsNotExist(err) {
+				t.Fatal("read-only permission allowed writing", err)
+			}
+			t.Log(driver, "read-only write blocked", answer)
+
+		})
 	}
 }
