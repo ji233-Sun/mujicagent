@@ -111,24 +111,36 @@ func (v *View) agentPermissions(c *ui.Context, t *model.Thread) {
 		v.permissionPicker = false
 	}
 	current := options[0]
+	permissionName := func(id string) string {
+		for _, p := range options {
+			if p.id == id {
+				return p.name
+			}
+		}
+		return options[0].name
+	}
 	for _, p := range options {
-		if p.id == t.AgentAccess {
+		if p.id == v.C.PermissionID() {
 			current = p
 		}
 	}
-	button := pickerOption(c.Key("agent-permission-selector"), tx.Permissions(), v.permissionPicker).Height(30).MaxWidth(170).Shrink(1).Tooltip(current.detail)
+	label := current.name
+	if v.C.NextPermissionID() != v.C.PermissionID() {
+		label += " → " + permissionName(v.C.NextPermissionID())
+	}
+	button := pickerOption(c.Key("agent-permission-selector"), tx.Permissions(), v.permissionPicker).Height(30).MaxWidth(170).Shrink(1).Tooltip(label)
 	button.Children(func() {
 		ui.Icon(c, permissionIcon(current.icon)).Size(15, 15).Shrink(0)
-		name := current.name
-		if v.C.Running[t.ID] {
-			name = tx.PermissionNextTurn(name)
-		}
-		ui.Text(c, name).FontSize(12).SingleLine().Shrink(1).MinWidth(0)
+		ui.Text(c, label).FontSize(12).SingleLine().Shrink(1).MinWidth(0)
 	})
 	button.OnClick(func() { v.permissionPicker = !v.permissionPicker; v.modelPicker = false; v.permissionTarget = t.ID })
 	pickerPopover(c.Key("agent-permission-picker"), button, &v.permissionPicker, tx.PermissionPicker(), 290, func() {
 		ui.Column(c).Gap(4).Children(func() {
 			ui.Text(c, tx.Permissions()).FontSize(11).TextColor(c.Theme().TextMuted).Padding(6, 8)
+			if v.C.NextPermissionID() != v.C.PermissionID() {
+				ui.Text(c, tx.PermissionTiming()).FontSize(11).TextColor(c.Theme().TextMuted).Padding(6, 8)
+				ui.Text(c, tx.PermissionNextTurn(permissionName(v.C.NextPermissionID()))).FontSize(12).Padding(6, 8)
+			}
 			for _, p := range options {
 				selected := p.id == t.AgentAccess
 				b := pickerOption(c.Key(p.id), p.name, selected).Tooltip(p.detail)
@@ -213,7 +225,7 @@ func (v *View) chooseExternalModel(id string, m codex.Model) {
 		t.AgentModel = m.Model
 	}
 	t.AgentEffort = thinkingModel(m).ResolveEffort(effort)
-	v.C.Save()
+	v.C.RememberModelSelection()
 }
 
 func thinkingModel(m codex.Model) harness.AgentModel {

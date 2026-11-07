@@ -8,7 +8,7 @@ import (
 )
 
 func (c *Controller) PermissionID() string {
-	if id := c.turnPermissions[c.State.Selected]; c.Running[c.State.Selected] && id != "" {
+	if id, ok := c.turnPermissions[c.State.Selected]; c.Running[c.State.Selected] && ok {
 		return id
 	}
 	return c.NextPermissionID()
@@ -16,8 +16,13 @@ func (c *Controller) PermissionID() string {
 
 // NextPermissionID is the choice for future turns, not an active-turn override.
 func (c *Controller) NextPermissionID() string {
-	if t := c.State.Thread(c.State.Selected); t != nil && t.PermissionProfile != "" {
-		return t.PermissionProfile
+	if t := c.State.Thread(c.State.Selected); t != nil {
+		if t.Driver() != "codex" {
+			return t.AgentAccess
+		}
+		if t.PermissionProfile != "" {
+			return t.PermissionProfile
+		}
 	}
 	return c.State.Settings.DefaultPermissionProfile
 }
