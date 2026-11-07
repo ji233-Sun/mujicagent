@@ -1805,6 +1805,12 @@ sleep 20
 			if c.PermissionID() != full || c.NextPermissionID() != "" {
 				t.Fatal("next turn did not replace the permission snapshot")
 			}
+			if !c.Send("third", false) {
+				t.Fatal(c.Error)
+			}
+			if len(thread.Queue) != 1 {
+				t.Fatalf("queued follow-up missing: %+v", thread.Queue)
+			}
 			c.Interrupt()
 			deadline = time.Now().Add(5 * time.Second)
 			for c.Running[thread.ID] && time.Now().Before(deadline) {
@@ -1812,8 +1818,19 @@ sleep 20
 				time.Sleep(time.Millisecond)
 			}
 			c.Drain()
-			if thread.Turns[1].Status != "interrupted" {
-				t.Fatalf("not cancelled: %+v", thread.Turns[1])
+			if thread.Turns[1].Status != "interrupted" || thread.Turns[1].Error != "" {
+				t.Fatalf("not cancelled cleanly: %+v", thread.Turns[1])
+			}
+			if c.Error != "" {
+				t.Fatalf("stop produced an error alert: %q", c.Error)
+			}
+			for _, entry := range c.Logs {
+				if entry.Level == "error" {
+					t.Fatalf("stop produced an error log: %q", entry.Message)
+				}
+			}
+			if c.Running[thread.ID] || len(thread.Turns) != 2 || len(thread.Queue) != 1 {
+				t.Fatalf("stop advanced the queue: turns=%d queue=%+v", len(thread.Turns), thread.Queue)
 			}
 			if c.PermissionID() != "" {
 				t.Fatal("interrupted turn retained a pending permission change")
