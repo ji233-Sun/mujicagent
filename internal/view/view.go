@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -427,6 +428,9 @@ func (v *View) item(c *ui.Context, item *model.Item, key string, running bool) {
 		return
 	}
 	label, icon := v.activityKind(item.Kind)
+	if item.Kind == "imageView" && item.Text != "" {
+		label += " · " + filepath.Base(item.Text)
+	}
 	if (item.Kind == "commandExecution" || item.Kind == "fileChange" || item.MCP != nil) && item.Text != "" {
 		label = strings.SplitN(item.Text, "\n", 2)[0]
 	}
@@ -448,7 +452,9 @@ func (v *View) item(c *ui.Context, item *model.Item, key string, running bool) {
 			}
 		})
 		p.Panel(func() {
-			if item.Kind == "reasoning" && strings.TrimSpace(item.Text) == "" {
+			if item.Kind == "imageView" {
+				v.imageView(c, item)
+			} else if item.Kind == "reasoning" && strings.TrimSpace(item.Text) == "" {
 				label := tx.NoReasoningSummary()
 				if running && item.Status != "completed" {
 					label = tx.WaitingForReasoning()
