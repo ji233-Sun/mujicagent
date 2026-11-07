@@ -78,7 +78,7 @@ func (c *Controller) Save() {
 func (c *Controller) Close() {
 	c.once.Do(func() {
 		close(c.stop)
-		c.CancelHarness()
+		c.CancelHarness("codex")
 		for _, cancel := range c.agentRuns {
 			cancel()
 		}
@@ -106,7 +106,7 @@ func (c *Controller) AnyRunning() bool {
 }
 
 func (c *Controller) Connect() {
-	if c.Connection == "Connecting" || c.AnyRunning() || c.HarnessFor("codex").Installing {
+	if c.Connection == "Connecting" || c.AnyRunning() || c.HarnessInstalling() {
 		return
 	}
 	if c.client != nil {
@@ -415,7 +415,7 @@ func (c *Controller) sendThread(t *model.Thread, text string, plan bool, queuedI
 	if t.Driver() != "codex" {
 		return c.sendAgent(t, text, queuedID)
 	}
-	if c.HarnessFor("codex").Installing || c.client == nil || c.Connection != "Connected" || c.Running[t.ID] || c.permissionUpdates[t.ID] {
+	if c.HarnessInstalling() || c.client == nil || c.Connection != "Connected" || c.Running[t.ID] || c.permissionUpdates[t.ID] {
 		return false
 	}
 	if err := c.prepareWorkspace(t, text); err != nil {

@@ -44,6 +44,7 @@ type View struct {
 	deleteID                    string
 	confirmDelete               bool
 	harnessDialog               bool
+	harnessTarget               string
 	harnessSource               string
 	expanded                    map[string]*bool
 	answers                     map[string]map[string]string

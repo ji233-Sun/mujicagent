@@ -22,44 +22,6 @@ func (c *Controller) HarnessFor(id string) *HarnessState {
 	}
 	return c.Harnesses[id]
 }
-func (c *Controller) CheckAgent(id string) {
-	if id == "codex" {
-		c.CheckHarness()
-		return
-	}
-	if id != "pi" && id != "droid" {
-		return
-	}
-	h := c.HarnessFor(id)
-	if h.Checking {
-		return
-	}
-	binary := c.State.Settings.AgentPath(id)
-	h.Checking, h.Error = true, ""
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	h.cancel = cancel
-	go func() {
-		defer cancel()
-		cmd, err := codex.Command(ctx, binary, "--version")
-		var version []byte
-		if err == nil {
-			version, err = cmd.Output()
-		}
-		c.post(func() {
-			h.Checking, h.cancel = false, nil
-			if binary != c.State.Settings.AgentPath(id) {
-				return
-			}
-			h.CheckedAt, h.Binary = time.Now(), binary
-			h.Installation = harness.Installation{}
-			if err != nil {
-				h.Error = err.Error()
-				return
-			}
-			h.Installation = harness.Installation{Path: cmd.Path, Version: strings.TrimSpace(string(version)), Method: "custom"}
-		})
-	}()
-}
 
 // Handoff copies visible context, never provider IDs or credentials. The source remains intact.
 func (c *Controller) Handoff(driver, targetModel string) bool {
@@ -110,7 +72,7 @@ func (c *Controller) Handoff(driver, targetModel string) bool {
 }
 
 func (c *Controller) sendAgent(t *model.Thread, text, queuedID string) bool {
-	if c.Running[t.ID] {
+	if c.Running[t.ID] || c.HarnessInstalling() {
 		return false
 	}
 	if t.Driver() != "pi" && t.Driver() != "droid" {

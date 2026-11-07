@@ -407,20 +407,72 @@ func TestWindowsNPMNativeLayout(t *testing.T) {
 }
 
 func TestWindowsPiLauncherResolution(t *testing.T) {
-	root := t.TempDir()
-	wrapper := filepath.Join(root, "pi.cmd")
-	script := filepath.Join(root, "node_modules", "@earendil-works", "pi-coding-agent", "dist", "cli.js")
-	if err := os.MkdirAll(filepath.Dir(script), 0700); err != nil {
-		t.Fatal(err)
+	for _, private := range []bool{false, true} {
+		for _, entry := range []string{"dist/cli.js", "dist/bundle/cli.js"} {
+			root := t.TempDir()
+			wrapper := filepath.Join(root, "pi.cmd")
+			if private {
+				wrapper = filepath.Join(root, "node_modules", ".bin", "pi.cmd")
+			}
+			script := filepath.Join(root, "node_modules", "@earendil-works", "pi-coding-agent", filepath.FromSlash(entry))
+			if err := os.MkdirAll(filepath.Dir(script), 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(script, []byte("// fixture"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			got, err := windowsPiScript(wrapper)
+			if err != nil || got != script {
+				t.Fatalf("%s %v", got, err)
+			}
+			if _, err := windowsPiScript(filepath.Join(root, "missing", "pi.cmd")); err == nil {
+				t.Fatal("accepted missing installation")
+			}
+		}
 	}
-	if err := os.WriteFile(script, []byte("// fixture"), 0600); err != nil {
-		t.Fatal(err)
+}
+
+func TestWindowsManagedPiAndDroidLaunchers(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "用户 path with spaces")
+	write := func(path, body string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0600); err != nil {
+			t.Fatal(err)
+		}
 	}
-	got, err := windowsPiScript(wrapper)
-	if err != nil || got != script {
-		t.Fatalf("%s %v", got, err)
+	wrapper := filepath.Join(root, "bin", "pi.cmd")
+	script := filepath.Join(root, "install", "releases", "1.5.0", "node_modules", "@earendil-works", "pi-coding-agent", "dist", "bundle", "cli.js")
+	write(script, "fixture")
+	write(filepath.Join(root, "install", "managed-install.json"), `{"kind":"pi-managed-install","layout":"releases-v1","schemaVersion":1}`)
+	versionFile := filepath.Join(root, "install", "current-version")
+	write(versionFile, "1.5.0")
+	if got, err := windowsPiScript(wrapper); err != nil || got != script {
+		t.Fatalf("managed Pi: %s %v", got, err)
 	}
-	if _, err := windowsPiScript(filepath.Join(root, "missing", "pi.cmd")); err == nil {
-		t.Fatal("accepted missing installation")
+	write(versionFile, "..")
+	write(filepath.Join(root, "install", "node_modules", "@earendil-works", "pi-coding-agent", "dist", "bundle", "cli.js"), "outside releases")
+	if _, err := windowsPiScript(wrapper); err == nil {
+		t.Fatal("accepted traversal version")
+	}
+	for _, private := range []bool{false, true} {
+		for _, arch := range []string{"amd64", "arm64"} {
+			base := filepath.Join(root, arch)
+			launcher := filepath.Join(base, "droid.cmd")
+			if private {
+				launcher = filepath.Join(base, "node_modules", ".bin", "droid.cmd")
+			}
+			cpu := map[string]string{"amd64": "x64-baseline", "arm64": "arm64"}[arch]
+			binary := filepath.Join(base, "node_modules", "@factory", "cli-win32-"+cpu, "bin", "droid.exe")
+			write(binary, "fixture")
+			if got, err := windowsDroidNative(launcher, arch); err != nil || got != binary {
+				t.Fatalf("Droid %s: %s %v", arch, got, err)
+			}
+		}
+	}
+	if _, err := windowsDroidNative(filepath.Join(root, "droid.cmd"), "386"); err == nil {
+		t.Fatal("accepted unsupported architecture")
 	}
 }

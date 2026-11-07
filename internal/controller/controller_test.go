@@ -1278,92 +1278,122 @@ func TestSwitchProjectPreservesPromptAndHistory(t *testing.T) {
 }
 
 func TestHarnessInstallGuardAndFailure(t *testing.T) {
-	c := New(t.TempDir(), model.New(), nil)
-	original := c.State.Settings.CodexPath
-	*c.HarnessFor("codex") = HarnessState{Binary: original, Release: harness.Release{Version: "1.2.3"}}
-	c.InstallHarness()
-	if c.HarnessFor("codex").Installing {
-		t.Fatal("installed without confirmation preview")
-	}
-	c.HarnessFor("codex").Plan = &harness.InstallPlan{Release: harness.Release{Version: "1.2.3"}}
-	c.CheckHarness()
-	if c.HarnessFor("codex").Checking || c.HarnessFor("codex").Plan == nil {
-		t.Fatal("background check replaced a pending confirmation")
-	}
-	c.Running["busy"] = true
-	c.InstallHarness()
-	if c.HarnessFor("codex").Installing {
-		t.Fatal("installed during a turn")
-	}
-	c.Running["busy"] = false
-	c.HarnessFor("codex").Binary = "stale-path"
-	c.InstallHarness()
-	if c.HarnessFor("codex").Installing {
-		t.Fatal("installed stale selection")
-	}
-	c.HarnessFor("codex").Binary = original
-	c.Connection = "Connecting"
-	c.InstallHarness()
-	if c.HarnessFor("codex").Installing {
-		t.Fatal("installed while connecting")
-	}
-	c.Connection = "Disconnected"
-	// Reinspection fails before execution because the installation is different
-	// from the approved empty snapshot (or the explicit path is invalid).
-	c.State.Settings.CodexPath = filepath.Join(t.TempDir(), "missing-codex")
-	c.HarnessFor("codex").Binary = c.State.Settings.CodexPath
-	original = c.State.Settings.CodexPath
-	c.InstallHarness()
-	deadline := time.Now().Add(3 * time.Second)
-	for c.HarnessFor("codex").Installing && time.Now().Before(deadline) {
-		c.Drain()
-		time.Sleep(time.Millisecond)
-	}
-	if c.HarnessFor("codex").Installing || c.HarnessFor("codex").Error == "" {
-		t.Fatal("failure was not published")
-	}
-	if c.State.Settings.CodexPath != original {
-		t.Fatal("failed install changed active path")
-	}
-	entries, err := os.ReadDir(filepath.Join(c.Dir, "tools", "codex"))
-	if (err != nil && !os.IsNotExist(err)) || len(entries) != 0 {
-		t.Fatalf("staging not cleaned: %v %v", entries, err)
-	}
-	if c.HarnessFor("codex").Plan != nil {
-		t.Fatal("confirmation was reusable")
-	}
-	c.HarnessFor("codex").Plan = &harness.InstallPlan{}
-	c.DismissHarnessPlan()
-	c.InstallHarness()
-	if c.HarnessFor("codex").Installing {
-		t.Fatal("dismissed preview could install")
+	for _, driver := range []string{"codex", "pi", "droid"} {
+		t.Run(driver, func(t *testing.T) {
+			c := New(t.TempDir(), model.New(), nil)
+			original := c.State.Settings.AgentPath(driver)
+			*c.HarnessFor(driver) = HarnessState{Binary: original, Release: harness.Release{Version: "1.2.3"}}
+			c.InstallHarness(driver)
+			if c.HarnessFor(driver).Installing {
+				t.Fatal("installed without confirmation preview")
+			}
+			c.HarnessFor(driver).Plan = &harness.InstallPlan{Release: harness.Release{Version: "1.2.3"}}
+			c.CheckHarness(driver)
+			if c.HarnessFor(driver).Checking || c.HarnessFor(driver).Plan == nil {
+				t.Fatal("background check replaced a pending confirmation")
+			}
+			c.Running["busy"] = true
+			c.InstallHarness(driver)
+			if c.HarnessFor(driver).Installing {
+				t.Fatal("installed during a turn")
+			}
+			c.Running["busy"] = false
+			c.HarnessFor(driver).Binary = "stale-path"
+			c.InstallHarness(driver)
+			if c.HarnessFor(driver).Installing {
+				t.Fatal("installed stale selection")
+			}
+			c.HarnessFor(driver).Binary = original
+			c.Connection = "Connecting"
+			c.InstallHarness(driver)
+			if c.HarnessFor(driver).Installing {
+				t.Fatal("installed while connecting")
+			}
+			c.Connection = "Disconnected"
+			other := "codex"
+			if driver == "codex" {
+				other = "pi"
+			}
+			c.HarnessFor(other).Installing = true
+			c.InstallHarness(driver)
+			if c.HarnessFor(driver).Installing {
+				t.Fatal("concurrent harness installation")
+			}
+			c.HarnessFor(other).Installing = false
+			c.HarnessFor(driver).Plan.Driver = other
+			c.InstallHarness(driver)
+			if c.HarnessFor(driver).Installing {
+				t.Fatal("executed another harness plan")
+			}
+			c.HarnessFor(driver).Plan.Driver = driver
+			if driver != "codex" {
+				c.Connection = "Connected"
+			}
+			// Reinspection fails before execution because the installation is different
+			// from the approved empty snapshot (or the explicit path is invalid).
+			c.setHarnessPath(driver, filepath.Join(t.TempDir(), "missing-agent"))
+			c.HarnessFor(driver).Binary = c.State.Settings.AgentPath(driver)
+			original = c.State.Settings.AgentPath(driver)
+			c.InstallHarness(driver)
+			deadline := time.Now().Add(3 * time.Second)
+			for c.HarnessFor(driver).Installing && time.Now().Before(deadline) {
+				c.Drain()
+				time.Sleep(time.Millisecond)
+			}
+			if c.HarnessFor(driver).Installing || c.HarnessFor(driver).Error == "" {
+				t.Fatal("failure was not published")
+			}
+			if c.State.Settings.AgentPath(driver) != original {
+				t.Fatal("failed install changed active path")
+			}
+			if driver != "codex" && c.Connection != "Connected" {
+				t.Fatal("external installation disconnected Codex")
+			}
+			entries, err := os.ReadDir(filepath.Join(c.Dir, "tools", driver))
+			if (err != nil && !os.IsNotExist(err)) || len(entries) != 0 {
+				t.Fatalf("staging not cleaned: %v %v", entries, err)
+			}
+			if c.HarnessFor(driver).Plan != nil {
+				t.Fatal("confirmation was reusable")
+			}
+			c.HarnessFor(driver).Plan = &harness.InstallPlan{}
+			c.DismissHarnessPlan(driver)
+			c.InstallHarness(driver)
+			if c.HarnessFor(driver).Installing {
+				t.Fatal("dismissed preview could install")
+			}
+		})
 	}
 }
 
 func TestHarnessPreviewCancellationAndStaleResult(t *testing.T) {
-	c := New(t.TempDir(), model.New(), nil)
-	c.Connection = "Connected"
-	u := c.HarnessFor("codex")
-	c.State.Settings.CodexPath = filepath.Join(t.TempDir(), "missing-old")
-	c.PrepareHarness("")
-	old := u.planRequest
-	c.DismissHarnessPlan()
-	if u.Preparing || u.Plan != nil || old == u.planRequest || c.Connection != "Connected" {
-		t.Fatal("preview dismissal changed the connection or retained confirmation")
-	}
-	c.State.Settings.CodexPath = filepath.Join(t.TempDir(), "missing-new")
-	c.PrepareHarness("cn")
-	deadline := time.Now().Add(5 * time.Second)
-	for u.Preparing && time.Now().Before(deadline) {
-		c.Drain()
-		time.Sleep(time.Millisecond)
-	}
-	c.Drain()
-	if u.Preparing || u.Plan != nil || u.Error == "" || !strings.Contains(u.Error, "missing-new") || c.Connection != "Connected" {
-		t.Fatalf("stale preview won or probing disconnected: %+v", u)
-	}
-	if entries, err := os.ReadDir(c.Dir); err != nil || len(entries) != 0 {
-		t.Fatalf("preview wrote application data: %v %v", entries, err)
+	for _, driver := range []string{"codex", "pi", "droid"} {
+		t.Run(driver, func(t *testing.T) {
+			c := New(t.TempDir(), model.New(), nil)
+			c.Connection = "Connected"
+			u := c.HarnessFor(driver)
+			c.setHarnessPath(driver, filepath.Join(t.TempDir(), "missing-old"))
+			c.PrepareHarness(driver, "")
+			old := u.planRequest
+			c.DismissHarnessPlan(driver)
+			if u.Preparing || u.Plan != nil || old == u.planRequest || c.Connection != "Connected" {
+				t.Fatal("preview dismissal changed the connection or retained confirmation")
+			}
+			c.setHarnessPath(driver, filepath.Join(t.TempDir(), "missing-new"))
+			c.PrepareHarness(driver, "cn")
+			deadline := time.Now().Add(5 * time.Second)
+			for u.Preparing && time.Now().Before(deadline) {
+				c.Drain()
+				time.Sleep(time.Millisecond)
+			}
+			c.Drain()
+			if u.Preparing || u.Plan != nil || u.Error == "" || !strings.Contains(u.Error, "missing-new") || c.Connection != "Connected" {
+				t.Fatalf("stale preview won or probing disconnected: %+v", u)
+			}
+			if entries, err := os.ReadDir(c.Dir); err != nil || len(entries) != 0 {
+				t.Fatalf("preview wrote application data: %v %v", entries, err)
+			}
+		})
 	}
 }
 

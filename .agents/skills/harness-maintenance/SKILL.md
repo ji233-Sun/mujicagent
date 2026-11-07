@@ -61,12 +61,13 @@ description: 为 MujicAgent 添加或维护 harness、模型发现与收藏、�
 
 ## 安装、认证与跨平台
 
-- 保留已有 CodexPath 与会话格式；新增设置使用向后兼容的默认值。Codex 自动检查默认每天，只查版本，不安装；Pi/Droid 当前由官方 CLI 管理安装与登录。手动操作显示进度、错误、取消及可重试入口；所有状态通过 Controller 队列发布，禁止在渲染中启动网络或进程。
+- 保留已有路径设置与会话格式。三个 Harness 共用安装卡片、确认弹窗和 Controller 生命周期；在 `internal/harness/installers.go` 登记包名、发行渠道、版本解析与协议探针，避免复制 Codex 分支。自动检查默认每天，只查版本，不安装。手动操作显示进度、错误、取消及可重试入口；所有状态通过 Controller 队列发布，禁止在渲染中启动网络或进程。
 - 探测必须沿用连接使用的桌面 PATH 解析，并尊重显式路径。通过统一适配器沿用已确认的 VP/npm/Bun/pnpm/Homebrew 等原安装工具，先预览精确指令再确认执行；不支持、归属不明或冲突时明确提示通过原工具处理，不自动切换托管。只有未安装时才在安装弹窗选择渠道，设置页不常驻渠道选择器。任务运行或连接中禁止更新。
 - Codex 官方渠道采用完整原生发行包，不能只复制 codex 可执行文件：伴随 host、rg 等也需要保留。大陆选择 npm 镜像，在私有 prefix 安装；无 npm 或 Windows 使用镜像平台包，提供免 Node 选择。不要全局安装 Node、修改 PATH/npm 配置或使用 sudo。
 - 托管安装先验证 HTTPS 下载摘要、解包路径、版本及相应协议可用性（Codex 为 app-server），再切换配置路径。使用新目录，失败只清理本次临时目录；旧目录保留供原有进程使用。不要在更新过程中清理用户自定义目录。
-- Windows 单独检查 amd64/arm64、空格/中文路径、PATHEXT、npm .cmd 与 .exe。Codex 已知 npm 布局直接解析原生 exe；Pi 已知 npm 启动器解析为 Node + 包内脚本；Droid 使用原生 exe。npm 更新经 node + npm-cli.js 参数数组执行。不要把用户路径插入 cmd.exe/PowerShell 命令字符串；未知 wrapper 要求显式 exe。更新前释放客户端句柄，新安装使用独立版本目录，避免覆盖运行中的文件。
+- Windows 单独检查 amd64/arm64、空格/中文路径、PATHEXT、npm .cmd 与 .exe。Codex 已知 npm 布局直接解析原生 exe；Pi 官方托管及 npm 启动器解析为 Node + 包内脚本，支持 `dist/bundle/cli.js` 和旧入口；Droid npm 启动器解析平台包 exe。同时覆盖私有 prefix 下的 `.bin`。npm 更新经 node + npm-cli.js 参数数组执行。不要把用户路径插入 cmd.exe/PowerShell 命令字符串；未知 wrapper 要求显式 exe。更新前释放目标客户端句柄，新安装使用独立版本目录，避免覆盖运行中的文件。
 - 认证由 harness 管理。Codex 的 account:null 不等于未登录：检查 requiresOpenaiAuth；API key、第三方 base_url 与 env_key 配置由原有 Codex 配置和进程环境继承，不复制密钥到应用状态、日志或 UI。配置状态不代表凭据已验证。
+- Pi/Droid 提供统一位置的登录指南入口，账号详情明确显示登录状态未验证。CLI 可用、安装成功和模型目录可读均不能标记为已登录。
 - account/read 仅对 -32603 且 workspace routing discovery timed out 做最多三次、500ms/1s 退避；独立请求预算、可取消。不重试认证错误，不重放 turn/start、登录或其他写请求。
 
 ## 按变更范围验证
@@ -75,6 +76,6 @@ description: 为 MujicAgent 添加或维护 harness、模型发现与收藏、�
 
 布局直接设置场景状态并生成中英文 CPU 离屏 PNG，检查正常/加载/失败模型目录、无默认或手填入口、无设置页 Models、收藏图标与侧栏对齐。截图场景不通过模拟点击切换；单独的交互回归可验证收藏不触发选中。按交付技能选择相关 Go 测试、并发 race、MyGo vet、生成与 i18n 检查及 Windows 构建。
 
-`MUJICAGENT_MODEL_DISCOVERY_TEST=1` 是本机 CLI 只读目录探测；`MUJICAGENT_INSTALL_TEST=official` 或 `cn` 是写入临时目录的原生包下载测试，按需显式开启。它们不是实际推理验证；真实发送会产生用量，遵循交付技能的授权边界。CPU 截图和交叉编译不能替代 GPU/原生窗口或 Windows 原生执行证据。
+`MUJICAGENT_MODEL_DISCOVERY_TEST=1` 是本机 CLI 只读目录探测；`MUJICAGENT_INSTALL_DRIVER=pi|droid|codex` 配合 `MUJICAGENT_INSTALL_TEST=official|cn|npm|cn-npm` 是写入临时目录的安装测试（仅选择对应 Harness 支持的渠道），按需显式开启。它们不是实际推理验证；真实发送会产生用量，遵循交付技能的授权边界。CPU 截图和交叉编译不能替代 GPU/原生窗口或 Windows 原生执行证据。
 
 协议与标识参考：[Pi RPC](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/rpc-commands.md)、[Pi 品牌资源](https://pi.dev/press-kit)、[Droid SDK](https://docs.factory.com/sdk/typescript)、[Factory 官网](https://factory.com/)。新增接入时查对应 Harness 的官方来源，现有例子不是新 CLI 的协议保证。

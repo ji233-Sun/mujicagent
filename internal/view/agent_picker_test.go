@@ -167,187 +167,254 @@ func TestHarnessInstallScreenshots(t *testing.T) {
 		"preparing", "preview-error", "installing", "install-error", "cancelled", "running",
 		"bun-confirm", "pnpm-confirm", "unsupported-manager", "manager-unavailable", "manager-unverified", "manager-ambiguous",
 	}
-	for _, lang := range []string{"zh-Hans", "en"} {
-		for _, scene := range scenes {
-			t.Run(lang+"/"+scene, func(t *testing.T) {
-				s := model.New()
-				s.Settings.Language = lang
-				s.Settings.HarnessSource = "cn-native" // Legacy global selection must not drive updates.
-				thread := s.AddThread("", "")
-				c := controller.New(t.TempDir(), s, nil)
-				c.Connection = "Connected"
-				u := c.HarnessFor("codex")
-				u.Binary = s.Settings.CodexPath
-				u.CheckedAt = time.Now()
-				u.Installation = harness.Installation{Path: "/Users/demo/.vite-plus/bin/codex", Version: "0.167.0", Method: "vp", Prefix: "/Users/demo/.vite-plus/bin/vp"}
-				u.Release = harness.Release{Version: "0.168.0", URL: "https://github.com/openai/codex/releases/download/rust-v0.168.0/codex-package-aarch64-apple-darwin.tar.gz", Digest: "sha256:" + strings.Repeat("a1", 32), Entry: "bin/codex"}
-				v := New(c)
-				v.Settings = true
-				*v.openState("harness-codex") = true
-				fresh := strings.HasPrefix(scene, "install-") && scene != "install-error"
-				if fresh || scene == "missing" {
-					u.Installation = harness.Installation{}
-					u.Missing = true
-					c.Connection = "Disconnected"
+	for _, driver := range []string{"codex", "pi", "droid"} {
+		for _, lang := range []string{"zh-Hans", "en"} {
+			for _, scene := range append(slices.Clone(scenes), "native-confirm", "install-official-npm", "app-managed", "install-runtime-missing", "install-mirror-error") {
+				if driver == "codex" && (scene == "native-confirm" || scene == "install-official-npm" || scene == "app-managed" || scene == "install-runtime-missing" || scene == "install-mirror-error") {
+					continue
 				}
-				switch scene {
-				case "vp-current":
-					u.Release.Version = u.Installation.Version
-				case "npm-confirm":
-					u.Installation.Method = "npm"
-					u.Installation.Path = "/usr/local/bin/codex"
-					u.Installation.Prefix = "/usr/local"
-				case "bun-confirm", "pnpm-confirm":
-					id := strings.TrimSuffix(scene, "-confirm")
-					u.Installation.Method = id
-					u.Installation.Path = "/Users/demo/." + id + "/bin/codex"
-					u.Installation.Manager = "/Users/demo/." + id + "/bin/" + id
-					u.Installation.PackageRoot = "/Users/demo/." + id + "/global/node_modules"
-				case "unsupported-manager":
-					u.Installation.Method = "vlt"
-					u.Installation.UpdateIssue = "unsupported"
-					u.Installation.Path = "/Users/demo/.vlt/bin/codex"
-				case "manager-unavailable", "manager-unverified":
-					u.Installation.Method = "pnpm"
-					u.Installation.UpdateIssue = strings.TrimPrefix(scene, "manager-")
-					u.Installation.Path = "/Users/demo/.local/share/pnpm/codex"
-				case "manager-ambiguous":
-					u.Installation.Method = "ambiguous"
-					u.Installation.UpdateIssue = "ambiguous"
-					u.Release = harness.Release{} // Warning must survive a failed version lookup.
-				case "brew-confirm":
-					u.Installation.Method = "brew"
-					u.Installation.Path = "/opt/homebrew/bin/codex"
-					u.Installation.Prefix = "/opt/homebrew"
-				case "unknown":
-					u.Installation.Method = "custom"
-					u.Installation.Path = "/opt/custom/codex"
-				case "running":
-					c.Running[thread.ID] = true
-				case "installing":
-					u.Installing = true
-					c.Connection = "Disconnected"
-				case "install-error":
-					u.Error = "installation failed: exit status 1"
-					c.Connection = "Disconnected"
+				if driver != "codex" && scene == "install-npm-fallback" {
+					continue
 				}
-				stage := "/Users/demo/Library/Application Support/MujicAgent/tools/codex/release-0.168.0-preview"
-				if strings.HasPrefix(scene, "managed-") {
-					u.Installation.Method = "managed"
-					u.Installation.Path = strings.Replace(stage, "0.168.0-preview", "0.167.0-old", 1) + "/bin/codex"
+				if driver == "pi" && (scene == "brew-confirm" || scene == "managed-mirror-confirm" || scene == "install-mirror" || scene == "app-managed") {
+					continue
 				}
-				if strings.HasSuffix(scene, "-confirm") || fresh || scene == "preparing" || scene == "preview-error" {
-					v.harnessDialog = true
-					p := &harness.InstallPlan{Current: u.Installation, Release: u.Release, Path: u.Installation.Path}
-					u.Plan = p
-					switch u.Installation.Method {
-					case "vp":
-						p.Command, p.Args = u.Installation.Prefix, []string{"update", "--global", "@openai/codex@0.168.0"}
-					case "npm":
-						p.Command = "/usr/local/bin/npm"
-						p.Args = []string{"install", "--global", "--prefix", "/usr/local", "@openai/codex@0.168.0", "--ignore-scripts", "--no-audit", "--no-fund"}
-					case "brew":
-						p.Command, p.Args = "/opt/homebrew/bin/brew", []string{"upgrade", "--cask", "codex"}
-					case "bun", "pnpm":
-						p.Command, p.Args = u.Installation.Manager, []string{"add", "--global", "@openai/codex@0.168.0", "--ignore-scripts"}
-					default:
-						p.Stage, p.Path = stage, stage+"/bin/codex"
-						if strings.Contains(scene, "mirror") || strings.Contains(scene, "npm") {
-							p.Source = "native-mirror"
-							p.Release.URL = "https://registry.npmmirror.com/@openai/codex/-/codex-0.168.0-darwin-arm64.tgz"
-							p.Release.Digest = "sha512-" + strings.Repeat("aB12", 22)
-							p.Path = stage + "/package/vendor/aarch64-apple-darwin/bin/codex"
-							v.harnessSource = "native-mirror"
+				t.Run(lang+"/"+driver+"/"+scene, func(t *testing.T) {
+					s := model.New()
+					s.Settings.Language = lang
+					s.Settings.HarnessSource = "cn-native" // Legacy global selection must not drive updates.
+					thread := s.AddThread("", "")
+					c := controller.New(t.TempDir(), s, nil)
+					c.Connection = "Connected"
+					pkg := "@openai/codex"
+					if driver == "pi" {
+						pkg = "@earendil-works/pi-coding-agent"
+					}
+					if driver == "droid" {
+						pkg = "@factory/cli"
+					}
+					u := c.HarnessFor(driver)
+					u.Binary = s.Settings.AgentPath(driver)
+					u.CheckedAt = time.Now()
+					u.Installation = harness.Installation{Driver: driver, Path: "/Users/demo/.vite-plus/bin/" + driver, Version: "0.167.0", Method: "vp", Prefix: "/Users/demo/.vite-plus/bin/vp"}
+					u.Release = harness.Release{Version: "0.168.0", URL: "https://github.com/openai/codex/releases/download/rust-v0.168.0/codex-package-aarch64-apple-darwin.tar.gz", Digest: "sha256:" + strings.Repeat("a1", 32), Entry: "bin/codex"}
+					v := New(c)
+					v.agentSection, v.harnessTarget = driver, driver
+					v.Settings = true
+					*v.openState("harness-" + driver) = true
+					fresh := strings.HasPrefix(scene, "install-") && scene != "install-error"
+					if fresh || scene == "missing" {
+						u.Installation = harness.Installation{}
+						u.Missing = true
+						c.Connection = "Disconnected"
+					}
+					switch scene {
+					case "native-confirm":
+						u.Installation.Method = "native"
+						u.Installation.Path = "/Users/demo/.local/bin/" + driver
+					case "app-managed":
+						u.Installation.Method, u.Installation.UpdateIssue = "Factory.app", "unsupported"
+						u.Installation.Path = "/Applications/Factory.app/Contents/Resources/bin/droid"
+					case "vp-current":
+						u.Release.Version = u.Installation.Version
+					case "npm-confirm":
+						u.Installation.Method = "npm"
+						u.Installation.Path = "/usr/local/bin/" + driver
+						u.Installation.Prefix = "/usr/local"
+					case "bun-confirm", "pnpm-confirm":
+						id := strings.TrimSuffix(scene, "-confirm")
+						u.Installation.Method = id
+						u.Installation.Path = "/Users/demo/." + id + "/bin/" + driver
+						u.Installation.Manager = "/Users/demo/." + id + "/bin/" + id
+						u.Installation.PackageRoot = "/Users/demo/." + id + "/global/node_modules"
+					case "unsupported-manager":
+						u.Installation.Method = "vlt"
+						u.Installation.UpdateIssue = "unsupported"
+						u.Installation.Path = "/Users/demo/.vlt/bin/" + driver
+					case "manager-unavailable", "manager-unverified":
+						u.Installation.Method = "pnpm"
+						u.Installation.UpdateIssue = strings.TrimPrefix(scene, "manager-")
+						u.Installation.Path = "/Users/demo/.local/share/pnpm/" + driver
+					case "manager-ambiguous":
+						u.Installation.Method = "ambiguous"
+						u.Installation.UpdateIssue = "ambiguous"
+						u.Release = harness.Release{} // Warning must survive a failed version lookup.
+					case "brew-confirm":
+						u.Installation.Method = "brew"
+						u.Installation.Path = "/opt/homebrew/bin/" + driver
+						u.Installation.Prefix = "/opt/homebrew"
+					case "unknown":
+						u.Installation.Method = "custom"
+						u.Installation.Path = "/opt/custom/" + driver
+					case "running":
+						c.Running[thread.ID] = true
+					case "installing":
+						u.Installing = true
+						c.Connection = "Disconnected"
+					case "install-error":
+						u.Error = "installation failed: exit status 1"
+						c.Connection = "Disconnected"
+					}
+					stage := "/Users/demo/Library/Application Support/MujicAgent/tools/" + driver + "/release-0.168.0-preview"
+					if strings.HasPrefix(scene, "managed-") {
+						u.Installation.Method = "managed"
+						u.Installation.Path = strings.Replace(stage, "0.168.0-preview", "0.167.0-old", 1) + "/bin/" + driver
+					}
+					if strings.HasSuffix(scene, "-confirm") || fresh || scene == "preparing" || scene == "preview-error" {
+						v.harnessDialog = true
+						p := &harness.InstallPlan{Driver: driver, Current: u.Installation, Release: u.Release, Path: u.Installation.Path}
+						u.Plan = p
+						switch u.Installation.Method {
+						case "native":
+							p.Command = u.Installation.Path
+							p.Args = []string{"update", "--self", "--no-approve"}
+							if driver == "droid" {
+								p.Args = []string{"update", "--version", "0.168.0"}
+							}
+						case "vp":
+							p.Command, p.Args = u.Installation.Prefix, []string{"update", "--global", pkg + "@0.168.0"}
+						case "npm":
+							p.Command = "/usr/local/bin/npm"
+							p.Args = []string{"install", "--global", "--prefix", "/usr/local", pkg + "@0.168.0", "--ignore-scripts", "--no-audit", "--no-fund"}
+						case "brew":
+							p.Command, p.Args = "/opt/homebrew/bin/brew", []string{"upgrade", "--cask", driver}
+						case "bun", "pnpm":
+							p.Command, p.Args = u.Installation.Manager, []string{"add", "--global", pkg + "@0.168.0", "--ignore-scripts"}
+						default:
+							p.Stage, p.Path = stage, stage+"/bin/codex"
+							if strings.Contains(scene, "mirror") || strings.Contains(scene, "npm") {
+								p.Source = "native-mirror"
+								p.Release.URL = "https://registry.npmmirror.com/@openai/codex/-/codex-0.168.0-darwin-arm64.tgz"
+								p.Release.Digest = "sha512-" + strings.Repeat("aB12", 22)
+								p.Path = stage + "/package/vendor/aarch64-apple-darwin/bin/codex"
+								v.harnessSource = "native-mirror"
+							}
+							if strings.Contains(scene, "npm") {
+								v.harnessSource = "cn"
+								if scene != "install-npm-fallback" {
+									p.Source = "cn"
+									p.Command = "/usr/local/bin/npm"
+									p.Args = []string{"install", "--prefix", stage, pkg + "@0.168.0", "--registry", "https://registry.npmmirror.com", "--ignore-scripts", "--no-audit", "--no-fund"}
+									p.Path = stage + "/node_modules/.bin/" + driver
+								}
+							}
 						}
-						if strings.Contains(scene, "npm") {
-							v.harnessSource = "cn"
-							if scene != "install-npm-fallback" {
-								p.Source = "cn"
-								p.Command = "/usr/local/bin/npm"
-								p.Args = []string{"install", "--prefix", stage, "@openai/codex@0.168.0", "--registry", "https://registry.npmmirror.com", "--ignore-scripts", "--no-audit", "--no-fund"}
-								p.Path = stage + "/node_modules/.bin/codex"
+						if scene == "install-official-npm" {
+							v.harnessSource, p.Source = "npm", "npm"
+							p.Command = "/usr/local/bin/npm"
+							p.Args = []string{"install", "--prefix", stage, pkg + "@0.168.0", "--registry", "https://registry.npmjs.org", "--ignore-scripts"}
+							p.Path = stage + "/node_modules/.bin/" + driver
+						}
+						if scene == "install-runtime-missing" {
+							v.harnessSource, u.Plan = "npm", nil
+							u.Error = driver + " npm installation requires Node.js; select the official native package for installation without Node.js"
+						} else if scene == "install-mirror-error" {
+							v.harnessSource, u.Plan = "cn", nil
+							u.Error = "download HTTP 404"
+						} else if scene == "preparing" {
+							u.Plan, u.Preparing = nil, true
+						} else if scene == "preview-error" {
+							u.Plan = nil
+							u.Error = "download HTTP 503"
+						}
+					}
+					if p := u.Plan; p != nil && driver != "codex" && p.Command == "" {
+						if driver == "pi" {
+							p.Release.URL = "https://github.com/earendil-works/pi/releases/download/v0.168.0/pi-darwin-arm64.tar.gz"
+							p.Path = stage + "/pi/pi"
+						} else {
+							p.Release.URL = "https://downloads.factory.ai/factory-cli/releases/0.168.0/darwin/arm64/droid"
+							p.Path = stage + "/droid"
+							if p.Source == "native-mirror" {
+								p.Release.URL = "https://registry.npmmirror.com/@factory/cli-darwin-arm64/-/cli-darwin-arm64-0.168.0.tgz"
+								p.Path = stage + "/package/bin/droid"
 							}
 						}
 					}
-					if scene == "preparing" {
-						u.Plan, u.Preparing = nil, true
-					} else if scene == "preview-error" {
-						u.Plan = nil
-						u.Error = "download HTTP 503"
+					tt := ui.NewTester(v.Render, 1060, 720)
+					tt.Frame()
+					tt.Advance(time.Second)
+					tt.Frame()
+					tx := v.texts()
+					if tt.HasText(tx.HarnessSource()) || tt.HasText(tx.HarnessManagedInstall()) {
+						t.Fatal("legacy channel or managed migration control remains")
 					}
-				}
-				tt := ui.NewTester(v.Render, 1060, 720)
-				tt.Frame()
-				tt.Advance(time.Second)
-				tt.Frame()
-				tx := v.texts()
-				if tt.HasText(tx.HarnessSource()) || tt.HasText(tx.HarnessManagedInstall()) {
-					t.Fatal("legacy channel or managed migration control remains")
-				}
-				for _, label := range []string{tx.HarnessOfficial(), tx.HarnessCN(), tx.HarnessNativeMirror()} {
-					if tt.HasText(label) != fresh {
-						t.Fatalf("install choice visibility: %s, fresh=%v", label, fresh)
-					}
-				}
-				if v.harnessDialog {
-					label := tx.HarnessConfirmUpdate()
-					if fresh {
-						label = tx.HarnessConfirmInstall()
-					}
-					b, ok := tt.Find(label)
-					if !ok || b.X < 0 || b.Y < 0 || b.X+b.W > 1060 || b.Y+b.H > 720 {
-						t.Fatalf("confirmation clipped: %+v", b)
-					}
-					if u.Plan != nil {
-						expected := u.Plan.CommandPreview()
-						if expected == "" {
-							expected = tx.HarnessNativeAction()
-						}
-						if !tt.HasText(expected) || !tt.HasText(u.Plan.Path) {
-							t.Fatal("preview omitted command/action or path")
+					for _, option := range []settingOption{{"", tx.HarnessOfficial()}, {"npm", tx.HarnessNpmOfficial()}, {"cn", tx.HarnessCN()}, {"native-mirror", tx.HarnessNativeMirror()}} {
+						want := fresh && slices.Contains(harness.InstallSources(driver), option.value)
+						if tt.HasText(option.label) != want {
+							t.Fatalf("install choice visibility: %s, want=%v", option.label, want)
 						}
 					}
-				}
-				if scene == "unknown" && !tt.HasText(tx.HarnessUnknownManager()) {
-					t.Fatal("unknown manager missing guidance")
-				}
-				if u.Installation.Path != "" && !u.Installation.CanUpdate() {
-					if slices.Contains(tt.Texts(), tx.HarnessUpdate()) {
-						t.Fatal("unsupported installation offers an update")
+
+					if v.harnessDialog {
+						title := tx.HarnessUpdatePreview(agentName(driver))
+						if fresh {
+							title = tx.HarnessInstallPreview(agentName(driver))
+						}
+						if !tt.HasText(title) {
+							t.Fatal("dialog does not identify the selected harness")
+						}
+						label := tx.HarnessConfirmUpdate()
+						if fresh {
+							label = tx.HarnessConfirmInstall()
+						}
+						b, ok := tt.Find(label)
+						if !ok || b.X < 0 || b.Y < 0 || b.X+b.W > 1060 || b.Y+b.H > 720 {
+							t.Fatalf("confirmation clipped: %+v", b)
+						}
+						if u.Plan != nil {
+							expected := u.Plan.CommandPreview()
+							if expected == "" {
+								expected = tx.HarnessNativeAction()
+							}
+							if !tt.HasText(expected) || !tt.HasText(u.Plan.Path) {
+								t.Fatal("preview omitted command/action or path")
+							}
+						}
 					}
-					message := tx.HarnessUnsupportedManager("vlt")
-					switch scene {
-					case "unknown":
-						message = tx.HarnessUnknownManager()
-					case "manager-unavailable":
-						message = tx.HarnessManagerUnavailable("pnpm")
-					case "manager-unverified":
-						message = tx.HarnessManagerUnverified("pnpm")
-					case "manager-ambiguous":
-						message = tx.HarnessManagerAmbiguous()
+					if scene == "unknown" && !tt.HasText(tx.HarnessUnknownManager()) {
+						t.Fatal("unknown manager missing guidance")
 					}
-					b, ok := tt.Find(message)
-					if !ok || b.X+b.W > 1060 || b.Y+b.H > 720 {
-						t.Fatalf("unsupported warning missing or clipped: %+v", b)
+					if u.Installation.Path != "" && !u.Installation.CanUpdate() {
+						if slices.Contains(tt.Texts(), tx.HarnessUpdate()) {
+							t.Fatal("unsupported installation offers an update")
+						}
+						message := tx.HarnessUnsupportedManager("vlt")
+						switch scene {
+						case "app-managed":
+							message = tx.HarnessUnsupportedManager("Factory.app")
+						case "unknown":
+							message = tx.HarnessUnknownManager()
+						case "manager-unavailable":
+							message = tx.HarnessManagerUnavailable("pnpm")
+						case "manager-unverified":
+							message = tx.HarnessManagerUnverified("pnpm")
+						case "manager-ambiguous":
+							message = tx.HarnessManagerAmbiguous()
+						}
+						b, ok := tt.Find(message)
+						if !ok || b.X+b.W > 1060 || b.Y+b.H > 720 {
+							t.Fatalf("unsupported warning missing or clipped: %+v", b)
+						}
 					}
-				}
-				if scene == "missing" && !tt.HasText(tx.HarnessInstall()) {
-					t.Fatal("missing install entry")
-				}
-				if output := os.Getenv("MUJICAGENT_INSTALL_SCREENSHOTS"); output != "" {
-					if err := os.MkdirAll(output, 0700); err != nil {
-						t.Fatal(err)
+					if scene == "missing" && !tt.HasText(tx.HarnessInstall()) {
+						t.Fatal("missing install entry")
 					}
-					f, err := os.Create(filepath.Join(output, lang+"-"+scene+".png"))
-					if err != nil {
-						t.Fatal(err)
+					if output := os.Getenv("MUJICAGENT_INSTALL_SCREENSHOTS"); output != "" {
+						if err := os.MkdirAll(output, 0700); err != nil {
+							t.Fatal(err)
+						}
+						f, err := os.Create(filepath.Join(output, lang+"-"+driver+"-"+scene+".png"))
+						if err != nil {
+							t.Fatal(err)
+						}
+						defer f.Close()
+						if err := png.Encode(f, tt.Image()); err != nil {
+							t.Fatal(err)
+						}
 					}
-					defer f.Close()
-					if err := png.Encode(f, tt.Image()); err != nil {
-						t.Fatal(err)
-					}
-				}
-			})
+				})
+			}
 		}
 	}
 }

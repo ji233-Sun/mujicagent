@@ -2,6 +2,7 @@ package harness
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"bytes"
 	"compress/gzip"
 	"context"
@@ -48,15 +49,15 @@ func TestLocalManagerPreviewAndExecution(t *testing.T) {
 			if err := os.Symlink(managerPath, path); err != nil {
 				t.Fatal(err)
 			}
-			current := Installation{Path: path, Version: "0.167.0", Method: method, Prefix: root}
+			current := Installation{Driver: "codex", Path: path, Version: "0.167.0", Method: method, Prefix: root}
 			if method == "vp" {
 				current.Prefix = managerPath
-				inspected, err := Inspect(context.Background(), path, filepath.Join(root, "managed"))
+				inspected, err := Inspect(context.Background(), "codex", path, filepath.Join(root, "managed"))
 				if err != nil || inspected != current {
 					t.Fatalf("VP launcher: %+v %v", inspected, err)
 				}
 			}
-			plan, err := PrepareInstall(context.Background(), filepath.Join(root, "managed"), "", Release{Version: "0.168.0"}, current)
+			plan, err := PrepareInstall(context.Background(), "codex", filepath.Join(root, "managed"), "", Release{Version: "0.168.0"}, current)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -87,12 +88,86 @@ func TestLocalManagerPreviewAndExecution(t *testing.T) {
 	}
 }
 
+func TestNativeInstallerOwnership(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "bin", "pi")
+	if err := os.MkdirAll(filepath.Join(root, "install"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	marker, _ := json.Marshal(map[string]any{"kind": "pi-managed-install", "layout": "releases-v1", "schemaVersion": 1, "entrypoint": map[string]string{"path": path}})
+	if err := os.WriteFile(filepath.Join(root, "install", "managed-install.json"), marker, 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ driver, path, method string }{
+		{"pi", path, "native"},
+		{"pi", filepath.Join(root, "bin", "other-pi"), "custom"},
+		{"droid", filepath.FromSlash("/Applications/Factory.app/Contents/Resources/bin/droid"), "Factory.app"},
+		{"pi", filepath.FromSlash("/nix/store/hash-pi/bin/pi"), "nix"},
+	} {
+		i := inspectNative(context.Background(), Installation{Driver: tc.driver, Path: tc.path, Method: "custom"}, tc.path)
+		if i.Method != tc.method || i.CanUpdate() != (tc.method == "native") {
+			t.Fatalf("ownership: %+v", i)
+		}
+	}
+	for _, driver := range []string{"pi", "droid"} {
+		command, args, err := managerAdapters["native"].update(Installation{Driver: driver, Path: path}, "1.6.0")
+		want := []string{"update", "--self", "--no-approve"}
+		if driver == "droid" {
+			want = []string{"update", "--version", "1.6.0"}
+		}
+		if err != nil || command != path || !slices.Equal(args, want) {
+			t.Fatalf("native updater %s: %s %v %v", driver, command, args, err)
+		}
+	}
+}
+
+func TestPiZipExtraction(t *testing.T) {
+	for _, name := range []string{"pi/pi.exe", "../escape", "/absolute", `pi\..\escape`, "C:/escape", "link"} {
+		t.Run(name, func(t *testing.T) {
+			var archive bytes.Buffer
+			z := zip.NewWriter(&archive)
+			header := &zip.FileHeader{Name: name, Method: zip.Deflate}
+			header.SetMode(0700)
+			if name == "link" {
+				header.SetMode(os.ModeSymlink | 0700)
+			}
+			w, err := z.CreateHeader(header)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := w.Write([]byte("fixture")); err != nil {
+				t.Fatal(err)
+			}
+			if err := z.Close(); err != nil {
+				t.Fatal(err)
+			}
+			root := t.TempDir()
+			err = extractZip(bytes.NewReader(archive.Bytes()), int64(archive.Len()), root)
+			if (err == nil) != (name == "pi/pi.exe") {
+				t.Fatalf("unsafe ZIP acceptance: %v", err)
+			}
+			if err == nil {
+				data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(name)))
+				if err != nil || string(data) != "fixture" {
+					t.Fatal("ZIP executable missing", err)
+				}
+			}
+		})
+	}
+}
+
 func TestInstallSourcePolicy(t *testing.T) {
+	for _, d := range Drivers {
+		a, ok := installerAdapters[d.ID]
+		if !ok || a.latest == nil || a.packageName == "" || len(a.helpArgs) == 0 || len(a.sources) == 0 {
+			t.Fatalf("%s is missing an installation contract", d.ID)
+		}
+	}
 	root := t.TempDir()
 	release := Release{Version: "0.168.0", URL: "https://example.test/codex.tar.gz", Digest: "sha256:" + strings.Repeat("0", 64), Entry: "bin/codex"}
 	for _, source := range []string{"", "native-mirror"} {
-		current := Installation{Path: filepath.Join(root, "old", "bin", "codex"), Method: "managed", Source: source}
-		p, err := PrepareInstall(context.Background(), root, "cn", release, current)
+		current := Installation{Driver: "codex", Path: filepath.Join(root, "old", "bin", "codex"), Method: "managed", Source: source}
+		p, err := PrepareInstall(context.Background(), "codex", root, "cn", release, current)
 		if err != nil || p.Source != source || p.Command != "" || p.Stage == "" {
 			t.Fatalf("changed managed source: %+v %v", p, err)
 		}
@@ -108,10 +183,10 @@ func TestInstallSourcePolicy(t *testing.T) {
 			t.Fatal("failed stage retained")
 		}
 	}
-	if _, err := PrepareInstall(context.Background(), root, "", release, Installation{Path: "/custom/codex", Method: "custom"}); err == nil {
+	if _, err := PrepareInstall(context.Background(), "codex", root, "", release, Installation{Path: "/custom/codex", Method: "custom"}); err == nil {
 		t.Fatal("unknown install silently migrated")
 	}
-	if _, err := PrepareInstall(context.Background(), root, "bad", release, Installation{}); err == nil {
+	if _, err := PrepareInstall(context.Background(), "codex", root, "bad", release, Installation{}); err == nil {
 		t.Fatal("accepted unknown source")
 	}
 }
@@ -135,7 +210,7 @@ func TestManagedSourceInspection(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(stage, "source.json"), data, 0600); err != nil {
 			t.Fatal(err)
 		}
-		current, err := Inspect(context.Background(), path, root)
+		current, err := Inspect(context.Background(), "codex", path, root)
 		if err != nil || current.Method != "managed" || current.Source != source {
 			t.Fatal(current, err)
 		}
@@ -159,7 +234,7 @@ func TestManagedNpmExecutionPreservesSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	current, err := Inspect(context.Background(), path, filepath.Dir(stage))
+	current, err := Inspect(context.Background(), "codex", path, filepath.Dir(stage))
 	if err != nil || current.Method != "managed" || current.Source != "cn" {
 		t.Fatal(current, err)
 	}
@@ -196,20 +271,41 @@ func TestWindowsNpmRuntimeOutsideGlobalPrefix(t *testing.T) {
 	}
 }
 
+func TestInstalledHarnessSource(t *testing.T) {
+	driver := os.Getenv("MUJICAGENT_HARNESS_INSPECT_TEST")
+	if driver == "" {
+		t.Skip("explicit read-only local inspection")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	current, err := Inspect(ctx, driver, driver, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("%s %s: source=%s, update=%v", driver, current.Version, current.Method, current.CanUpdate())
+	if current.CanUpdate() {
+		p, err := PrepareInstall(ctx, driver, t.TempDir(), UpdateSource(current), Release{Version: current.Version}, current)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Log(p.CommandPreview())
+	}
+}
+
 func TestInstalledCodexManager(t *testing.T) {
 	if os.Getenv("MUJICAGENT_CODEX_INSPECT_TEST") != "1" {
 		t.Skip("explicit read-only local inspection")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	current, err := Inspect(ctx, "codex", t.TempDir())
+	current, err := Inspect(ctx, "codex", "codex", t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if current.Method != "vp" {
 		t.Fatalf("expected local VP installation: %+v", current)
 	}
-	plan, err := PrepareInstall(ctx, t.TempDir(), "", Release{Version: current.Version}, current)
+	plan, err := PrepareInstall(ctx, "codex", t.TempDir(), "", Release{Version: current.Version}, current)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -281,6 +377,10 @@ func TestExtractPreservesCompanionsAndRejectsUnsafePaths(t *testing.T) {
 
 // Downloads only to a temporary directory; never changes the existing installation.
 func TestDownloadNativePackage(t *testing.T) {
+	driver := os.Getenv("MUJICAGENT_INSTALL_DRIVER")
+	if driver == "" {
+		driver = "codex"
+	}
 	source := os.Getenv("MUJICAGENT_INSTALL_TEST")
 	if source == "" {
 		t.Skip("explicit download test only")
@@ -288,10 +388,13 @@ func TestDownloadNativePackage(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Minute)
 	defer cancel()
 	lookupSource := source
+	if source == "cn" && driver == "droid" {
+		lookupSource = "native-mirror"
+	}
 	if source == "cn-npm" {
 		lookupSource = "cn"
 	}
-	release, err := Latest(ctx, lookupSource)
+	release, err := Latest(ctx, driver, lookupSource)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -302,7 +405,7 @@ func TestDownloadNativePackage(t *testing.T) {
 	if source == "cn" {
 		installSource = "native-mirror"
 	}
-	path, err := Install(ctx, t.TempDir(), installSource, release, Installation{})
+	path, err := Install(ctx, driver, t.TempDir(), installSource, release, Installation{})
 	if err != nil {
 		t.Fatal(err)
 	}

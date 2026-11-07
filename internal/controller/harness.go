@@ -41,7 +41,9 @@ func (c *Controller) StartHarnessUpdates() {
 			case <-timer.C:
 				c.post(func() {
 					if !c.State.Settings.DisableHarnessAutoCheck {
-						c.CheckHarness()
+						for _, d := range harness.Drivers {
+							c.CheckHarness(d.ID)
+						}
 					}
 				})
 				timer.Reset(24 * time.Hour)
@@ -49,38 +51,41 @@ func (c *Controller) StartHarnessUpdates() {
 		}
 	}()
 }
-func (c *Controller) CheckHarness() {
-	u := c.HarnessFor("codex")
+func (c *Controller) CheckHarness(driver string) {
+	if len(harness.InstallSources(driver)) == 0 {
+		return
+	}
+	u := c.HarnessFor(driver)
 	if u.Checking || u.Installing || u.Preparing || u.Plan != nil {
 		return
 	}
-	binary := c.State.Settings.CodexPath
+	binary := c.State.Settings.AgentPath(driver)
 	u.Checking, u.Error = true, ""
 	u.Plan = nil
 	u.Release = harness.Release{}
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	u.cancel = cancel
-	root := filepath.Join(c.Dir, "tools", "codex")
+	root := filepath.Join(c.Dir, "tools", driver)
 	go func() {
 		defer cancel()
-		current, err := harness.Inspect(ctx, binary, root)
-		missing := errors.Is(err, exec.ErrNotFound) && binary == "codex"
+		current, err := harness.Inspect(ctx, driver, binary, root)
+		missing := errors.Is(err, exec.ErrNotFound) && binary == driver
 		// Only a missing default executable is a fresh install. Invalid custom paths stay visible as errors.
 		if missing {
 			err = nil
 		}
 		var release harness.Release
 		if err == nil && !missing {
-			lookupSource := current.Source
-			if lookupSource == "native-mirror" {
+			lookupSource := harness.UpdateSource(current)
+			if driver == "codex" && lookupSource == "native-mirror" {
 				lookupSource = "cn"
 			}
-			release, err = harness.Latest(ctx, lookupSource)
+			release, err = harness.Latest(ctx, driver, lookupSource)
 		}
 		c.post(func() {
 			u.Checking = false
 			u.cancel = nil
-			if binary != c.State.Settings.CodexPath {
+			if binary != c.State.Settings.AgentPath(driver) {
 				return
 			}
 			u.Installation, u.Release, u.Binary, u.Source = current, release, binary, current.Source
@@ -94,22 +99,25 @@ func (c *Controller) CheckHarness() {
 }
 
 // PrepareHarness only probes and resolves a plan. It never installs or disconnects.
-func (c *Controller) PrepareHarness(source string) {
-	u := c.HarnessFor("codex")
-	if u.Installing || u.Checking || c.AnyRunning() || c.Connection == "Connecting" {
+func (c *Controller) PrepareHarness(driver, source string) {
+	if len(harness.InstallSources(driver)) == 0 {
 		return
 	}
-	c.DismissHarnessPlan()
+	u := c.HarnessFor(driver)
+	if c.HarnessInstalling() || u.Checking || c.AnyRunning() || c.Connection == "Connecting" {
+		return
+	}
+	c.DismissHarnessPlan(driver)
 	u.Preparing, u.Error = true, ""
 	request := u.planRequest
-	binary := c.State.Settings.CodexPath
+	binary := c.State.Settings.AgentPath(driver)
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	u.cancel = cancel
-	root := filepath.Join(c.Dir, "tools", "codex")
+	root := filepath.Join(c.Dir, "tools", driver)
 	go func() {
 		defer cancel()
-		current, err := harness.Inspect(ctx, binary, root)
-		if errors.Is(err, exec.ErrNotFound) && binary == "codex" {
+		current, err := harness.Inspect(ctx, driver, binary, root)
+		if errors.Is(err, exec.ErrNotFound) && binary == driver {
 			err = nil
 		}
 		if current.Path != "" {
@@ -121,13 +129,16 @@ func (c *Controller) PrepareHarness(source string) {
 		}
 		if err == nil {
 			lookup := source
-			if lookup == "native-mirror" {
+			if current.Path != "" {
+				lookup = harness.UpdateSource(current)
+			}
+			if driver == "codex" && lookup == "native-mirror" {
 				lookup = "cn"
 			}
 			var release harness.Release
-			release, err = harness.Latest(ctx, lookup)
+			release, err = harness.Latest(ctx, driver, lookup)
 			if err == nil {
-				plan, err = harness.PrepareInstall(ctx, root, source, release, current)
+				plan, err = harness.PrepareInstall(ctx, driver, root, source, release, current)
 			}
 		}
 		c.post(func() {
@@ -135,7 +146,7 @@ func (c *Controller) PrepareHarness(source string) {
 				return
 			}
 			u.Preparing, u.cancel = false, nil
-			if binary != c.State.Settings.CodexPath {
+			if binary != c.State.Settings.AgentPath(driver) {
 				return
 			}
 			u.Plan, u.Binary = plan, binary
@@ -146,8 +157,8 @@ func (c *Controller) PrepareHarness(source string) {
 	}()
 }
 
-func (c *Controller) DismissHarnessPlan() {
-	u := c.HarnessFor("codex")
+func (c *Controller) DismissHarnessPlan(driver string) {
+	u := c.HarnessFor(driver)
 	if u.Installing {
 		return
 	}
@@ -158,33 +169,43 @@ func (c *Controller) DismissHarnessPlan() {
 	u.planRequest++
 	u.Preparing, u.Plan = false, nil
 }
-func (c *Controller) CancelHarness() {
-	if c.HarnessFor("codex").cancel != nil {
-		c.HarnessFor("codex").cancel()
+func (c *Controller) CancelHarness(driver string) {
+	if c.HarnessFor(driver).cancel != nil {
+		c.HarnessFor(driver).cancel()
 	}
 }
-func (c *Controller) InstallHarness() {
-	u := c.HarnessFor("codex")
-	if u.Checking || u.Preparing || u.Installing || c.Connection == "Connecting" || c.AnyRunning() || u.Plan == nil || u.Binary != c.State.Settings.CodexPath {
+func (c *Controller) InstallHarness(driver string) {
+	if len(harness.InstallSources(driver)) == 0 {
+		return
+	}
+	u := c.HarnessFor(driver)
+	if u.Checking || u.Preparing || c.HarnessInstalling() || c.Connection == "Connecting" || c.AnyRunning() || u.Plan == nil || u.Binary != c.State.Settings.AgentPath(driver) {
+		return
+	}
+	if u.Plan.Driver != "" && u.Plan.Driver != driver {
 		return
 	}
 	u.Installing, u.Error = true, ""
 	plan, binary := u.Plan, u.Binary
 	u.Plan = nil // Confirmation is single-use.
-	root := filepath.Join(c.Dir, "tools", "codex")
+	root := filepath.Join(c.Dir, "tools", driver)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	u.cancel = cancel
 	// Release executable handles before an external package manager upgrades files on Windows.
-	c.epoch++
-	if c.client != nil {
+	if driver == "codex" {
+		c.epoch++
+	}
+	if driver == "codex" && c.client != nil {
 		c.client.Close()
 		c.client = nil
 	}
-	c.Connection = "Disconnected"
+	if driver == "codex" {
+		c.Connection = "Disconnected"
+	}
 	go func() {
 		defer cancel()
-		current, err := harness.Inspect(ctx, binary, root)
-		if errors.Is(err, exec.ErrNotFound) && binary == "codex" && plan.Current.Path == "" {
+		current, err := harness.Inspect(ctx, driver, binary, root)
+		if errors.Is(err, exec.ErrNotFound) && binary == driver && plan.Current.Path == "" {
 			err = nil
 		}
 		if err == nil && current != plan.Current {
@@ -201,15 +222,37 @@ func (c *Controller) InstallHarness() {
 				u.Error = err.Error()
 				return
 			}
-			previous := c.State.Settings.CodexPath
-			c.State.Settings.CodexPath = path
+			previous := c.State.Settings.AgentPath(driver)
+			c.setHarnessPath(driver, path)
 			if err := model.Save(filepath.Join(c.Dir, "state.json"), c.State); err != nil {
-				c.State.Settings.CodexPath = previous
+				c.setHarnessPath(driver, previous)
 				u.Error = err.Error()
 				return
 			}
-			c.Connect()
-			c.CheckHarness()
+			u.ModelsChecked = false
+			if driver == "codex" {
+				c.Connect()
+			}
+			c.CheckHarness(driver)
 		})
 	}()
+}
+
+func (c *Controller) HarnessInstalling() bool {
+	for _, h := range c.Harnesses {
+		if h.Installing {
+			return true
+		}
+	}
+	return false
+}
+func (c *Controller) setHarnessPath(driver, path string) {
+	switch driver {
+	case "pi":
+		c.State.Settings.PiPath = path
+	case "droid":
+		c.State.Settings.DroidPath = path
+	default:
+		c.State.Settings.CodexPath = path
+	}
 }

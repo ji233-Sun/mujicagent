@@ -10,19 +10,23 @@ Windows x64 选择 `mujicagent-setup-<版本>-amd64.exe`，Windows ARM64 选择 
 
 应用启动 10 秒后检查正式 Release，随后每 24 小时检查一次；**设置 → 软件更新**也可手动检查。发现新版本后，左下角出现更新入口。点击“下载更新”，由 MyGo 下载对应架构的包并校验签名，再点击“重启并更新”；有对话运行时暂停安装和重启。更新不改动本地项目、会话和 Codex。更新日志使用原生 Markdown 展示最近 20 条正式 Release，旧版本可展开查看。
 
-## 连接 Codex
+## 智能体安装与更新
 
 打开 **设置 → 智能体**，已有安装显示版本与来源。VP/npm/Bun/pnpm/Homebrew 安装沿用原工具更新，托管安装沿用原渠道；点击“更新”先预览指令和安装路径，再点击“确认更新”执行。应用核对包管理器的全局目录及实际安装归属；未适配的工具、未知来源、工具不可用或来源冲突会明确提示，不自动迁移安装。自动检查默认每天一次，可关闭，只查版本、不安装。
 
-未安装时点击“安装”，在弹窗中选择官方原生包、大陆 npm 镜像或大陆免 Node 镜像包，预览后确认安装；设置页不常驻下载方式。新安装写入应用私有目录；无 npm 或 Windows 下的镜像原生包方式会在确认前显示下载动作、地址、摘要和安装路径，不执行 curl 或 shell 安装脚本。下载先校验摘要、完整解包并验证版本，再切换路径；安装可取消，失败保留旧配置。Windows 更新前关闭 App Server，托管版本写入新目录，避免覆盖占用中的 exe。有对话运行时不能更新。
+未安装时点击“安装”，在统一弹窗中选择当前智能体支持的渠道，预览后确认安装；设置页不常驻下载方式。Codex 提供官方原生包、大陆 npm 镜像、大陆免 Node 镜像包；Pi 提供官方原生包、官方 npm、大陆 npm 镜像；Droid 提供这四种渠道。Pi npm 要求 Node.js ≥ 22.19，Droid npm 要求 Node.js ≥ 20，缺少运行时可选择官方原生包。镜像缺包时显示错误，不在执行时静默切换来源。新安装写入应用私有目录；无 npm 或 Windows 下的镜像原生包方式会在确认前显示下载动作、地址、摘要和安装路径，不执行 curl 或 shell 安装脚本。下载先校验摘要、完整解包并验证版本，再切换路径；安装可取消，失败保留旧配置。Windows 更新前关闭 App Server，托管版本写入新目录，避免覆盖占用中的 exe。有对话运行时不能更新。
+
+Pi 官方脚本安装沿用其自更新命令；Droid 独立原生安装按预览版本自更新，Homebrew 安装沿用 cask。Factory.app 内置 Droid 和 Nix 安装显示来源及原工具更新提示。Pi/Droid 安装更新不会断开 Codex 连接。
+
+## 连接 Codex
 
 认证沿用 [Codex CLI](https://developers.openai.com/codex/cli) 的登录或配置：支持 ChatGPT、API key，以及 config.toml 中的自定义 base_url/env_key。密钥由 Codex 管理，应用不复制或展示；环境变量需在启动应用的环境中可用。无需 OpenAI 登录的服务商不会显示强制登录提示，配置状态不代表密钥已验证。账户路由发现超时最多重试三次，间隔 500ms、1s；其他认证错误不会重试。
 
-应用默认寻找 PATH 中的 `codex`。macOS 下会读取用户登录 Shell 的 PATH，供 Codex 及其 Node 等运行时使用，因此从 Finder、Dock 启动也能找到终端中安装的 CLI；探测有超时限制，并保留原有 PATH 和常见安装目录。也可在 **设置 → 智能体（Agents）→ 连接与权限 → Codex 路径** 指定绝对路径，应用不会自动替换该选择。
+应用默认寻找 PATH 中的 `codex`。macOS 下会读取用户登录 Shell 的 PATH，供 Codex 及其 Node 等运行时使用，因此从 Finder、Dock 启动也能找到终端中安装的 CLI；探测有超时限制，并保留原有 PATH 和常见安装目录。也可在 **设置 → 智能体（Agents）→ 连接与权限 → 可执行路径** 指定绝对路径，应用不会自动替换该选择。
 
 ## Pi、Droid 与会话交接
 
-**设置 → 智能体**的二级侧栏分别管理 Codex、Pi 和 Droid。Pi/Droid 先按 [Pi 官方指南](https://pi.dev/)或 [Droid 官方指南](https://docs.factory.com/droid-exec/overview)安装、登录，再填写可执行路径（留空查找 `pi` / `droid`）。设置页只管理 CLI，模型在对话输入栏选择。「检测」检查版本，不代表模型调用已验证。安装和更新由各自官方 CLI 管理，应用不运行安装脚本、不修改全局 PATH、不复制凭据。Windows 的 Pi npm 启动器解析为 Node + 已知包内脚本；Droid 需原生可执行文件，未知 `.cmd` / `.bat` 不执行。
+**设置 → 智能体**的二级侧栏分别管理 Codex、Pi 和 Droid，三者复用同一安装卡片、版本检查、确认弹窗、错误及取消流程。Pi/Droid 可在应用内安装；登录仍按 [Pi 官方指南](https://pi.dev/)或 [Droid 官方指南](https://docs.factory.com/droid-cli/quickstart)完成，也可填写已有可执行路径（留空查找 `pi` / `droid`）。「可用」只说明 CLI 已探测到，账户行明确标记尚未验证登录。设置页只管理 CLI，模型在对话输入栏选择。应用不修改全局 PATH、不复制凭据。Windows 的 Pi 官方托管/npm 启动器解析为 Node + 已知包内脚本，Droid npm 启动器解析为平台包原生 exe；未知 `.cmd` / `.bat` 不执行。
 
 输入栏模型浮层左侧是 32px 图标栏，悬停显示名称；浏览图标不会改变会话。切换 Harness 时自动通过其本机 CLI 读取可用模型（包括已配置的自定义模型），复用 Codex 的搜索列表和思考强度布局，点选即使用。列表只展示具体模型，不提供「默认模型」或手填 ID 入口。Pi 使用 `get_available_models`，Droid 使用 `droid.list_models`，不创建会话、不发送模型请求。列表按当前可执行文件和项目目录缓存，支持刷新；失败时显示重试入口，旧版 Droid 可能需要更新。支持的思考强度由目录提供；Pi 无能力映射时使用其标准档位。设置页采用紧凑卡片，路径位于折叠详情中。
 
@@ -36,7 +40,7 @@ Pi 工具事件中的 MCP `server/tool` 和 Droid 审批详情中的真实 MCP �
 
 两个 Harness 的运行中插入消息通过各自官方协议发送，收到成功确认才移除本地队列；发送失败保留消息。停止会取消进程和待答请求，将未完成过程标为中断；失败/停止不自动发送后续队列。图片使用 MIME 与 base64 传输，普通文件继续使用本地路径。模型与思考强度下一轮生效。
 
-完整能力对齐仍由 [#84](https://github.com/ji233-Sun/mujicagent/issues/84) 跟踪：当前协议回放与界面测试不能代替真实 CLI/模型验收。速度档位没有当前 RPC 的等价配置；通用 MCP elicitation 尚未接通（[Pi 明确未支持](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/test/mcp-conformance/README.md)，已核对的 Droid 协议未公开对应客户端请求）；Droid 无审批详情的工具事件仍可能缺少 MCP 服务名。计划执行模式与三 Harness 真实工作流仍待验收。已合入的 [#86](https://github.com/ji233-Sun/mujicagent/pull/86) 提供 Codex 安装来源和更新预览，尚未实现 Pi/Droid 的应用内安装更新及认证状态对齐；两者仍使用官方 CLI 管理。
+完整能力对齐仍由 [#84](https://github.com/ji233-Sun/mujicagent/issues/84) 跟踪：当前协议回放与界面测试不能代替真实 CLI/模型验收。速度档位没有当前 RPC 的等价配置；通用 MCP elicitation 尚未接通（[Pi 明确未支持](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/test/mcp-conformance/README.md)，已核对的 Droid 协议未公开对应客户端请求）；Droid 无审批详情的工具事件仍可能缺少 MCP 服务名。计划执行模式与三 Harness 真实工作流仍待验收。Pi/Droid 的应用内安装更新已接入同一流程；两者仍缺少已验证的应用内账号状态与登录协议。
 
 模型行右侧的星标用于收藏，按 `(Harness, Model ID)` 精确保存并在所属 Harness 的列表内置顶。同名模型在不同 Harness 中互不影响。左侧最上方的星标入口汇总全部收藏，行首显示所属 Harness 的官方图标；普通列表不显示行首图标。收藏、取消收藏不切换当前模型，重启后保留。
 
@@ -52,7 +56,7 @@ Pi 工具事件中的 MCP `server/tool` 和 Droid 审批详情中的真实 MCP �
 - MCP 调用显示工具名、服务名、参数摘要和执行状态；展开可查看参数、结果和错误，较长内容可滚动查看。缺失数据会明确提示，历史记录中未保存的详情无法补回。参数、结果和错误中的常见敏感字段、认证头及私钥在保存前脱敏；没有字段标识或认证格式的任意文本无法保证识别。
 - **Ask**：选项或自由输入、多问题、私密输入。命令／文件审批支持允许本次、会话内允许、命令前缀规则、网络主机规则及拒绝，具体选项由 App Server 的审批请求决定；通过原始请求 ID 回传。
 - 按对话选择只读、默认权限、自动审批（Approve for me）或完全访问，并展示服务端提供的自定义权限档位；遵循服务端管理策略，完全访问需要确认。
-- 原生设置悬浮面板：保留背后的对话，右上角关闭或按 Esc 返回；Agents 使用紧凑二级侧栏管理 Codex、Pi、Droid；Codex 卡片保留安装来源、版本检查、一键安装更新、自定义可执行文件、连接与账户状态。
+- 原生设置悬浮面板：保留背后的对话，右上角关闭或按 Esc 返回；Agents 使用紧凑二级侧栏管理 Codex、Pi、Droid；三者卡片统一提供安装来源、版本检查、安装更新和可执行路径；连接与账户信息按真实能力显示。
 - 项目、会话、草稿和 Settle 状态保存在本机。
 - 启动后自动检查 GitHub Release；设置中可下载签名更新、重启安装并查看历史更新日志。
 - 简体中文／英文即时切换，默认中文；菜单、设置、Ask 操作及原生控件跟随语言，用户内容保持原文。

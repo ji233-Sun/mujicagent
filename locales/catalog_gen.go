@@ -34,6 +34,56 @@ type Messages struct{ locale string }
 // source language.
 func In(locale string) Messages { return Messages{locale} }
 
+// HarnessNative says "官方安装"
+// in the language the app shows.
+func HarnessNative() string { return In(i18n.Locale()).HarnessNative() }
+
+// HarnessNative says "官方安装"
+// in the language of msgs.
+func (msgs Messages) HarnessNative() string {
+	return Catalog.Format(msgs.locale, "harnessNative", nil)
+}
+
+// AgentCLIAvailable says "可用"
+// in the language the app shows.
+func AgentCLIAvailable() string { return In(i18n.Locale()).AgentCLIAvailable() }
+
+// AgentCLIAvailable says "可用"
+// in the language of msgs.
+func (msgs Messages) AgentCLIAvailable() string {
+	return Catalog.Format(msgs.locale, "agentCLIAvailable", nil)
+}
+
+// AgentCLIAuth says "由 CLI 管理，尚未验证登录"
+// in the language the app shows.
+func AgentCLIAuth() string { return In(i18n.Locale()).AgentCLIAuth() }
+
+// AgentCLIAuth says "由 CLI 管理，尚未验证登录"
+// in the language of msgs.
+func (msgs Messages) AgentCLIAuth() string {
+	return Catalog.Format(msgs.locale, "agentCLIAuth", nil)
+}
+
+// AgentLoginHelp says "登录指引"
+// in the language the app shows.
+func AgentLoginHelp() string { return In(i18n.Locale()).AgentLoginHelp() }
+
+// AgentLoginHelp says "登录指引"
+// in the language of msgs.
+func (msgs Messages) AgentLoginHelp() string {
+	return Catalog.Format(msgs.locale, "agentLoginHelp", nil)
+}
+
+// HarnessNpmOfficial says "官方 npm 包（需 Node.js）"
+// in the language the app shows.
+func HarnessNpmOfficial() string { return In(i18n.Locale()).HarnessNpmOfficial() }
+
+// HarnessNpmOfficial says "官方 npm 包（需 Node.js）"
+// in the language of msgs.
+func (msgs Messages) HarnessNpmOfficial() string {
+	return Catalog.Format(msgs.locale, "harnessNpmOfficial", nil)
+}
+
 // SwitchProject says "切换项目"
 // in the language the app shows.
 func SwitchProject() string { return In(i18n.Locale()).SwitchProject() }
@@ -2188,24 +2238,24 @@ func (msgs Messages) HarnessUpdate() string {
 	return Catalog.Format(msgs.locale, "harnessUpdate", nil)
 }
 
-// HarnessUpdatePreview says "更新 Codex"
+// HarnessUpdatePreview says "更新 {name}"
 // in the language the app shows.
-func HarnessUpdatePreview() string { return In(i18n.Locale()).HarnessUpdatePreview() }
+func HarnessUpdatePreview(name string) string { return In(i18n.Locale()).HarnessUpdatePreview(name) }
 
-// HarnessUpdatePreview says "更新 Codex"
+// HarnessUpdatePreview says "更新 {name}"
 // in the language of msgs.
-func (msgs Messages) HarnessUpdatePreview() string {
-	return Catalog.Format(msgs.locale, "harnessUpdatePreview", nil)
+func (msgs Messages) HarnessUpdatePreview(name string) string {
+	return Catalog.Format(msgs.locale, "harnessUpdatePreview", map[string]any{"name": name})
 }
 
-// HarnessInstallPreview says "安装 Codex"
+// HarnessInstallPreview says "安装 {name}"
 // in the language the app shows.
-func HarnessInstallPreview() string { return In(i18n.Locale()).HarnessInstallPreview() }
+func HarnessInstallPreview(name string) string { return In(i18n.Locale()).HarnessInstallPreview(name) }
 
-// HarnessInstallPreview says "安装 Codex"
+// HarnessInstallPreview says "安装 {name}"
 // in the language of msgs.
-func (msgs Messages) HarnessInstallPreview() string {
-	return Catalog.Format(msgs.locale, "harnessInstallPreview", nil)
+func (msgs Messages) HarnessInstallPreview(name string) string {
+	return Catalog.Format(msgs.locale, "harnessInstallPreview", map[string]any{"name": name})
 }
 
 // HarnessConfirmUpdate says "确认更新"
@@ -2304,11 +2354,11 @@ func (msgs Messages) HarnessCommandPreview() string {
 	return Catalog.Format(msgs.locale, "harnessCommandPreview", nil)
 }
 
-// HarnessNativeAction says "应用内下载、校验并解包"
+// HarnessNativeAction says "应用内下载、校验并安装"
 // in the language the app shows.
 func HarnessNativeAction() string { return In(i18n.Locale()).HarnessNativeAction() }
 
-// HarnessNativeAction says "应用内下载、校验并解包"
+// HarnessNativeAction says "应用内下载、校验并安装"
 // in the language of msgs.
 func (msgs Messages) HarnessNativeAction() string {
 	return Catalog.Format(msgs.locale, "harnessNativeAction", nil)

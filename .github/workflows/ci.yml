@@ -66,6 +66,9 @@ jobs:
         run: |
           MUJICAGENT_INSTALL_TEST=official go test ./internal/harness -run TestDownloadNativePackage -v -count=1
           MUJICAGENT_INSTALL_TEST=cn go test ./internal/harness -run TestDownloadNativePackage -v -count=1
+          for driver in pi droid; do
+            MUJICAGENT_INSTALL_TEST=official MUJICAGENT_INSTALL_DRIVER="$driver" go test ./internal/harness -run TestDownloadNativePackage -v -count=1
+          done
       - name: Build Windows installers
         run: |
           go tool mygo build -platform "windows/amd64,windows/arm64"

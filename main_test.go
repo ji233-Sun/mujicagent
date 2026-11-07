@@ -89,7 +89,7 @@ func TestNativeView(t *testing.T) {
 		t.Fatal(err)
 	}
 	tt.Advance(250 * time.Millisecond)
-	if !tt.HasText("Codex 路径") {
+	if !tt.HasText("可执行路径") {
 		t.Fatal("agent details missing")
 	}
 	if !tt.HasText("检查更新") || !tt.HasText(ctrl.Version) {
@@ -112,7 +112,7 @@ func TestNativeView(t *testing.T) {
 	if err := tt.Click("关闭设置"); err != nil {
 		t.Fatal(err)
 	}
-	if v.Settings || tt.HasText("Codex 路径") || state.Threads[0].Draft != "你好，Codex" {
+	if v.Settings || tt.HasText("可执行路径") || state.Threads[0].Draft != "你好，Codex" {
 		t.Fatal("settings did not close or conversation draft was lost")
 	}
 	loaded, err := model.Load(filepath.Join(ctrl.Dir, "state.json"))
@@ -129,7 +129,7 @@ func TestNativeView(t *testing.T) {
 		t.Fatalf("settings overflowed the smallest window: %+v", panel)
 	}
 	tt.Key(0, ui.KeyEscape)
-	if v.Settings || tt.HasText("Codex 路径") {
+	if v.Settings || tt.HasText("可执行路径") {
 		t.Fatal("Escape did not close settings")
 	}
 }

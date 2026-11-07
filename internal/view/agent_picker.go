@@ -43,53 +43,13 @@ func (v *View) agentSidebar(c *ui.Context) {
 			b.Background(c.Theme().Surface).TextColor(c.Theme().Accent)
 		}
 		b.Children(func() { agentGlyph(c, d.ID); ui.Text(c, d.Name).FontSize(12).Grow(1).SingleLine() })
-		b.OnClick(func() { v.agentSection = d.ID })
-	}
-}
-func (v *View) externalAgentPane(c *ui.Context, id string) {
-	tx, h := v.texts(), v.C.HarnessFor(id)
-	path := &v.C.State.Settings.PiPath
-	url := "https://pi.dev/"
-	if id == "droid" {
-		path = &v.C.State.Settings.DroidPath
-		url = "https://docs.factory.com/droid-cli/quickstart"
-	}
-	services := c.Services()
-	ui.Column(c.Key(id)).Radius(10).Border(1, c.Theme().Border).Background(c.Theme().Background).Children(func() {
-		ui.Row(c).Padding(14).Gap(10).AlignItems(ui.Center).Children(func() {
-			ui.Box(c).Size(34, 34).Radius(8).Background(c.Theme().Surface).Center().Children(func() { agentGlyph(c, id) })
-			ui.Column(c).Grow(1).MinWidth(0).Gap(4).Children(func() {
-				ui.Text(c, agentName(id)).Bold().FontSize(15)
-				version := h.Installation.Version
-				if version == "" {
-					version = tx.HarnessUnchecked()
-				}
-				ui.Text(c, version).FontSize(11).TextColor(c.Theme().TextMuted).SingleLine()
-			})
-			ui.Button(c, tx.AgentProbe()).Height(28).FontSize(12).Disabled(h.Checking).OnClick(func() { v.C.CheckAgent(id) })
-			ui.Button(c, tx.AgentSetup()).Height(28).FontSize(12).OnClick(func() { services.OpenURL(url) })
+		b.OnClick(func() {
+			if v.agentSection != d.ID {
+				v.dismissHarnessInstall()
+			}
+			v.agentSection = d.ID
 		})
-		if h.Checking {
-			ui.Progress(c, -1).Height(3)
-		}
-		if h.Error != "" {
-			ui.Text(c, h.Error).FontSize(11).TextColor(c.Theme().Danger).Padding(0, 14, 10)
-		}
-		ui.Divider(c)
-		ui.Column(c).Padding(0, 14).Children(func() {
-			detail := ui.CollapsibleBase(c.Key("details"), v.openState("harness-"+id))
-			detail.Trigger.Height(36).Gap(6).AlignItems(ui.Center).Label(tx.HarnessDetails()).Children(func() {
-				ui.Icon(c, chevron).Size(11, 11).Rotate(90 * detail.Progress()).TextColor(c.Theme().TextMuted)
-				ui.Text(c, tx.HarnessDetails()).FontSize(12).Bold()
-			})
-			detail.Panel(func() {
-				ui.Row(c).Padding(0, 0, 12).AlignItems(ui.Center).Gap(12).Children(func() {
-					ui.Text(c, tx.AgentPath()).Width(112).Shrink(0).FontSize(12).TextColor(c.Theme().TextMuted)
-					ui.TextInput(c, path).Height(28).Radius(6).FontSize(12).Grow(1).MinWidth(0).Placeholder(id).Label(tx.AgentPath()).Disabled(h.Checking).OnChange(func() { v.C.Save(); h.ModelsChecked = false })
-				})
-			})
-		})
-	})
+	}
 }
 func (v *View) harnessRail(c *ui.Context) {
 	favorite := ui.ButtonBase(c.Key("favorites")).Size(32, 32).Radius(7).Center().Label(v.texts().FavoriteModels()).Tooltip(v.texts().FavoriteModels())
