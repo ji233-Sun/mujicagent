@@ -1758,16 +1758,6 @@ func (msgs Messages) QueueEdit() string {
 	return Catalog.Format(msgs.locale, "queueEdit", nil)
 }
 
-// QueueEditing says "正在编辑待发送消息 · 保存后保留原位"
-// in the language the app shows.
-func QueueEditing() string { return In(i18n.Locale()).QueueEditing() }
-
-// QueueEditing says "正在编辑待发送消息 · 保存后保留原位"
-// in the language of msgs.
-func (msgs Messages) QueueEditing() string {
-	return Catalog.Format(msgs.locale, "queueEditing", nil)
-}
-
 // QueueSave says "保存到原位"
 // in the language the app shows.
 func QueueSave() string { return In(i18n.Locale()).QueueSave() }
