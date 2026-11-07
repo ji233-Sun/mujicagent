@@ -2258,16 +2258,6 @@ func (msgs Messages) HarnessDetails() string {
 	return Catalog.Format(msgs.locale, "harnessDetails", nil)
 }
 
-// HarnessInstallHint says "安装到应用私有目录；无 npm 时自动使用原生镜像包。沿用 Codex 的登录与 config.toml（含 ba…"
-// in the language the app shows.
-func HarnessInstallHint() string { return In(i18n.Locale()).HarnessInstallHint() }
-
-// HarnessInstallHint says "安装到应用私有目录；无 npm 时自动使用原生镜像包。沿用 Codex 的登录与 config.toml（含 ba…"
-// in the language of msgs.
-func (msgs Messages) HarnessInstallHint() string {
-	return Catalog.Format(msgs.locale, "harnessInstallHint", nil)
-}
-
 // HarnessWorking says "正在安装并验证…"
 // in the language the app shows.
 func HarnessWorking() string { return In(i18n.Locale()).HarnessWorking() }

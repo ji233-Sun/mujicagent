@@ -222,7 +222,6 @@
   "harnessNativeMirror": "China · native mirror",
   "harnessAuto": "Check automatically (daily)",
   "harnessDetails": "Connection & permissions",
-  "harnessInstallHint": "Installs privately; without npm, uses a native mirror package. Reuses Codex login and config.toml, including base_url and API key settings.",
   "harnessWorking": "Installing and verifying…",
   "harnessManaged": "App managed",
   "harnessCustom": "Custom / external",

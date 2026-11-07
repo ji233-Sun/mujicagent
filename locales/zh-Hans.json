@@ -222,7 +222,6 @@
   "harnessNativeMirror": "大陆 · 免 Node 镜像包",
   "harnessAuto": "自动检查（每天）",
   "harnessDetails": "连接与权限",
-  "harnessInstallHint": "安装到应用私有目录；无 npm 时自动使用原生镜像包。沿用 Codex 的登录与 config.toml（含 base_url 和 API Key 配置）。",
   "harnessWorking": "正在安装并验证…",
   "harnessManaged": "应用托管",
   "harnessCustom": "自定义 / 外部安装",
