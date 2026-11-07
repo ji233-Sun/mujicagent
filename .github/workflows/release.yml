@@ -1,6 +1,8 @@
 name: Release
 
 on:
+  schedule:
+    - cron: '17,47 * * * *'
   workflow_dispatch:
     inputs:
       bump:
@@ -26,8 +28,26 @@ env:
   GH_TOKEN: ${{ github.token }}
 
 jobs:
-  build:
+  check:
     if: github.ref == 'refs/heads/main' || inputs.dry_run
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      release: ${{ steps.check.outputs.release }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Check for unpublished commits
+        id: check
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: bash scripts/release/macos.sh check
+
+  build:
+    needs: check
+    if: needs.check.outputs.release == 'true'
     runs-on: macos-15
     timeout-minutes: 30
     permissions:
@@ -53,7 +73,7 @@ jobs:
       - name: Build or restore signed checkpoint
         id: build
         env:
-          BUMP: ${{ inputs.bump }}
+          BUMP: ${{ inputs.bump || 'patch' }}
           MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
           MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
           MYGO_UPDATER_PRIVATE_KEY: ${{ secrets.MYGO_UPDATER_PRIVATE_KEY }}

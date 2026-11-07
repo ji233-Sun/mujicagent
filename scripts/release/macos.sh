@@ -2,6 +2,11 @@
 set -euo pipefail
 source "scripts/release/retry-apple.sh"
 
+# Include reserved tags from interrupted publishing; never reuse their versions.
+latest_tag() {
+  git tag --sort=-version:refname | awk '/^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/ { if (!found++) print }'
+}
+
 # Checkpoints belong to this run and its immutable source commit.
 restore() {
   local name="$1" destination="$2" found
@@ -49,6 +54,21 @@ verify_submission() {
 }
 
 case "$1" in
+check)
+  if [[ "${DRY_RUN:-false}" != true ]]; then
+    published="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name')"
+    while IFS= read -r tag; do
+      [[ "$tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || continue
+      git rev-parse --verify "refs/tags/$tag^{commit}" >/dev/null
+      # Also skip queued runs whose source is older than a published release.
+      if git merge-base --is-ancestor "$GITHUB_SHA" "refs/tags/$tag"; then
+        echo "release=false" >> "$GITHUB_OUTPUT"
+        exit 0
+      fi
+    done <<< "$published"
+  fi
+  echo "release=true" >> "$GITHUB_OUTPUT"
+  ;;
 build)
   if restore release-build build-state; then
     verify_build
@@ -62,7 +82,10 @@ build)
     exit 1
   fi
   # Build the original commit only when starting a new workflow run.
-  version="$(go run ./scripts/release next "$BUMP")"
+  base="$(latest_tag)"
+  base="${base#v}"
+  base="${base:-$(jq -r .version "mygo.json")}"
+  version="$(go run ./scripts/release next "$BUMP" "$base")"
   previous="$(gh api "repos/$GITHUB_REPOSITORY/releases" --jq '[.[] | select(.draft == false and .prerelease == false)][0].tag_name // empty')"
   args=(-f "tag_name=v$version" -f "target_commitish=$GITHUB_SHA")
   range=HEAD
@@ -185,21 +208,22 @@ publish)
   tag="v$VERSION"
   git config user.name 'github-actions[bot]'
   git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-  git add mygo.json CHANGELOG.md
-  tree="$(git write-tree)"
   git fetch origin main --tags
-  if git rev-parse --verify "refs/tags/$tag" >/dev/null 2>&1; then
-    # Resume only our exact release tree with our original source as its parent.
-    [[ "$(git rev-parse "$tag^{tree}")" == "$tree" ]]
-    [[ "$(git rev-parse "$tag^")" == "$GITHUB_SHA" ]]
-  else
-    [[ "$(git rev-parse origin/main)" == "$GITHUB_SHA" ]] || {
-      echo "::error::main advanced. Start a new release run; this run cannot change its source."
+  git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+  newest="$(latest_tag)"
+  if [[ -n "$newest" && "$newest" != "$tag" ]]; then
+    highest="$(printf '%s\n' "$newest" "$tag" | sort -V | tail -n 1)"
+    [[ "$highest" == "$tag" ]] || {
+      echo "::error::A newer tag exists; refusing to publish an old checkpoint as latest."
       exit 1
     }
-    git commit -m "chore(release): $tag"
-    git tag -a "$tag" -m "MujicAgent $VERSION"
-    git push --atomic origin HEAD:main "refs/tags/$tag"
+  fi
+  if git rev-parse --verify "refs/tags/$tag" >/dev/null 2>&1; then
+    [[ "$(git rev-parse "$tag^{commit}")" == "$GITHUB_SHA" ]]
+    [[ "$(git for-each-ref --format='%(contents:subject)' "refs/tags/$tag")" == "MujicAgent $VERSION (run $GITHUB_RUN_ID)" ]]
+  else
+    git tag -a "$tag" "$GITHUB_SHA" -m "MujicAgent $VERSION (run $GITHUB_RUN_ID)"
+    git push origin "refs/tags/$tag"
   fi
   # Query the collection so permission/network errors cannot look like absence.
   releases="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" --jq ".[] | select(.tag_name == \"$tag\") | .draft")"
@@ -207,12 +231,6 @@ publish)
     echo "Release $tag is already published; leaving its assets unchanged."
     exit 0
   fi
-  git fetch origin main
-  git merge-base --is-ancestor "$tag" origin/main
-  [[ "$(git show origin/main:mygo.json | jq -r .version)" == "$VERSION" ]] || {
-    echo "::error::main has a different release version; refusing to publish this old checkpoint as latest."
-    exit 1
-  }
   if [[ -z "$releases" ]]; then
     gh release create "$tag" --verify-tag --draft --title "MujicAgent $VERSION" --notes-file "build-state/release-notes.md"
   fi
@@ -220,7 +238,7 @@ publish)
   gh release edit "$tag" --draft=false --latest
   ;;
 *)
-  echo "usage: macos.sh build|submit|finalize|windows|publish" >&2
+  echo "usage: macos.sh check|build|submit|finalize|windows|publish" >&2
   exit 2
   ;;
 esac

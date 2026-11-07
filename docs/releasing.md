@@ -6,15 +6,21 @@
 
 ## 发布流程
 
-发布只通过 [Release 工作流](https://github.com/ji233-Sun/mujicagent/actions/workflows/release.yml) 手动触发：
+[Release 工作流](https://github.com/ji233-Sun/mujicagent/actions/workflows/release.yml) 每 30 分钟检查 main（UTC 每小时第 17、47 分钟），有尚未正式发布的提交才构建并自动递增 patch。已发布的提交及更旧的排队运行直接跳过。GitHub 调度可能延迟，不保证每半小时准时完成发布，详见 [schedule 文档](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule)。工作流合入默认分支后生效。
+
+也可手动触发：
 
 1. 选择 **Run workflow → main**。
-2. 选择 `patch`、`minor` 或 `major`，分别递增修订号、次版本或主版本；低位版本号自动清零。初始版本 `0.1.0`，第一次 patch 发布为 `0.1.1`。
+2. 选择 `patch`、`minor` 或 `major`，分别递增修订号、次版本或主版本；低位版本号自动清零。手动正式发布同样要求有新提交。
 3. 正式发版保留 `dry_run=false`。试运行勾选 `dry_run`：执行相同的校验、macOS 和 Windows 双架构构建、更新签名及 Apple 公证，只上传 Actions 构建产物，不修改版本、标签或 Release。试运行也允许选择开发分支，用于验证工作流改动。
 
-工作流固定使用触发时的提交，根据 GitHub 自动生成的说明和上次发布以来的提交记录生成日志，更新 `mygo.json` 与 `CHANGELOG.md`。测试、公证和最终产物验证通过后，提交版本变更、创建 `vX.Y.Z` 标签；全部安装包与更新清单上传完成后才将草稿发布为正式 Release。普通 push 和 PR 仅运行 [CI](https://github.com/ji233-Sun/mujicagent/actions/workflows/ci.yml)，不会发版。发布前若 main 已前进，原子推送会拒绝覆盖，必须重新 **Run workflow**；旧运行的重试始终保留原提交。
+稳定版 `vX.Y.Z` 标签是发布版本号的唯一依据：按数值取最高标签并递增；没有标签时才以仓库 `mygo.json` 的版本为起点。已创建但未发布成功的标签也占用版本号，避免复用。失败后新运行可能跳过一个版本号，这是有意保留的发布记录。
 
-发布分为 `build → submit → finalize → publish`，中间产物保留 30 天：
+工作流固定使用触发时的源码提交，仅在构建目录注入 `mygo.json` 版本及 `CHANGELOG.md` 发布说明，所有平台复用同一份版本配置。测试、公证和最终产物验证通过后，直接在该源码提交上创建带运行 ID 的 `vX.Y.Z` 标签；全部资产上传完成后才公开 Release。流程不创建版本 commit，也不推送 main；构建期间 main 前进不影响当前发布，新提交由下轮处理。仓库内的版本及历史日志不再自动回写，正式版本与完整发布记录以 GitHub Releases 为准；源码本地构建默认仍使用仓库中的版本值。
+
+普通 push 和 PR 运行 [CI](https://github.com/ji233-Sun/mujicagent/actions/workflows/ci.yml)，由定时任务汇总发布。所有 Release 运行共用并发锁，不取消正在签名或公证的运行。发布前检查源码仍属于 main；若出现更高版本标签，旧检查点停止发布，防止 latest 回退。
+
+发布分为 `check → build → submit → finalize → publish`，中间产物保留 30 天：
 
 Windows 任务在 `build` 后与 Apple 公证并行，在 Linux runner 上使用 NSIS 交叉构建 amd64 和 arm64 安装器。它复用 `release-build` 中固定版本的配置和日志，生成两个架构的安装器、Ed25519 签名更新归档和 `update-windows-<架构>.json`，保存为带 SHA256 清单的 `release-final-windows` 检查点。重试优先复用并校验该检查点；Windows 构建或任一 macOS 公证失败都会阻止发布。所有平台的资产上传完成后才公开同一个 Release。
 
@@ -25,7 +31,7 @@ Windows 任务在 `build` 后与 Apple 公证并行，在 Linux runner 上使用
 
 网络失败或等待超时后，在**原运行**选择 **Re-run failed jobs**，或仅重跑对应任务。已保存的构建和 submission ID 会被复用，不会重新编译或重新提交公证。**不要选择 Re-run all jobs**：GitHub 会清除上一轮 artifacts；脚本发现重试缺少构建检查点会停止，避免悄悄重新构建。若首次构建失败、尚未保存检查点，或检查点已丢失，需要新建 **Run workflow** 明确重新构建。`finalize` 等待同一 ID 最多 20 分钟，只有 `Accepted` 才装订；`staple` 和 `validate` 的临时网络错误最多尝试 5 次，间隔 10、20、40、60 秒。`Invalid/Rejected` 必须检查 Apple 日志并修复代码，重复等待不能修复拒绝原因。
 
-检查点过期或缺失时不能保证恢复。特别是 Apple 已接受上传、但客户端未收到 ID，或 ID 尚未成功上传为 Actions 产物时，需先检查 Apple 提交历史；重试可能再次提交。新建 **Run workflow** 是全新发布，不读取旧运行的检查点。
+检查点过期或缺失时不能保证恢复。特别是 Apple 已接受上传、但客户端未收到 ID，或 ID 尚未成功上传为 Actions 产物时，需先检查 Apple 提交历史；重试可能再次提交。新建 **Run workflow** 或下一次定时运行是全新发布，不读取旧运行的检查点，可能重新构建和公证。
 
 ### Apple notarization
 
@@ -53,8 +59,8 @@ gh secret set APPLE_API_PRIVATE_KEY --repo ji233-Sun/mujicagent < "/path/to/Auth
 
 构建阶段创建临时 Keychain 导入证书，MyGo 对两个架构的应用和 DMG 签名，以 `-skip-notarize` 保存待公证产物。提交和等待阶段使用临时 API 私钥文件。公证 Accepted 后，将票据附加到 DMG 和用于自动更新的应用，再重新打包并生成对应最终归档的 Ed25519/SHA256 签名；保留 MyGo 更新清单的版本、URL、说明和日期，当前要求 `updates.deltas=0`。发布前会检查代码签名、DMG 的公证票据，并解压自动更新包验证其中应用的票据。任何一步失败都不发布；凭据缺失时也不会降级为 ad-hoc 发布。任务结束时清理临时 Keychain 和私钥文件。
 
-签名配置只在 CI 构建期间注入，发布提交不包含证书身份和 runner 路径。首次配置完成后，建议运行一次 `dry_run=true`，确认签名、公证、票据与更新归档检查全部通过，再正式发布。
+签名配置只在 CI 构建期间注入，不写回仓库。首次配置完成后，建议运行一次 `dry_run=true`，确认签名、公证、票据与更新归档检查全部通过，再正式发布。
 
 仓库 Actions Secret `MYGO_UPDATER_PRIVATE_KEY` 存储更新签名私钥的**内容**。公钥固定在 `mygo.json`；私钥不进仓库、不进入应用。维护者须安全备份私钥，丢失或随意替换会让旧客户端无法验证后续更新。只有签名构建会生成 `update-darwin-*.json`／`update-windows-*.json` 和对应 `.tar.gz`；各平台更新清单、归档和安装包必须一起保留在 Release 中。此签名不能替代 Apple Developer ID 公证或 Windows Authenticode 签名。
 
-若上传失败留下草稿，重跑原运行的失败任务即可复用 `release-final-*` 补齐资产。发布脚本只接受与原提交和版本文件完全匹配的已有标签，仅补传草稿；若版本已正式发布则直接结束，不覆盖已发布资产。
+若上传失败留下草稿，在更高版本标签出现前重跑原运行的失败任务即可复用 `release-final-*` 补齐资产。发布脚本只接受源码提交及运行 ID 完全匹配的已有标签，仅补传草稿；若该版本已正式发布则直接结束，不覆盖已发布资产。
