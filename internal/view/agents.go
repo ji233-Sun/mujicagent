@@ -58,7 +58,7 @@ func (v *View) agentsPane(c *ui.Context) {
 				}
 				ui.PrimaryButton(c, label).Height(28).FontSize(12).Radius(6).Padding(0, 12).Disabled(v.C.AnyRunning() || u.Installing || v.C.Connection == "Connecting").OnClick(v.C.Connect)
 			})
-			if u.Release.Version != "" || u.Installing || u.Error != "" || v.C.AnyRunning() {
+			if u.Release.Version != "" || u.Installing || u.Error != "" {
 				ui.Column(c).Padding(0, 14, 10).Gap(6).Children(func() {
 					if u.Release.Version != "" {
 						ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
@@ -88,9 +88,6 @@ func (v *View) agentsPane(c *ui.Context) {
 					}
 					if u.Error != "" {
 						ui.Text(c, u.Error).FontSize(12).TextColor(c.Theme().Danger).Selectable()
-					}
-					if v.C.AnyRunning() {
-						ui.Text(c, tx.UpdateAfterConversation()).FontSize(12).TextColor(c.Theme().TextMuted)
 					}
 				})
 			}

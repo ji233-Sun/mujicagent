@@ -17,7 +17,7 @@ import (
 
 func TestAgentCompactScreenshots(t *testing.T) {
 	for _, lang := range []string{"zh-Hans", "en"} {
-		for _, scene := range []string{"settings-codex", "settings-pi", "settings-droid", "picker-codex", "picker-pi", "picker-droid", "picker-favorites", "picker-loading", "picker-error", "permissions-pi", "permissions-droid"} {
+		for _, scene := range []string{"settings-codex", "settings-codex-running", "settings-pi", "settings-droid", "picker-codex", "picker-pi", "picker-droid", "picker-favorites", "picker-loading", "picker-error", "permissions-pi", "permissions-droid"} {
 			t.Run(lang+"-"+scene, func(t *testing.T) {
 				s := model.New()
 				s.Settings.Language = lang
@@ -44,7 +44,14 @@ func TestAgentCompactScreenshots(t *testing.T) {
 					v.permissionPicker = true
 				} else if strings.HasPrefix(scene, "settings") {
 					v.Settings = true
-					v.agentSection = scene[9:]
+					v.agentSection = strings.TrimSuffix(scene[9:], "-running")
+					if scene == "settings-codex-running" {
+						c.Running[thread.ID] = true
+						h := c.HarnessFor("codex")
+						h.Installation.Version = "0.167.0"
+						h.Installation.Method = "custom"
+						h.Release.Version = "0.167.0"
+					}
 					if v.agentSection != "" {
 						*v.openState("harness-" + v.agentSection) = true
 					}
@@ -70,6 +77,11 @@ func TestAgentCompactScreenshots(t *testing.T) {
 				tt.Frame()
 				tt.Advance(time.Second)
 				tt.Frame()
+				if scene == "settings-codex-running" {
+					if !tt.HasText(v.texts().UpToDate()) || tt.HasText(v.texts().UpdateAfterConversation()) {
+						t.Fatal("running Codex settings must show update status without the conversation hint")
+					}
+				}
 				for _, removed := range []string{"Default model", "默认模型", "Model ID", "模型 ID", "Custom", "自定义"} {
 					if slices.Contains(tt.Texts(), removed) {
 						t.Fatalf("removed model control is visible: %s", removed)
