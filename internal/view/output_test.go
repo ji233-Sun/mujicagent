@@ -158,9 +158,10 @@ func TestCompactAgentSettings(t *testing.T) {
 				if !ok {
 					t.Fatal("missing settings")
 				}
-				if math.Abs(float64(panel.W)-float64(size[0])*0.96) > 1 || math.Abs(float64(panel.H)-float64(size[1])*0.90) > 1 ||
-					math.Abs(float64(panel.X)-float64(size[0])*0.02) > 1 || math.Abs(float64(panel.Y)-float64(size[1])*0.05) > 1 {
-					t.Fatalf("settings should fill the window with centered margins: %+v", panel)
+				wantW, wantH := min(float64(size[0])*0.96, 1200), min(float64(size[1])*0.90, 720)
+				if math.Abs(float64(panel.W)-wantW) > 1 || math.Abs(float64(panel.H)-wantH) > 1 ||
+					math.Abs(float64(panel.X)-(float64(size[0])-wantW)/2) > 1 || math.Abs(float64(panel.Y)-(float64(size[1])-wantH)/2) > 1 {
+					t.Fatalf("settings should stay centered and respect the size cap: %+v", panel)
 				}
 				for _, label := range []string{v.texts().CheckForUpdates(), v.texts().Connect(), v.texts().HarnessAuto(), v.texts().CodexPath(), v.texts().CodexDefaultPermissions()} {
 					bounds, ok := tt.Find(label)
