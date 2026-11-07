@@ -40,6 +40,8 @@ go tool mygo build
 
 macOS 构建输出位于 `build/darwin-arm64/`，包含 `.app` 和 `.dmg`。本地和普通 CI 构建使用 ad-hoc 签名。Release 工作流使用 Developer ID 签名和 Apple 公证，更新包另外使用独立的 Ed25519 签名校验。已发布的 `v0.1.1` 使用 ad-hoc 签名，自动公证从后续发版开始启用。
 
+Windows 使用 `go tool mygo build -platform "windows/amd64,windows/arm64"`，输出位于 `build/windows-<架构>/`，安装器为 `mujicagent-setup-<版本>-<架构>.exe`。Windows 上 MyGo 自动下载所需的 NSIS；在其他系统交叉构建安装器需预先安装 NSIS。普通 CI 在 Windows x64 runner 上运行应用测试和静态检查，并构建两种架构的安装器，上传 `windows-preview`；macOS 发布脚本的 Shell 集成测试仍在 macOS CI 执行。Windows ARM64 当前只验证构建。
+
 可选的真实连接测试会使用当前 Codex 登录，发送简短的测试消息并产生模型用量；不要求读取或修改项目文件：
 
 ```sh
@@ -105,17 +107,21 @@ locales/                       MyGo 中英文语言目录及生成的类型安�
 
 安装包在 [GitHub Releases](https://github.com/ji233-Sun/mujicagent/releases)：Apple Silicon 选择 `arm64.dmg`，Intel 选择 `amd64.dmg`。将应用拖入可写的 Applications 目录后运行；磁盘映像内、开发模式或不可写目录不支持自动安装更新。
 
+Windows x64 选择 `mujicagent-setup-<版本>-amd64.exe`，Windows ARM64 选择 `arm64.exe` 安装器。默认安装在 `%LOCALAPPDATA%\Programs` 下的用户可写目录，支持下载签名更新并重启安装。Windows 安装器和应用目前未配置 Authenticode 代码签名，系统可能显示未知发布者或 SmartScreen 提示；更新归档仍使用与 macOS 相同的 Ed25519 密钥签名校验。
+
 应用启动 10 秒后检查正式 Release，随后每 24 小时检查一次；**设置 → 软件更新**也可手动检查。发现新版本后，左下角出现更新入口。点击“下载更新”，由 MyGo 下载对应架构的包并校验签名，再点击“重启并更新”；有对话运行时暂停安装和重启。更新不改动本地项目、会话和 Codex。更新日志使用原生 Markdown 展示最近 20 条正式 Release，旧版本可展开查看。
 
 发布只通过 [Release 工作流](https://github.com/ji233-Sun/mujicagent/actions/workflows/release.yml) 手动触发：
 
 1. 选择 **Run workflow → main**。
 2. 选择 `patch`、`minor` 或 `major`，分别递增修订号、次版本或主版本；低位版本号自动清零。初始版本 `0.1.0`，第一次 patch 发布为 `0.1.1`。
-3. 正式发版保留 `dry_run=false`。试运行勾选 `dry_run`：执行相同的校验、双架构构建、签名和 Apple 公证，只上传 Actions 构建产物，不修改版本、标签或 Release。试运行也允许选择开发分支，用于验证工作流改动。
+3. 正式发版保留 `dry_run=false`。试运行勾选 `dry_run`：执行相同的校验、macOS 和 Windows 双架构构建、更新签名及 Apple 公证，只上传 Actions 构建产物，不修改版本、标签或 Release。试运行也允许选择开发分支，用于验证工作流改动。
 
 工作流固定使用触发时的提交，根据 GitHub 自动生成的说明和上次发布以来的提交记录生成日志，更新 `mygo.json` 与 `CHANGELOG.md`。测试、公证和最终产物验证通过后，提交版本变更、创建 `vX.Y.Z` 标签；全部安装包与更新清单上传完成后才将草稿发布为正式 Release。普通 push 和 PR 仅运行 [CI](https://github.com/ji233-Sun/mujicagent/actions/workflows/ci.yml)，不会发版。发布前若 main 已前进，原子推送会拒绝覆盖，必须重新 **Run workflow**；旧运行的重试始终保留原提交。
 
 发布分为 `build → submit → finalize → publish`，中间产物保留 30 天：
+
+Windows 任务在 `build` 后与 Apple 公证并行，在 Linux runner 上使用 NSIS 交叉构建 amd64 和 arm64 安装器。它复用 `release-build` 中固定版本的配置和日志，生成两个架构的安装器、Ed25519 签名更新归档和 `update-windows-<架构>.json`，保存为带 SHA256 清单的 `release-final-windows` 检查点。重试优先复用并校验该检查点；Windows 构建或任一 macOS 公证失败都会阻止发布。所有平台的资产上传完成后才公开同一个 Release。
 
 - `release-build` 保存固定版本的签名产物、源码提交、发布说明与 SHA256 清单。
 - `release-submission-arm64/amd64` 分别保存 Apple submission ID、架构、版本和原始 DMG SHA256；提交完成即保存，不等待公证结果。
@@ -154,7 +160,7 @@ gh secret set APPLE_API_PRIVATE_KEY --repo ji233-Sun/mujicagent < "/path/to/Auth
 
 签名配置只在 CI 构建期间注入，发布提交不包含证书身份和 runner 路径。首次配置完成后，建议运行一次 `dry_run=true`，确认签名、公证、票据与更新归档检查全部通过，再正式发布。
 
-仓库 Actions Secret `MYGO_UPDATER_PRIVATE_KEY` 存储更新签名私钥的**内容**。公钥固定在 `mygo.json`；私钥不进仓库、不进入应用。维护者须安全备份私钥，丢失或随意替换会让旧客户端无法验证后续更新。只有签名构建会生成 `update-darwin-*.json` 和对应 `.tar.gz`；两者必须与 `.dmg` 一起保留在 Release 中。此签名不能替代 Apple Developer ID 公证。
+仓库 Actions Secret `MYGO_UPDATER_PRIVATE_KEY` 存储更新签名私钥的**内容**。公钥固定在 `mygo.json`；私钥不进仓库、不进入应用。维护者须安全备份私钥，丢失或随意替换会让旧客户端无法验证后续更新。只有签名构建会生成 `update-darwin-*.json`／`update-windows-*.json` 和对应 `.tar.gz`；各平台更新清单、归档和安装包必须一起保留在 Release 中。此签名不能替代 Apple Developer ID 公证或 Windows Authenticode 签名。
 
 若上传失败留下草稿，重跑原运行的失败任务即可复用 `release-final-*` 补齐资产。发布脚本只接受与原提交和版本文件完全匹配的已有标签，仅补传草稿；若版本已正式发布则直接结束，不覆盖已发布资产。
 

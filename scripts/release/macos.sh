@@ -155,9 +155,30 @@ finalize)
   cp "$DMG" final-state/
   (cd final-state && shasum -a 256 *.dmg *.tar.gz *.json > SHA256SUMS)
   ;;
+windows)
+  load_build
+  if restore release-final-windows final-state; then
+    (cd final-state && shasum -a 256 -c SHA256SUMS)
+    echo "cached=true" >> "$GITHUB_OUTPUT"
+    exit 0
+  else
+    [[ $? == 3 ]] || exit 1
+  fi
+  : "${MYGO_UPDATER_PRIVATE_KEY:?}"
+  go tool mygo build -platform "windows/amd64,windows/arm64"
+  mkdir -p final-state
+  for arch in amd64 arm64; do
+    platform="build/windows-$arch"
+    for asset in "mujicagent-setup-$VERSION-$arch.exe" "mujicagent-$VERSION-windows-$arch.tar.gz" "update-windows-$arch.json"; do
+      test -s "$platform/$asset"
+      cp "$platform/$asset" final-state/
+    done
+  done
+  (cd final-state && shasum -a 256 *.exe *.tar.gz *.json > SHA256SUMS)
+  ;;
 publish)
   load_build
-  for arch in arm64 amd64; do
+  for arch in arm64 amd64 windows; do
     restore "release-final-$arch" "final-$arch"
     (cd "final-$arch" && shasum -a 256 -c SHA256SUMS)
   done
@@ -195,11 +216,11 @@ publish)
   if [[ -z "$releases" ]]; then
     gh release create "$tag" --verify-tag --draft --title "MujicAgent $VERSION" --notes-file "build-state/release-notes.md"
   fi
-  gh release upload "$tag" final-*/*.dmg final-*/*.tar.gz final-*/update-*.json --clobber
+  gh release upload "$tag" final-*/*.dmg final-*/*.exe final-*/*.tar.gz final-*/update-*.json --clobber
   gh release edit "$tag" --draft=false --latest
   ;;
 *)
-  echo "usage: macos.sh build|submit|finalize|publish" >&2
+  echo "usage: macos.sh build|submit|finalize|windows|publish" >&2
   exit 2
   ;;
 esac

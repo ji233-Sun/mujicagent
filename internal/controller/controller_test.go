@@ -100,7 +100,7 @@ func TestFileAttachmentInput(t *testing.T) {
 		t.Fatalf("input: %+v", input)
 	}
 	item := input[1].(map[string]any)
-	if item["type"] != "text" || !strings.Contains(item["text"].(string), path) || strings.Contains(item["text"].(string), "file contents") {
+	if item["type"] != "text" || !strings.Contains(item["text"].(string), fmt.Sprintf("%q", path)) || strings.Contains(item["text"].(string), "file contents") {
 		t.Fatalf("file input: %+v", item)
 	}
 	for _, path := range []string{path + "missing", filepath.Dir(path)} {
@@ -996,7 +996,7 @@ func TestProjectlessWorkspace(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := thread.Cwd
-	if !strings.Contains(path, "/workspace/2025/12/organize-files-") || len(filepath.Base(path)) != len("organize-files-")+8 {
+	if !strings.Contains(filepath.ToSlash(path), "/workspace/2025/12/organize-files-") || len(filepath.Base(path)) != len("organize-files-")+8 {
 		t.Fatal(path)
 	}
 	if err := os.WriteFile(filepath.Join(path, "keep"), []byte("keep"), 0600); err != nil {
@@ -1069,8 +1069,8 @@ func TestWorkspaceFailuresAndAttachmentNames(t *testing.T) {
 	c := New(dir, model.New(), nil)
 	c.NewThread("")
 	thread := c.State.Thread(c.State.Selected)
-	thread.Draft = (model.Attachment{Kind: "file", Path: "/tmp/secret-filename.txt"}).Link()
-	if err := c.prepareWorkspace(thread, (model.Attachment{Kind: "file", Path: "/tmp/secret-filename.txt"}).Link()); err != nil {
+	thread.Draft = (model.Attachment{Kind: "file", Path: filepath.Join(dir, "secret-filename.txt")}).Link()
+	if err := c.prepareWorkspace(thread, thread.Draft); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.HasPrefix(filepath.Base(thread.Cwd), "chat-") {

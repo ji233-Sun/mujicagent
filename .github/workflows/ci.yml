@@ -40,3 +40,38 @@ jobs:
           path: build/**/*.dmg
           if-no-files-found: error
           retention-days: 7
+
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Verify Windows
+        run: |
+          go tool mygo generate
+          git diff --exit-code -- locales/catalog_gen.go
+          go tool mygo vet .
+          # Release shell integration tests run in the macOS job.
+          CGO_ENABLED=0 go test . ./internal/... ./locales/... -count=1
+          go vet ./...
+          go tool mygo i18n check
+      - name: Build Windows installers
+        run: |
+          go tool mygo build -platform "windows/amd64,windows/arm64"
+          version="$(jq -r .version mygo.json)"
+          for arch in amd64 arm64; do
+            test -s "build/windows-$arch/mujicagent-setup-$version-$arch.exe"
+          done
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: windows-preview
+          path: build/windows-*/mujicagent-setup-*.exe
+          if-no-files-found: error
+          retention-days: 7
