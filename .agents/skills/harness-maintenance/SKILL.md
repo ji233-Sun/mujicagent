@@ -33,6 +33,12 @@ description: 为 MujicAgent 添加或维护 harness、模型发现与收藏、�
 - 事件负载按事件类型解析：工具结果可能为对象或数组，不得强制解码为文本。恢复会话的历史通知不能重复追加到当前回复；停止、错误、缺失能力和未知客户端请求必须有明确结果，子进程必须回收。
 - 在既有测试补权限默认值、未知值拒绝、图片内容、通知类型、恢复和取消回归。获得实际 token 授权后，用用户指定的精确模型验证读取普通文件、图片识别和第二轮续聊；只读目录探测不能替代这些证据。`MUJICAGENT_AGENT_LIVE_TEST=1 go test ./internal/harness -run TestInstalledAgentTurns -v -count=1` 会调用 Pi 的 magpie/workbuddy/deepseek-v4.1-flash 和 Droid 的 custom:magpie/codex-fast/gpt-6.1-sol，产生用量。
 
+## 新增 Harness 的 Issue 标签
+
+- 每次新增 Harness，必须在同次交付中为 GitHub 仓库创建 `harness:<driver-id>` 标签，后缀使用新 Harness 的稳定 driver ID；说明写明对应 Harness，颜色沿用已有 Harness 标签。先查询已有标签，存在则复用，不按显示名另建同义标签。
+- 同步更新本技能的支持列表、[Issue 提报规范中的映射](../mujicagent-delivery/SKILL.md#issue-提报与关联) 及 [README 提报说明](../../../README.md#参与项目)，让提报者能够选择新 Harness。标签选择范围及无权限、待确认情况统一遵循提报规范。
+- 交付前回读远端标签，核对名称、说明与 `Drivers` ID 一致，并在 PR 中记录结果。仅修改本地文档不算完成标签维护；创建标签遇到权限或认证阻塞时，按交付技能报告未完成项。
+
 ## 模型选择与紧凑界面
 
 - 模型选择以 Codex 为参照，复用 `modelCatalogPanel` / `modelChoicesPanel` 和 `modelEffortSlider`。在对话输入栏选择具体模型，不新增「默认模型」、手填模型 ID 或设置页 Models 控件。设置页只放版本、安装/登录入口及折叠连接详情，不铺满协议解释文字；异常通过简短状态和可重试入口表达。

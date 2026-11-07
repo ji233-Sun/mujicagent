@@ -1,6 +1,6 @@
 ---
 name: mujicagent-delivery
-description: 本仓库任何变更任务开始时，以及提交、推送、创建或更新 GitHub PR、关联 Issue 时必须使用；规定工作分支、Go/MyGo 验证、中文 PR、验证证据复用与版本发布边界。
+description: 本仓库任何变更任务开始时，以及提交、推送、创建或更新 GitHub PR、提报或关联 Issue 时必须使用；规定工作分支、Go/MyGo 验证、中文 PR、Harness 标签与 Issue 规范、验证证据复用及版本发布边界。
 ---
 
 # 分支与 GitHub 交付
@@ -60,9 +60,19 @@ description: 本仓库任何变更任务开始时，以及提交、推送、创�
 - 创建或更新后回读远端 PR，核对目标分支、源分支、标题、正文、必要截图及任务范围。查看可用的 CI 结果；若 CI 仍运行、失败或不可访问，如实报告，不声称检查通过。交付必须提供 PR 链接及验证结论，不能只停留在本地修改或提交。
 - 认证或权限阻塞时保留已完成工作，报告失败动作和剩余步骤，不反复盲目重试，也不绕过权限或转用无关凭据。
 
-## Issue 关联
+## Issue 提报与关联
 
-- 仓库只保留 `bug` 和 `feature request` 两个分类标签：已有行为不符合预期用 `bug`，新增能力或体验改进用 `feature request`。每个 Issue 选择一个主要分类，不另增优先级、状态或模块标签；PR 无需强行套用 Issue 分类。
+- Issue 标签分为主要分类和 Harness 范围：主要分类仍只有 `bug` 和 `feature request`，每个 Issue 选择一个；已有行为不符合预期用 `bug`，新增能力或体验改进用 `feature request`。除下述 Harness 标签外，不另增优先级、状态或模块标签；PR 无需强行套用 Issue 标签。
+- Harness 标签统一使用 `harness:<driver-id>`，后缀与 [Harness 目录](../../../internal/harness/codex.go) 的 `Drivers` ID 一致。当前映射如下；新增 Harness 时按 [接入技能](../harness-maintenance/SKILL.md#新增-harness-的-issue-标签) 同步维护。
+
+  | Harness | 标签 |
+  | --- | --- |
+  | Codex | `harness:codex` |
+  | Pi | `harness:pi` |
+  | Droid | `harness:droid` |
+
+- 涉及具体 Harness 的安装、更新、认证、模型、会话执行或工具协议时，必须选择对应 Harness 标签，并在正文写明 Harness 名称与 CLI 版本。跨 Harness 交接或已确认影响多个 Harness 时选择所有相关标签，说明各自的复现或预期行为；不要仅凭模型名或 provider 推断 Harness。
+- 与 Harness 无关的通用界面、项目管理或文档问题无需选择 Harness 标签。范围尚未确认时在正文标明待确认，确认后补齐；提报者无标签权限时在正文写明 Harness，由维护者补充标签，不因此阻止提报。
 - 创建前搜索重复问题；一个 Issue 聚焦一个可验收结果。Bug 写明环境、复现步骤、实际与预期结果及证据，区分已确认事实与推测；功能请求写明使用场景、期望行为和验收标准。
 - 用 open/closed 表达是否待处理，负责人表示正在承接，确有版本计划时使用里程碑。缺少信息直接在正文或讨论中说明；重复或不采纳时说明原因并关联原 Issue，不为这些状态新增标签。
 - 有相关 Issue 时，先阅读正文、验收要求及补充讨论，对照最终差异和验证结果判断是否完整解决，不能仅凭标题、分支名或编号认定。
