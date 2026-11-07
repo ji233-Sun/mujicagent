@@ -1,4 +1,7 @@
 {
+  "switchProject": "切换项目",
+  "searchProjects": "搜索项目",
+  "noProjects": "没有匹配的项目",
   "@@locale": "zh-Hans",
   "activityOutput": "执行输出",
   "expandOutput": "展开输出",

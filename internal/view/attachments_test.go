@@ -459,3 +459,86 @@ func TestDraftTitleAndSidebarOrder(t *testing.T) {
 		t.Fatal("follow-up draft changed a sent conversation title")
 	}
 }
+
+func TestProjectPickerTransfersDraft(t *testing.T) {
+	for _, expanded := range []bool{false, true} {
+		name := "collapsed"
+		if expanded {
+			name = "expanded"
+		}
+		t.Run(name, func(t *testing.T) {
+			state := model.New()
+			ctrl := controller.New(t.TempDir(), state, nil)
+			state.Projects = []model.Project{{ID: "target", Name: "Destination", Path: t.TempDir(), Expanded: expanded}}
+			state.NoProjectExpanded = expanded
+			thread := state.AddThread("", "")
+			v := New(ctrl)
+			tt := ui.NewTester(v.Render, 1140, 780)
+			tt.Frame()
+			if err := tt.Click("消息"); err != nil {
+				t.Fatal(err)
+			}
+			tt.Type("carry this prompt")
+			if err := tt.Click("切换项目"); err != nil {
+				t.Fatal(err)
+			}
+			tt.Frame()
+			if err := tt.Click("搜索项目"); err != nil {
+				t.Fatal(err)
+			}
+			tt.Type("dest")
+			tt.Frame()
+			if err := tt.Click("切换项目 · Destination"); err != nil {
+				t.Fatal(err)
+			}
+			for i := 0; i < 6; i++ {
+				tt.Frame()
+			}
+			if thread.ProjectID != "target" || thread.Draft != "carry this prompt" {
+				t.Fatalf("lost draft: %+v", thread)
+			}
+			if state.Projects[0].Expanded != expanded || state.NoProjectExpanded != expanded {
+				t.Fatal("expansion changed")
+			}
+			if v.projectFlight == nil {
+				t.Fatal("missing transfer animation")
+			}
+		})
+	}
+}
+
+func TestProjectPickerHeightAndSearch(t *testing.T) {
+	state := model.New()
+	ctrl := controller.New(t.TempDir(), state, nil)
+	for i := 0; i < 20; i++ {
+		name := strings.Repeat("x", i+1)
+		state.Projects = append(state.Projects, model.Project{ID: name, Name: name, Path: "/tmp/" + name})
+	}
+	state.AddThread("", "")
+	v := New(ctrl)
+	tt := ui.NewTester(v.Render, 840, 560)
+	tt.Frame()
+	if err := tt.Click("切换项目"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	list, ok := tt.Find("搜索项目 · 切换项目")
+	if !ok || list.H != 192 {
+		t.Fatalf("list height: %+v, found=%v", list, ok)
+	}
+	if err := tt.Click("搜索项目"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Type(strings.Repeat("x", 20))
+	tt.Frame()
+	filtered, ok := tt.Find("搜索项目 · 切换项目")
+	if !ok || filtered.H != list.H || filtered.Y != list.Y {
+		t.Fatalf("search moved panel: before=%+v after=%+v", list, filtered)
+	}
+	if err := tt.Click("切换项目 · " + strings.Repeat("x", 20)); err != nil {
+		t.Fatal(err)
+	}
+	if state.Thread(state.Selected).ProjectID != strings.Repeat("x", 20) {
+		t.Fatal("filtered destination not selected")
+	}
+}

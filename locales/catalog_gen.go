@@ -34,6 +34,36 @@ type Messages struct{ locale string }
 // source language.
 func In(locale string) Messages { return Messages{locale} }
 
+// SwitchProject says "切换项目"
+// in the language the app shows.
+func SwitchProject() string { return In(i18n.Locale()).SwitchProject() }
+
+// SwitchProject says "切换项目"
+// in the language of msgs.
+func (msgs Messages) SwitchProject() string {
+	return Catalog.Format(msgs.locale, "switchProject", nil)
+}
+
+// SearchProjects says "搜索项目"
+// in the language the app shows.
+func SearchProjects() string { return In(i18n.Locale()).SearchProjects() }
+
+// SearchProjects says "搜索项目"
+// in the language of msgs.
+func (msgs Messages) SearchProjects() string {
+	return Catalog.Format(msgs.locale, "searchProjects", nil)
+}
+
+// NoProjects says "没有匹配的项目"
+// in the language the app shows.
+func NoProjects() string { return In(i18n.Locale()).NoProjects() }
+
+// NoProjects says "没有匹配的项目"
+// in the language of msgs.
+func (msgs Messages) NoProjects() string {
+	return Catalog.Format(msgs.locale, "noProjects", nil)
+}
+
 // ActivityOutput says "执行输出"
 // in the language the app shows.
 func ActivityOutput() string { return In(i18n.Locale()).ActivityOutput() }

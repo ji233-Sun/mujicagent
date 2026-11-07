@@ -1,4 +1,7 @@
 {
+  "switchProject": "Switch project",
+  "searchProjects": "Search projects",
+  "noProjects": "No matching projects",
   "@@locale": "en",
   "activityOutput": "Execution output",
   "expandOutput": "Expand output",
