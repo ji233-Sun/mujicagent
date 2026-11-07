@@ -1278,92 +1278,122 @@ func TestSwitchProjectPreservesPromptAndHistory(t *testing.T) {
 }
 
 func TestHarnessInstallGuardAndFailure(t *testing.T) {
-	c := New(t.TempDir(), model.New(), nil)
-	original := c.State.Settings.CodexPath
-	*c.HarnessFor("codex") = HarnessState{Binary: original, Release: harness.Release{Version: "1.2.3"}}
-	c.InstallHarness()
-	if c.HarnessFor("codex").Installing {
-		t.Fatal("installed without confirmation preview")
-	}
-	c.HarnessFor("codex").Plan = &harness.InstallPlan{Release: harness.Release{Version: "1.2.3"}}
-	c.CheckHarness()
-	if c.HarnessFor("codex").Checking || c.HarnessFor("codex").Plan == nil {
-		t.Fatal("background check replaced a pending confirmation")
-	}
-	c.Running["busy"] = true
-	c.InstallHarness()
-	if c.HarnessFor("codex").Installing {
-		t.Fatal("installed during a turn")
-	}
-	c.Running["busy"] = false
-	c.HarnessFor("codex").Binary = "stale-path"
-	c.InstallHarness()
-	if c.HarnessFor("codex").Installing {
-		t.Fatal("installed stale selection")
-	}
-	c.HarnessFor("codex").Binary = original
-	c.Connection = "Connecting"
-	c.InstallHarness()
-	if c.HarnessFor("codex").Installing {
-		t.Fatal("installed while connecting")
-	}
-	c.Connection = "Disconnected"
-	// Reinspection fails before execution because the installation is different
-	// from the approved empty snapshot (or the explicit path is invalid).
-	c.State.Settings.CodexPath = filepath.Join(t.TempDir(), "missing-codex")
-	c.HarnessFor("codex").Binary = c.State.Settings.CodexPath
-	original = c.State.Settings.CodexPath
-	c.InstallHarness()
-	deadline := time.Now().Add(3 * time.Second)
-	for c.HarnessFor("codex").Installing && time.Now().Before(deadline) {
-		c.Drain()
-		time.Sleep(time.Millisecond)
-	}
-	if c.HarnessFor("codex").Installing || c.HarnessFor("codex").Error == "" {
-		t.Fatal("failure was not published")
-	}
-	if c.State.Settings.CodexPath != original {
-		t.Fatal("failed install changed active path")
-	}
-	entries, err := os.ReadDir(filepath.Join(c.Dir, "tools", "codex"))
-	if (err != nil && !os.IsNotExist(err)) || len(entries) != 0 {
-		t.Fatalf("staging not cleaned: %v %v", entries, err)
-	}
-	if c.HarnessFor("codex").Plan != nil {
-		t.Fatal("confirmation was reusable")
-	}
-	c.HarnessFor("codex").Plan = &harness.InstallPlan{}
-	c.DismissHarnessPlan()
-	c.InstallHarness()
-	if c.HarnessFor("codex").Installing {
-		t.Fatal("dismissed preview could install")
+	for _, driver := range []string{"codex", "pi", "droid"} {
+		t.Run(driver, func(t *testing.T) {
+			c := New(t.TempDir(), model.New(), nil)
+			original := c.State.Settings.AgentPath(driver)
+			*c.HarnessFor(driver) = HarnessState{Binary: original, Release: harness.Release{Version: "1.2.3"}}
+			c.InstallHarness(driver)
+			if c.HarnessFor(driver).Installing {
+				t.Fatal("installed without confirmation preview")
+			}
+			c.HarnessFor(driver).Plan = &harness.InstallPlan{Release: harness.Release{Version: "1.2.3"}}
+			c.CheckHarness(driver)
+			if c.HarnessFor(driver).Checking || c.HarnessFor(driver).Plan == nil {
+				t.Fatal("background check replaced a pending confirmation")
+			}
+			c.Running["busy"] = true
+			c.InstallHarness(driver)
+			if c.HarnessFor(driver).Installing {
+				t.Fatal("installed during a turn")
+			}
+			c.Running["busy"] = false
+			c.HarnessFor(driver).Binary = "stale-path"
+			c.InstallHarness(driver)
+			if c.HarnessFor(driver).Installing {
+				t.Fatal("installed stale selection")
+			}
+			c.HarnessFor(driver).Binary = original
+			c.Connection = "Connecting"
+			c.InstallHarness(driver)
+			if c.HarnessFor(driver).Installing {
+				t.Fatal("installed while connecting")
+			}
+			c.Connection = "Disconnected"
+			other := "codex"
+			if driver == "codex" {
+				other = "pi"
+			}
+			c.HarnessFor(other).Installing = true
+			c.InstallHarness(driver)
+			if c.HarnessFor(driver).Installing {
+				t.Fatal("concurrent harness installation")
+			}
+			c.HarnessFor(other).Installing = false
+			c.HarnessFor(driver).Plan.Driver = other
+			c.InstallHarness(driver)
+			if c.HarnessFor(driver).Installing {
+				t.Fatal("executed another harness plan")
+			}
+			c.HarnessFor(driver).Plan.Driver = driver
+			if driver != "codex" {
+				c.Connection = "Connected"
+			}
+			// Reinspection fails before execution because the installation is different
+			// from the approved empty snapshot (or the explicit path is invalid).
+			c.setHarnessPath(driver, filepath.Join(t.TempDir(), "missing-agent"))
+			c.HarnessFor(driver).Binary = c.State.Settings.AgentPath(driver)
+			original = c.State.Settings.AgentPath(driver)
+			c.InstallHarness(driver)
+			deadline := time.Now().Add(3 * time.Second)
+			for c.HarnessFor(driver).Installing && time.Now().Before(deadline) {
+				c.Drain()
+				time.Sleep(time.Millisecond)
+			}
+			if c.HarnessFor(driver).Installing || c.HarnessFor(driver).Error == "" {
+				t.Fatal("failure was not published")
+			}
+			if c.State.Settings.AgentPath(driver) != original {
+				t.Fatal("failed install changed active path")
+			}
+			if driver != "codex" && c.Connection != "Connected" {
+				t.Fatal("external installation disconnected Codex")
+			}
+			entries, err := os.ReadDir(filepath.Join(c.Dir, "tools", driver))
+			if (err != nil && !os.IsNotExist(err)) || len(entries) != 0 {
+				t.Fatalf("staging not cleaned: %v %v", entries, err)
+			}
+			if c.HarnessFor(driver).Plan != nil {
+				t.Fatal("confirmation was reusable")
+			}
+			c.HarnessFor(driver).Plan = &harness.InstallPlan{}
+			c.DismissHarnessPlan(driver)
+			c.InstallHarness(driver)
+			if c.HarnessFor(driver).Installing {
+				t.Fatal("dismissed preview could install")
+			}
+		})
 	}
 }
 
 func TestHarnessPreviewCancellationAndStaleResult(t *testing.T) {
-	c := New(t.TempDir(), model.New(), nil)
-	c.Connection = "Connected"
-	u := c.HarnessFor("codex")
-	c.State.Settings.CodexPath = filepath.Join(t.TempDir(), "missing-old")
-	c.PrepareHarness("")
-	old := u.planRequest
-	c.DismissHarnessPlan()
-	if u.Preparing || u.Plan != nil || old == u.planRequest || c.Connection != "Connected" {
-		t.Fatal("preview dismissal changed the connection or retained confirmation")
-	}
-	c.State.Settings.CodexPath = filepath.Join(t.TempDir(), "missing-new")
-	c.PrepareHarness("cn")
-	deadline := time.Now().Add(5 * time.Second)
-	for u.Preparing && time.Now().Before(deadline) {
-		c.Drain()
-		time.Sleep(time.Millisecond)
-	}
-	c.Drain()
-	if u.Preparing || u.Plan != nil || u.Error == "" || !strings.Contains(u.Error, "missing-new") || c.Connection != "Connected" {
-		t.Fatalf("stale preview won or probing disconnected: %+v", u)
-	}
-	if entries, err := os.ReadDir(c.Dir); err != nil || len(entries) != 0 {
-		t.Fatalf("preview wrote application data: %v %v", entries, err)
+	for _, driver := range []string{"codex", "pi", "droid"} {
+		t.Run(driver, func(t *testing.T) {
+			c := New(t.TempDir(), model.New(), nil)
+			c.Connection = "Connected"
+			u := c.HarnessFor(driver)
+			c.setHarnessPath(driver, filepath.Join(t.TempDir(), "missing-old"))
+			c.PrepareHarness(driver, "")
+			old := u.planRequest
+			c.DismissHarnessPlan(driver)
+			if u.Preparing || u.Plan != nil || old == u.planRequest || c.Connection != "Connected" {
+				t.Fatal("preview dismissal changed the connection or retained confirmation")
+			}
+			c.setHarnessPath(driver, filepath.Join(t.TempDir(), "missing-new"))
+			c.PrepareHarness(driver, "cn")
+			deadline := time.Now().Add(5 * time.Second)
+			for u.Preparing && time.Now().Before(deadline) {
+				c.Drain()
+				time.Sleep(time.Millisecond)
+			}
+			c.Drain()
+			if u.Preparing || u.Plan != nil || u.Error == "" || !strings.Contains(u.Error, "missing-new") || c.Connection != "Connected" {
+				t.Fatalf("stale preview won or probing disconnected: %+v", u)
+			}
+			if entries, err := os.ReadDir(c.Dir); err != nil || len(entries) != 0 {
+				t.Fatalf("preview wrote application data: %v %v", entries, err)
+			}
+		})
 	}
 }
 
@@ -1423,23 +1453,20 @@ func TestAgentProcessLifecycle(t *testing.T) {
 			binary := filepath.Join(dir, "fake agent")
 			output := `{"type":"result","session_id":"owned-droid","result":"done"}`
 			if driver == "pi" {
-				output = "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"done\"}]}}\n{\"type\":\"agent_end\"}"
+				output = "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"done\"}]}}\n{\"type\":\"agent_settled\"}"
 			}
-			script := "#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' '" + output + "'\n"
+			script := "#!/bin/sh\nread request\nprintf '%s\\n' '" + output + "'\n"
 			if driver == "droid" {
 				script = `#!/bin/sh
 read request
-printf '%s\n' '{"id":1,"result":{"agentCapabilities":{"loadSession":true,"promptCapabilities":{"image":true}}}}'
+printf '%s\n' '{"id":"request-1","result":{"sessionId":"owned-droid"}}'
 read request
-printf '%s\n' '{"id":2,"result":{"sessionId":"owned-droid"}}'
+case "$request" in *'"autonomyLevel":"off"'*) ;; *) exit 2;; esac
+printf '%s\n' '{"id":"request-2","result":{}}'
 read request
-case "$request" in *'"modeId":"normal"'*) ;; *) exit 2;; esac
-printf '%s\n' '{"id":3,"result":{}}'
-read request
-printf '%s\n' '{"id":4,"result":{}}'
-read request
-printf '%s\n' '{"method":"session/update","params":{"sessionId":"owned-droid","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"done"}}}}'
-printf '%s\n' '{"id":5,"result":{"stopReason":"end_turn"}}'
+printf '%s\n' '{"id":"request-3","result":{}}'
+printf '%s\n' '{"method":"droid.session_notification","params":{"sessionId":"owned-droid","notification":{"type":"assistant_text_delta","messageId":"m","blockIndex":0,"textDelta":"done"}}}'
+printf '%s\n' '{"method":"droid.session_notification","params":{"sessionId":"owned-droid","notification":{"type":"agent_turn_completed","reason":"completed"}}}'
 sleep 20
 `
 			}
@@ -1482,6 +1509,94 @@ sleep 20
 				t.Fatalf("not cancelled: %+v", thread.Turns[1])
 			}
 		})
+	}
+}
+
+func TestAgentEventMergeAndPersistence(t *testing.T) {
+	turn := model.Turn{Status: "inProgress"}
+	for _, e := range []harness.AgentEvent{
+		{ID: "m1", Kind: "agentMessage", Text: "Before", Delta: true},
+		{ID: "a", Tool: &harness.ToolEvent{Name: "Read", Kind: "read", Arguments: json.RawMessage(`{"path":"a","api_key":"secret"}`)}},
+		{ID: "b", Tool: &harness.ToolEvent{Name: "Read", Kind: "read", Arguments: json.RawMessage(`{"path":"b"}`)}},
+		{ID: "a", Tool: &harness.ToolEvent{Result: json.RawMessage(`"partial"`)}},
+		{ID: "m2", Kind: "agentMessage", Text: "After", Delta: true},
+		{ID: "a", Status: "completed", Tool: &harness.ToolEvent{Result: json.RawMessage(`["complete"]`)}},
+		{ID: "b", Status: "failed", Tool: &harness.ToolEvent{Result: json.RawMessage(`{"error":"denied"}`)}},
+		{ID: "m1", Kind: "agentMessage", Text: "Before", Status: "completed"},
+	} {
+		mergeAgentEvent(&turn, e)
+	}
+	if len(turn.Items) != 4 || turn.Items[0].Text != "Before" || turn.Items[3].Text != "After" {
+		t.Fatalf("order/snapshot: %+v", turn.Items)
+	}
+	a, b := turn.Items[1], turn.Items[2]
+	if a.Kind != "toolCall" || a.Status != "completed" || strings.Contains(a.MCP.Arguments, "secret") || strings.Contains(a.MCP.Result, "partial") || b.Status != "failed" || b.MCP.Error == "" {
+		t.Fatalf("tool merge: %+v %+v", a, b)
+	}
+	s := model.New()
+	thread := s.AddThread("", t.TempDir())
+	thread.Harness = "pi"
+	thread.Turns = []model.Turn{turn}
+	path := filepath.Join(t.TempDir(), "state.json")
+	if err := model.Save(path, s); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := model.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := restored.Thread(thread.ID).Turns[0].Items
+	if len(items) != 4 || items[1].MCP.Result != a.MCP.Result || items[2].Status != "failed" {
+		t.Fatal("tool details lost on restart")
+	}
+	mergeAgentEvent(&turn, harness.AgentEvent{ID: "mcp", Tool: &harness.ToolEvent{Kind: "mcp", Name: "lookup", Server: "docs"}})
+	mergeAgentEvent(&turn, harness.AgentEvent{ID: "mcp", Status: "completed", Tool: &harness.ToolEvent{Kind: "other", Name: "opaque_wire_name", Result: json.RawMessage(`"done"`)}})
+	call := turn.Items[len(turn.Items)-1]
+	if call.Kind != "mcpToolCall" || call.MCP.Server != "docs" || call.MCP.Tool != "lookup" || call.MCP.Result != `"done"` {
+		t.Fatalf("sparse update replaced MCP identity: %+v", call)
+	}
+}
+
+func TestAgentPlanHandoffAndMultiAnswer(t *testing.T) {
+	c := New(t.TempDir(), model.New(), nil)
+	defer c.Close()
+	thread := c.State.AddThread("", t.TempDir())
+	thread.Harness = "droid"
+	turn := model.Turn{Status: "completed"}
+	mergeAgentEvent(&turn, harness.AgentEvent{ID: "todo", Tool: &harness.ToolEvent{Kind: "plan", Arguments: json.RawMessage(`{"todos":"- [x] Read\n- [ ] Verify"}`)}})
+	thread.Turns = []model.Turn{turn}
+	if !c.Handoff("pi", "model") || !strings.Contains(c.State.Thread(c.State.Selected).HandoffContext, "- [ ] Verify") {
+		t.Fatal("readable plan lost during handoff")
+	}
+	r := &codex.Request{ID: json.RawMessage(`"multi"`), Method: "item/tool/requestUserInput", Cancellable: true, Questions: []codex.Question{{ID: "q", MultiSelect: true}}}
+	ch := make(chan any, 1)
+	c.agentReplies = map[*codex.Request]chan any{r: ch}
+	c.Requests = []*codex.Request{r}
+	c.AnswerQuestions(r, map[string]string{"q": `["A","B"]`, "q:other": "C"})
+	select {
+	case reply := <-ch:
+		data, _ := json.Marshal(reply)
+		if !strings.Contains(string(data), `["A","B","C"]`) {
+			t.Fatal(string(data))
+		}
+	default:
+		t.Fatal("multi answer not delivered")
+	}
+	if len(c.Requests) != 0 {
+		t.Fatal("answered request remains visible")
+	}
+	r.Responding = false
+	c.Requests = []*codex.Request{r}
+	c.agentReplies[r] = ch
+	c.CancelQuestions(r)
+	select {
+	case reply := <-ch:
+		data, _ := json.Marshal(reply)
+		if !strings.Contains(string(data), `"cancelled":true`) {
+			t.Fatal(string(data))
+		}
+	default:
+		t.Fatal("cancel not delivered")
 	}
 }
 
@@ -1544,12 +1659,14 @@ func TestModelDiscoveryReplacesStaleRequest(t *testing.T) {
 		if p == first {
 			script += "sleep 1\n"
 		}
-		script += "printf '%s\\n' '{\"id\":\"models\",\"result\":{\"models\":[{\"id\":\"" + filepath.Base(p) + "\"}]}}'\nsleep 20\n"
+		script += "printf '%s\\n' '{\"id\":\"models\",\"result\":{\"models\":[{\"id\":\"" + filepath.Base(p) + "\",\"supportedReasoningEfforts\":[\"high\"]}]}}'\nsleep 20\n"
 		if err := os.WriteFile(p, []byte(script), 0700); err != nil {
 			t.Fatal(err)
 		}
 	}
 	c.State.Settings.DroidPath = first
+	thread := c.State.AddThread("", dir)
+	thread.Harness, thread.AgentModel, thread.AgentEffort = "droid", "second", "low"
 	c.LoadAgentModels("droid", false)
 	c.State.Settings.DroidPath = second
 	c.LoadAgentModels("droid", false)
@@ -1562,6 +1679,13 @@ func TestModelDiscoveryReplacesStaleRequest(t *testing.T) {
 	c.Drain()
 	if h.ModelsLoading || h.ModelsError != "" || len(h.Models) != 1 || h.Models[0].ID != "second" {
 		t.Fatalf("stale catalog: %+v", h)
+	}
+	if thread.AgentEffort != "high" {
+		t.Fatal("refresh retained unsupported effort", thread.AgentEffort)
+	}
+	saved, err := model.Load(filepath.Join(dir, "state.json"))
+	if err != nil || saved.Thread(thread.ID).AgentEffort != "high" {
+		t.Fatal("normalized effort was not saved", err)
 	}
 	request := h.modelsRequest
 	c.LoadAgentModels("droid", false)

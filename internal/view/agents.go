@@ -6,24 +6,40 @@ import (
 )
 
 func (v *View) agentsPane(c *ui.Context) {
-	tx, u := v.texts(), v.C.HarnessFor("codex")
-	if v.agentSection == "pi" || v.agentSection == "droid" {
-		v.externalAgentPane(c, v.agentSection)
-		return
+	id := v.agentSection
+	if id == "" {
+		id = "codex"
 	}
+	tx, u := v.texts(), v.C.HarnessFor(id)
+	path := &v.C.State.Settings.CodexPath
+	if id == "pi" {
+		path = &v.C.State.Settings.PiPath
+	}
+	if id == "droid" {
+		path = &v.C.State.Settings.DroidPath
+	}
+	services := c.Services()
 	for _, driver := range harness.Drivers {
-		if driver.ID != "codex" {
+		if driver.ID != id {
 			continue
 		}
 		ui.Column(c.Key("harness-"+driver.ID)).Radius(10).Border(1, c.Theme().Border).Background(c.Theme().Background).Children(func() {
 			ui.Row(c).Padding(14).Gap(10).AlignItems(ui.Center).Children(func() {
-				ui.Box(c).Size(34, 34).Radius(8).Background(c.Theme().Surface).Center().Children(func() { ui.Icon(c, openAIIcon).Size(23, 23) })
+				ui.Box(c).Size(34, 34).Radius(8).Background(c.Theme().Surface).Center().Children(func() { agentGlyph(c, id) })
 				ui.Column(c).Grow(1).MinWidth(0).Gap(4).Children(func() {
 					ui.Row(c).AlignItems(ui.Center).Gap(8).Children(func() {
 						ui.Text(c, driver.Name).Bold().FontSize(15)
 						status := map[string]string{"Connected": tx.Connected(), "Disconnected": tx.Disconnected(), "Connecting": tx.Connecting()}[v.C.Connection]
+						if id != "codex" {
+							status = tx.HarnessUnchecked()
+							if u.Missing {
+								status = tx.HarnessMissing()
+							} else if u.Installation.Path != "" {
+								status = tx.AgentCLIAvailable()
+							}
+						}
 						color := c.Theme().TextMuted
-						if v.C.Connection == "Connected" {
+						if id == "codex" && v.C.Connection == "Connected" || id != "codex" && u.Installation.Path != "" {
 							color = c.Theme().Accent
 						}
 						ui.Row(c).AlignItems(ui.Center).Gap(4).Children(func() {
@@ -32,7 +48,7 @@ func (v *View) agentsPane(c *ui.Context) {
 						})
 					})
 					version := u.Installation.Version
-					if version == "" && v.C.Connection == "Connected" {
+					if version == "" && id == "codex" && v.C.Connection == "Connected" {
 						version = v.C.Version
 					}
 					if version == "" {
@@ -42,6 +58,9 @@ func (v *View) agentsPane(c *ui.Context) {
 						}
 					}
 					method := harness.ManagerName(u.Installation.Method)
+					if u.Installation.Method == "native" {
+						method = tx.HarnessNative()
+					}
 					if u.Installation.Method == "managed" {
 						method = tx.HarnessManaged()
 					}
@@ -57,12 +76,24 @@ func (v *View) agentsPane(c *ui.Context) {
 				if u.Checking {
 					label = tx.CheckingForUpdates()
 				}
-				ui.Button(c, label).Height(28).FontSize(12).Radius(6).Padding(0, 10).Disabled(u.Checking || u.Installing || u.Preparing).OnClick(v.C.CheckHarness)
+				ui.Button(c, label).Height(28).FontSize(12).Radius(6).Padding(0, 10).Disabled(u.Checking || u.Installing || u.Preparing).OnClick(func() { v.C.CheckHarness(id) })
 				label = tx.Connect()
-				if v.C.Connection == "Connected" {
-					label = tx.Reconnect()
+				action := v.C.Connect
+				if id == "codex" {
+					if v.C.Connection == "Connected" {
+						label = tx.Reconnect()
+					}
+				} else {
+					label = tx.AgentLoginHelp()
+					action = func() {
+						endpoint := "https://pi.dev/docs/quickstart"
+						if id == "droid" {
+							endpoint = "https://docs.factory.com/droid-cli/quickstart"
+						}
+						services.OpenURL(endpoint)
+					}
 				}
-				ui.PrimaryButton(c, label).Height(28).FontSize(12).Radius(6).Padding(0, 12).Disabled(v.C.AnyRunning() || u.Installing || u.Preparing || v.C.Connection == "Connecting").OnClick(v.C.Connect)
+				ui.PrimaryButton(c, label).Height(28).FontSize(12).Radius(6).Padding(0, 12).Disabled(v.C.AnyRunning() || v.C.HarnessInstalling() || u.Preparing || v.C.Connection == "Connecting").OnClick(action)
 			})
 			if u.Release.Version != "" || u.Missing || u.Installing || u.Error != "" {
 				ui.Column(c).Padding(0, 14, 10).Gap(6).Children(func() {
@@ -82,7 +113,7 @@ func (v *View) agentsPane(c *ui.Context) {
 									label = tx.HarnessInstall()
 								}
 								if u.Missing || u.Installation.CanUpdate() {
-									ui.Button(c, label).Height(28).FontSize(12).Radius(6).Disabled(u.Checking || u.Installing || u.Preparing || v.C.AnyRunning() || v.C.Connection == "Connecting" || u.Binary != v.C.State.Settings.CodexPath).OnClick(v.openHarnessInstall)
+									ui.Button(c, label).Height(28).FontSize(12).Radius(6).Disabled(u.Checking || v.C.HarnessInstalling() || u.Preparing || v.C.AnyRunning() || v.C.Connection == "Connecting" || u.Binary != v.C.State.Settings.AgentPath(id)).OnClick(v.openHarnessInstall)
 								}
 							}
 						})
@@ -90,7 +121,7 @@ func (v *View) agentsPane(c *ui.Context) {
 					if u.Installing {
 						ui.Row(c).AlignItems(ui.Center).Children(func() {
 							ui.Text(c, tx.HarnessWorking()).FontSize(12).Grow(1)
-							ui.Button(c, tx.Cancel()).Height(26).FontSize(12).OnClick(v.C.CancelHarness)
+							ui.Button(c, tx.Cancel()).Height(26).FontSize(12).OnClick(func() { v.C.CancelHarness(id) })
 						})
 						ui.Progress(c, -1).Height(3)
 					}
@@ -134,14 +165,17 @@ func (v *View) agentsPane(c *ui.Context) {
 				detail.Panel(func() {
 					ui.Column(c).Padding(0, 0, 12).Gap(8).Children(func() {
 						ui.Row(c).AlignItems(ui.Center).Gap(12).Children(func() {
-							ui.Text(c, tx.CodexPath()).Width(112).Shrink(0).FontSize(12).TextColor(c.Theme().TextMuted)
-							ui.TextInput(c, &v.C.State.Settings.CodexPath).Height(28).Radius(6).FontSize(12).Grow(1).MinWidth(0).Label(tx.CodexPath()).Disabled(v.C.AnyRunning() || u.Installing || u.Checking || u.Preparing || v.C.Connection == "Connecting").OnChange(v.C.Save)
+							ui.Text(c, tx.AgentPath()).Width(112).Shrink(0).FontSize(12).TextColor(c.Theme().TextMuted)
+							ui.TextInput(c, path).Height(28).Radius(6).FontSize(12).Grow(1).MinWidth(0).Label(tx.AgentPath()).Disabled(v.C.AnyRunning() || u.Installing || u.Checking || u.Preparing || v.C.Connection == "Connecting").OnChange(func() { v.C.DismissHarnessPlan(id); u.ModelsChecked = false; v.C.Save() })
 						})
-						if u.Installation.Path != "" && u.Installation.Path != v.C.State.Settings.CodexPath {
+						if u.Installation.Path != "" && u.Installation.Path != v.C.State.Settings.AgentPath(id) {
 							ui.Text(c, u.Installation.Path).Padding(0, 0, 0, 124).FontSize(11).TextColor(c.Theme().TextMuted).SingleLine().Tooltip(u.Installation.Path)
 						}
 						account := v.statusText(v.C.Account)
-						if v.C.Account == "Configured provider (no OpenAI login required)" {
+						if id != "codex" {
+							account = tx.AgentCLIAuth()
+						}
+						if id == "codex" && v.C.Account == "Configured provider (no OpenAI login required)" {
 							account = tx.HarnessProviderAuth()
 						}
 						if account == "" {
@@ -151,10 +185,12 @@ func (v *View) agentsPane(c *ui.Context) {
 							ui.Text(c, tx.Account()).Width(112).Shrink(0).FontSize(12).TextColor(c.Theme().TextMuted)
 							ui.Text(c, account).FontSize(12).Grow(1).MinWidth(0).Selectable()
 						})
-						ui.Row(c).AlignItems(ui.Center).Gap(12).Children(func() {
-							ui.Text(c, tx.CodexDefaultPermissions()).Width(112).Shrink(0).FontSize(12).TextColor(c.Theme().TextMuted)
-							settingsSelect(c.Key("default-permissions"), &v.C.State.Settings.DefaultPermissionProfile, tx.CodexDefaultPermissions(), []settingOption{{":read-only", tx.ReadOnly()}, {":workspace", tx.DefaultPermissions()}, {":approve-for-me", tx.ApproveForMe()}, {":danger-full-access", tx.FullAccess()}}, v.C.Save)
-						})
+						if id == "codex" {
+							ui.Row(c).AlignItems(ui.Center).Gap(12).Children(func() {
+								ui.Text(c, tx.CodexDefaultPermissions()).Width(112).Shrink(0).FontSize(12).TextColor(c.Theme().TextMuted)
+								settingsSelect(c.Key("default-permissions"), &v.C.State.Settings.DefaultPermissionProfile, tx.CodexDefaultPermissions(), []settingOption{{":read-only", tx.ReadOnly()}, {":workspace", tx.DefaultPermissions()}, {":approve-for-me", tx.ApproveForMe()}, {":danger-full-access", tx.FullAccess()}}, v.C.Save)
+							})
+						}
 					})
 				})
 			})

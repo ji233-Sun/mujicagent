@@ -3,6 +3,7 @@ package view
 import (
 	"encoding/json"
 	"slices"
+	"strings"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/ji233-Sun/mujicagent/internal/codex"
@@ -10,12 +11,21 @@ import (
 
 func (v *View) elicitation(c *ui.Context, r *codex.Request, values map[string]string) {
 	tx := v.texts()
-	ui.Text(c, tx.McpRequest()+" · "+r.ServerName).Bold()
+	if r.Method == "client/form" {
+		ui.Text(c, r.Title).Bold()
+	} else {
+		ui.Text(c, tx.McpRequest()+" · "+r.ServerName).Bold()
+	}
 	message := r.Message
-	if message == "" {
+	if message == "" && r.Method != "client/form" {
 		message = r.Title + "\n" + r.Description
 	}
-	ui.Text(c, message).FontSize(12).Selectable()
+	if message != "" {
+		ui.Text(c, message).FontSize(12).Selectable()
+	}
+	if r.FilterOptions {
+		ui.TextInput(c.Key("filter"), &r.Search).Label(tx.Search()).Placeholder(tx.Search()).Disabled(r.Responding)
+	}
 	valid := false
 	if r.Mode == "url" && r.ElicitationURL() {
 		ui.Text(c, r.URL).Selectable()
@@ -42,6 +52,9 @@ func (v *View) elicitation(c *ui.Context, r *codex.Request, values map[string]st
 				}
 				if len(options) > 0 {
 					for i, option := range options {
+						if r.FilterOptions && !strings.Contains(strings.ToLower(option.Title), strings.ToLower(r.Search)) {
+							continue
+						}
 						selected := values[key] == option.Value
 						var multi []string
 						if field.Type == "array" {
@@ -72,7 +85,12 @@ func (v *View) elicitation(c *ui.Context, r *codex.Request, values map[string]st
 					}
 				} else {
 					value := values[key]
-					input := ui.TextInput(c, &value).Label(key).Disabled(r.Responding)
+					var input ui.Element
+					if r.Multiline {
+						input = ui.TextArea(c, &value).Lines(3, 8).Label(key).Disabled(r.Responding)
+					} else {
+						input = ui.TextInput(c, &value).Label(key).Disabled(r.Responding)
+					}
 					if input.Changed() {
 						values[key] = value
 					}
@@ -88,8 +106,13 @@ func (v *View) elicitation(c *ui.Context, r *codex.Request, values map[string]st
 		ui.Text(c, tx.McpUnsupported()+" ("+r.Mode+")").TextColor(c.Theme().Danger)
 	}
 	ui.Column(c).Gap(3).Children(func() {
+		if r.Refreshable {
+			approvalRow(c.Key("refresh"), tx.AgentRefreshModels(), "", activityIcon, false).Disabled(r.Responding).OnClick(func() { v.C.RespondElicitation(r, "refresh", nil) })
+		}
 		approvalRow(c.Key("accept"), tx.McpAccept(), "", checkIcon, true).Disabled(r.Responding || !valid).OnClick(func() { v.C.RespondElicitation(r, "accept", values) })
-		approvalRow(c.Key("decline"), tx.Deny(), "", closeIcon, false).Disabled(r.Responding).OnClick(func() { v.C.RespondElicitation(r, "decline", nil) })
+		if r.Method != "client/form" {
+			approvalRow(c.Key("decline"), tx.Deny(), "", closeIcon, false).Disabled(r.Responding).OnClick(func() { v.C.RespondElicitation(r, "decline", nil) })
+		}
 		approvalRow(c.Key("cancel"), tx.Cancel(), "", failureIcon, false).Disabled(r.Responding).OnClick(func() { v.C.RespondElicitation(r, "cancel", nil) })
 	})
 }

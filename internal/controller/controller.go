@@ -13,10 +13,13 @@ import (
 	"time"
 
 	"github.com/ji233-Sun/mujicagent/internal/codex"
+	"github.com/ji233-Sun/mujicagent/internal/harness"
 	"github.com/ji233-Sun/mujicagent/internal/model"
 )
 
 type Controller struct {
+	agentControls                       map[string]*harness.Control
+	agentReplies                        map[*codex.Request]chan any
 	AppUpdates                          AppUpdateState
 	Harnesses                           map[string]*HarnessState
 	agentRuns                           map[string]context.CancelFunc
@@ -75,7 +78,7 @@ func (c *Controller) Save() {
 func (c *Controller) Close() {
 	c.once.Do(func() {
 		close(c.stop)
-		c.CancelHarness()
+		c.CancelHarness("codex")
 		for _, cancel := range c.agentRuns {
 			cancel()
 		}
@@ -103,7 +106,7 @@ func (c *Controller) AnyRunning() bool {
 }
 
 func (c *Controller) Connect() {
-	if c.Connection == "Connecting" || c.AnyRunning() || c.HarnessFor("codex").Installing {
+	if c.Connection == "Connecting" || c.AnyRunning() || c.HarnessInstalling() {
 		return
 	}
 	if c.client != nil {
@@ -412,7 +415,7 @@ func (c *Controller) sendThread(t *model.Thread, text string, plan bool, queuedI
 	if t.Driver() != "codex" {
 		return c.sendAgent(t, text, queuedID)
 	}
-	if c.HarnessFor("codex").Installing || c.client == nil || c.Connection != "Connected" || c.Running[t.ID] || c.permissionUpdates[t.ID] {
+	if c.HarnessInstalling() || c.client == nil || c.Connection != "Connected" || c.Running[t.ID] || c.permissionUpdates[t.ID] {
 		return false
 	}
 	if err := c.prepareWorkspace(t, text); err != nil {
@@ -598,11 +601,26 @@ func (c *Controller) AnswerQuestions(r *codex.Request, answers map[string]string
 	values := map[string]any{}
 	for _, q := range r.Questions {
 		answer := strings.TrimSpace(answers[q.ID])
-		if answer == "" {
+		if answer == "" && (!q.MultiSelect || strings.TrimSpace(answers[q.ID+":other"]) == "") {
 			c.ReportError("Answer each question before continuing.")
 			return
 		}
-		values[q.ID] = map[string]any{"answers": []string{answer}}
+		selected := []string{answer}
+		if q.MultiSelect {
+			selected = []string{}
+			if answer != "" && json.Unmarshal([]byte(answer), &selected) != nil {
+				c.ReportError("Invalid selection")
+				return
+			}
+			if other := strings.TrimSpace(answers[q.ID+":other"]); other != "" {
+				selected = append(selected, other)
+			}
+			if len(selected) == 0 {
+				c.ReportError("Answer each question before continuing.")
+				return
+			}
+		}
+		values[q.ID] = map[string]any{"answers": selected}
 	}
 	c.replyRequest(r, map[string]any{"answers": values})
 }
@@ -617,6 +635,18 @@ func (c *Controller) Approve(r *codex.Request, decision json.RawMessage) {
 }
 
 func (c *Controller) replyRequest(r *codex.Request, result any) {
+	if reply := c.agentReplies[r]; reply != nil && !r.Responding {
+		r.Responding = true
+		reply <- result
+		delete(c.agentReplies, r)
+		for i, request := range c.Requests {
+			if request == r {
+				c.Requests = append(c.Requests[:i], c.Requests[i+1:]...)
+				break
+			}
+		}
+		return
+	}
 	if c.client == nil || r.Responding {
 		return
 	}
@@ -880,4 +910,10 @@ func decodeItem(raw json.RawMessage) model.Item {
 		item.Text = ""
 	}
 	return item
+}
+
+func (c *Controller) CancelQuestions(r *codex.Request) {
+	if r.Cancellable && c.agentReplies[r] != nil {
+		c.replyRequest(r, map[string]any{"cancelled": true, "answers": map[string]any{}})
+	}
 }

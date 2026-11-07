@@ -23,6 +23,7 @@ func (v *View) settingsDialog(c *ui.Context) {
 		})
 	})
 	if dialog.Dismissed() {
+		v.dismissHarnessInstall()
 		v.C.Save()
 	}
 }
@@ -76,7 +77,7 @@ func (v *View) settingsPane(c *ui.Context) {
 	}
 	ui.Row(c).Height(48).Shrink(0).Padding(0, 16).AlignItems(ui.Center).Children(func() {
 		ui.Text(c, title).Bold().FontSize(16).Grow(1)
-		iconButton(c, tx.CloseSettings(), closeIcon, func() { v.Settings = false; v.C.Save() })
+		iconButton(c, tx.CloseSettings(), closeIcon, func() { v.Settings = false; v.dismissHarnessInstall(); v.C.Save() })
 	})
 	if v.section == "Agents" {
 		ui.Row(c).Grow(1).MinHeight(0).AlignItems(ui.Stretch).Children(func() {

@@ -163,7 +163,7 @@ func TestCompactAgentSettings(t *testing.T) {
 					math.Abs(float64(panel.X)-(float64(size[0])-wantW)/2) > 1 || math.Abs(float64(panel.Y)-(float64(size[1])-wantH)/2) > 1 {
 					t.Fatalf("settings should stay centered and respect the size cap: %+v", panel)
 				}
-				for _, label := range []string{v.texts().CheckForUpdates(), v.texts().Connect(), v.texts().HarnessAuto(), v.texts().CodexPath(), v.texts().CodexDefaultPermissions()} {
+				for _, label := range []string{v.texts().CheckForUpdates(), v.texts().Connect(), v.texts().HarnessAuto(), v.texts().AgentPath(), v.texts().CodexDefaultPermissions()} {
 					bounds, ok := tt.Find(label)
 					if !ok || bounds.X < panel.X || bounds.Y < panel.Y || bounds.X+bounds.W > panel.X+panel.W || bounds.Y+bounds.H > panel.Y+panel.H {
 						t.Fatalf("%s outside compact settings: %+v panel=%+v", label, bounds, panel)

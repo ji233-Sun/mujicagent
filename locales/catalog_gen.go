@@ -34,6 +34,56 @@ type Messages struct{ locale string }
 // source language.
 func In(locale string) Messages { return Messages{locale} }
 
+// HarnessNative says "官方安装"
+// in the language the app shows.
+func HarnessNative() string { return In(i18n.Locale()).HarnessNative() }
+
+// HarnessNative says "官方安装"
+// in the language of msgs.
+func (msgs Messages) HarnessNative() string {
+	return Catalog.Format(msgs.locale, "harnessNative", nil)
+}
+
+// AgentCLIAvailable says "可用"
+// in the language the app shows.
+func AgentCLIAvailable() string { return In(i18n.Locale()).AgentCLIAvailable() }
+
+// AgentCLIAvailable says "可用"
+// in the language of msgs.
+func (msgs Messages) AgentCLIAvailable() string {
+	return Catalog.Format(msgs.locale, "agentCLIAvailable", nil)
+}
+
+// AgentCLIAuth says "由 CLI 管理，尚未验证登录"
+// in the language the app shows.
+func AgentCLIAuth() string { return In(i18n.Locale()).AgentCLIAuth() }
+
+// AgentCLIAuth says "由 CLI 管理，尚未验证登录"
+// in the language of msgs.
+func (msgs Messages) AgentCLIAuth() string {
+	return Catalog.Format(msgs.locale, "agentCLIAuth", nil)
+}
+
+// AgentLoginHelp says "登录指引"
+// in the language the app shows.
+func AgentLoginHelp() string { return In(i18n.Locale()).AgentLoginHelp() }
+
+// AgentLoginHelp says "登录指引"
+// in the language of msgs.
+func (msgs Messages) AgentLoginHelp() string {
+	return Catalog.Format(msgs.locale, "agentLoginHelp", nil)
+}
+
+// HarnessNpmOfficial says "官方 npm 包（需 Node.js）"
+// in the language the app shows.
+func HarnessNpmOfficial() string { return In(i18n.Locale()).HarnessNpmOfficial() }
+
+// HarnessNpmOfficial says "官方 npm 包（需 Node.js）"
+// in the language of msgs.
+func (msgs Messages) HarnessNpmOfficial() string {
+	return Catalog.Format(msgs.locale, "harnessNpmOfficial", nil)
+}
+
 // SwitchProject says "切换项目"
 // in the language the app shows.
 func SwitchProject() string { return In(i18n.Locale()).SwitchProject() }
@@ -554,14 +604,14 @@ func (msgs Messages) Message() string {
 	return Catalog.Format(msgs.locale, "message", nil)
 }
 
-// MessagePlaceholder says "让 Codex 做些什么…"
+// MessagePlaceholder says "让 {name} 做些什么…"
 // in the language the app shows.
-func MessagePlaceholder() string { return In(i18n.Locale()).MessagePlaceholder() }
+func MessagePlaceholder(name string) string { return In(i18n.Locale()).MessagePlaceholder(name) }
 
-// MessagePlaceholder says "让 Codex 做些什么…"
+// MessagePlaceholder says "让 {name} 做些什么…"
 // in the language of msgs.
-func (msgs Messages) MessagePlaceholder() string {
-	return Catalog.Format(msgs.locale, "messagePlaceholder", nil)
+func (msgs Messages) MessagePlaceholder(name string) string {
+	return Catalog.Format(msgs.locale, "messagePlaceholder", map[string]any{"name": name})
 }
 
 // Stop says "停止"
@@ -1498,6 +1548,16 @@ func (msgs Messages) McpRequest() string {
 	return Catalog.Format(msgs.locale, "mcpRequest", nil)
 }
 
+// AgentToolCall says "工具调用"
+// in the language the app shows.
+func AgentToolCall() string { return In(i18n.Locale()).AgentToolCall() }
+
+// AgentToolCall says "工具调用"
+// in the language of msgs.
+func (msgs Messages) AgentToolCall() string {
+	return Catalog.Format(msgs.locale, "agentToolCall", nil)
+}
+
 // McpToolCall says "MCP 工具"
 // in the language the app shows.
 func McpToolCall() string { return In(i18n.Locale()).McpToolCall() }
@@ -1528,11 +1588,11 @@ func (msgs Messages) McpUnknownStatus() string {
 	return Catalog.Format(msgs.locale, "mcpUnknownStatus", nil)
 }
 
-// McpMissingMetadata says "Codex 未提供工具名称或 MCP 服务名称。"
+// McpMissingMetadata says "智能体未提供工具名称或 MCP 服务名称。"
 // in the language the app shows.
 func McpMissingMetadata() string { return In(i18n.Locale()).McpMissingMetadata() }
 
-// McpMissingMetadata says "Codex 未提供工具名称或 MCP 服务名称。"
+// McpMissingMetadata says "智能体未提供工具名称或 MCP 服务名称。"
 // in the language of msgs.
 func (msgs Messages) McpMissingMetadata() string {
 	return Catalog.Format(msgs.locale, "mcpMissingMetadata", nil)
@@ -1588,21 +1648,21 @@ func (msgs Messages) McpError() string {
 	return Catalog.Format(msgs.locale, "mcpError", nil)
 }
 
-// McpNoArguments says "Codex 未提供调用参数。"
+// McpNoArguments says "智能体未提供调用参数。"
 // in the language the app shows.
 func McpNoArguments() string { return In(i18n.Locale()).McpNoArguments() }
 
-// McpNoArguments says "Codex 未提供调用参数。"
+// McpNoArguments says "智能体未提供调用参数。"
 // in the language of msgs.
 func (msgs Messages) McpNoArguments() string {
 	return Catalog.Format(msgs.locale, "mcpNoArguments", nil)
 }
 
-// McpNoResult says "Codex 未提供返回结果。"
+// McpNoResult says "智能体未提供返回结果。"
 // in the language the app shows.
 func McpNoResult() string { return In(i18n.Locale()).McpNoResult() }
 
-// McpNoResult says "Codex 未提供返回结果。"
+// McpNoResult says "智能体未提供返回结果。"
 // in the language of msgs.
 func (msgs Messages) McpNoResult() string {
 	return Catalog.Format(msgs.locale, "mcpNoResult", nil)
@@ -1618,11 +1678,11 @@ func (msgs Messages) McpWaitingResult() string {
 	return Catalog.Format(msgs.locale, "mcpWaitingResult", nil)
 }
 
-// McpNoError says "调用失败，但 Codex 未提供错误详情。"
+// McpNoError says "调用失败，但智能体未提供错误详情。"
 // in the language the app shows.
 func McpNoError() string { return In(i18n.Locale()).McpNoError() }
 
-// McpNoError says "调用失败，但 Codex 未提供错误详情。"
+// McpNoError says "调用失败，但智能体未提供错误详情。"
 // in the language of msgs.
 func (msgs Messages) McpNoError() string {
 	return Catalog.Format(msgs.locale, "mcpNoError", nil)
@@ -2178,24 +2238,24 @@ func (msgs Messages) HarnessUpdate() string {
 	return Catalog.Format(msgs.locale, "harnessUpdate", nil)
 }
 
-// HarnessUpdatePreview says "更新 Codex"
+// HarnessUpdatePreview says "更新 {name}"
 // in the language the app shows.
-func HarnessUpdatePreview() string { return In(i18n.Locale()).HarnessUpdatePreview() }
+func HarnessUpdatePreview(name string) string { return In(i18n.Locale()).HarnessUpdatePreview(name) }
 
-// HarnessUpdatePreview says "更新 Codex"
+// HarnessUpdatePreview says "更新 {name}"
 // in the language of msgs.
-func (msgs Messages) HarnessUpdatePreview() string {
-	return Catalog.Format(msgs.locale, "harnessUpdatePreview", nil)
+func (msgs Messages) HarnessUpdatePreview(name string) string {
+	return Catalog.Format(msgs.locale, "harnessUpdatePreview", map[string]any{"name": name})
 }
 
-// HarnessInstallPreview says "安装 Codex"
+// HarnessInstallPreview says "安装 {name}"
 // in the language the app shows.
-func HarnessInstallPreview() string { return In(i18n.Locale()).HarnessInstallPreview() }
+func HarnessInstallPreview(name string) string { return In(i18n.Locale()).HarnessInstallPreview(name) }
 
-// HarnessInstallPreview says "安装 Codex"
+// HarnessInstallPreview says "安装 {name}"
 // in the language of msgs.
-func (msgs Messages) HarnessInstallPreview() string {
-	return Catalog.Format(msgs.locale, "harnessInstallPreview", nil)
+func (msgs Messages) HarnessInstallPreview(name string) string {
+	return Catalog.Format(msgs.locale, "harnessInstallPreview", map[string]any{"name": name})
 }
 
 // HarnessConfirmUpdate says "确认更新"
@@ -2294,11 +2354,11 @@ func (msgs Messages) HarnessCommandPreview() string {
 	return Catalog.Format(msgs.locale, "harnessCommandPreview", nil)
 }
 
-// HarnessNativeAction says "应用内下载、校验并解包"
+// HarnessNativeAction says "应用内下载、校验并安装"
 // in the language the app shows.
 func HarnessNativeAction() string { return In(i18n.Locale()).HarnessNativeAction() }
 
-// HarnessNativeAction says "应用内下载、校验并解包"
+// HarnessNativeAction says "应用内下载、校验并安装"
 // in the language of msgs.
 func (msgs Messages) HarnessNativeAction() string {
 	return Catalog.Format(msgs.locale, "harnessNativeAction", nil)
@@ -2592,6 +2652,66 @@ func AgentDefaultEffort() string { return In(i18n.Locale()).AgentDefaultEffort()
 // in the language of msgs.
 func (msgs Messages) AgentDefaultEffort() string {
 	return Catalog.Format(msgs.locale, "agentDefaultEffort", nil)
+}
+
+// ThinkingOn says "已开启"
+// in the language the app shows.
+func ThinkingOn() string { return In(i18n.Locale()).ThinkingOn() }
+
+// ThinkingOn says "已开启"
+// in the language of msgs.
+func (msgs Messages) ThinkingOn() string {
+	return Catalog.Format(msgs.locale, "thinkingOn", nil)
+}
+
+// ThinkingOff says "关闭"
+// in the language the app shows.
+func ThinkingOff() string { return In(i18n.Locale()).ThinkingOff() }
+
+// ThinkingOff says "关闭"
+// in the language of msgs.
+func (msgs Messages) ThinkingOff() string {
+	return Catalog.Format(msgs.locale, "thinkingOff", nil)
+}
+
+// ThinkingToggle says "开启思考"
+// in the language the app shows.
+func ThinkingToggle() string { return In(i18n.Locale()).ThinkingToggle() }
+
+// ThinkingToggle says "开启思考"
+// in the language of msgs.
+func (msgs Messages) ThinkingToggle() string {
+	return Catalog.Format(msgs.locale, "thinkingToggle", nil)
+}
+
+// ThinkingFixed says "模型固定档位"
+// in the language the app shows.
+func ThinkingFixed() string { return In(i18n.Locale()).ThinkingFixed() }
+
+// ThinkingFixed says "模型固定档位"
+// in the language of msgs.
+func (msgs Messages) ThinkingFixed() string {
+	return Catalog.Format(msgs.locale, "thinkingFixed", nil)
+}
+
+// ThinkingUnavailable says "不支持思考"
+// in the language the app shows.
+func ThinkingUnavailable() string { return In(i18n.Locale()).ThinkingUnavailable() }
+
+// ThinkingUnavailable says "不支持思考"
+// in the language of msgs.
+func (msgs Messages) ThinkingUnavailable() string {
+	return Catalog.Format(msgs.locale, "thinkingUnavailable", nil)
+}
+
+// ThinkingCLIDefault says "沿用 CLI 默认设置"
+// in the language the app shows.
+func ThinkingCLIDefault() string { return In(i18n.Locale()).ThinkingCLIDefault() }
+
+// ThinkingCLIDefault says "沿用 CLI 默认设置"
+// in the language of msgs.
+func (msgs Messages) ThinkingCLIDefault() string {
+	return Catalog.Format(msgs.locale, "thinkingCLIDefault", nil)
 }
 
 // AgentReadOnlyHint says "可读取文件；阻止修改及需要审批的命令执行。"

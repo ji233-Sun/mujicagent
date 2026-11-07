@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
 	"github.com/ji233-Sun/mujicagent/internal/codex"
@@ -15,6 +16,21 @@ import (
 type AgentModel struct {
 	ID, Name, Provider, DefaultEffort string
 	Efforts                           []string
+}
+
+// ResolveEffort preserves compatible choices, then uses only an advertised
+// default or the sole available value. Empty means inherit the CLI default.
+func (m AgentModel) ResolveEffort(current string) string {
+	if current != "" && slices.Contains(m.Efforts, current) {
+		return current
+	}
+	if m.DefaultEffort != "" && slices.Contains(m.Efforts, m.DefaultEffort) {
+		return m.DefaultEffort
+	}
+	if len(m.Efforts) == 1 {
+		return m.Efforts[0]
+	}
+	return ""
 }
 
 // DiscoverModels uses the same read-only RPCs as the official CLI SDKs.
@@ -112,18 +128,31 @@ func parseModelCatalog(driver string, data []byte) ([]AgentModel, error) {
 			m.ID = raw.Provider + "/" + raw.ID
 			m.Name = raw.Name
 			m.Provider = raw.Provider
+			m.Efforts = nil
 			if raw.Reasoning {
+				// Match Pi's getSupportedThinkingLevels: null excludes a level;
+				// absent standard entries inherit provider defaults, while extended
+				// levels require an explicit non-null mapping. Never invent off.
 				for _, effort := range []string{"off", "minimal", "low", "medium", "high", "xhigh", "max"} {
-					if len(raw.ThinkingLevelMap) > 0 {
-						if _, ok := raw.ThinkingLevelMap[effort]; !ok && effort != "off" {
-							continue
-						}
-					} else if effort == "xhigh" || effort == "max" {
+					mapped, present := raw.ThinkingLevelMap[effort]
+					if strings.TrimSpace(string(mapped)) == "null" || !present && (effort == "xhigh" || effort == "max") {
 						continue
 					}
 					m.Efforts = append(m.Efforts, effort)
 				}
+			} else {
+				m.Efforts = []string{"off"}
 			}
+		}
+		levels := make([]string, 0, len(m.Efforts))
+		for _, effort := range m.Efforts {
+			if effort != "" && !slices.Contains(levels, effort) {
+				levels = append(levels, effort)
+			}
+		}
+		m.Efforts = levels
+		if !slices.Contains(m.Efforts, m.DefaultEffort) {
+			m.DefaultEffort = ""
 		}
 		if seen[m.ID] {
 			continue

@@ -89,7 +89,7 @@ func TestNativeView(t *testing.T) {
 		t.Fatal(err)
 	}
 	tt.Advance(250 * time.Millisecond)
-	if !tt.HasText("Codex 路径") {
+	if !tt.HasText("可执行路径") {
 		t.Fatal("agent details missing")
 	}
 	if !tt.HasText("检查更新") || !tt.HasText(ctrl.Version) {
@@ -112,7 +112,7 @@ func TestNativeView(t *testing.T) {
 	if err := tt.Click("关闭设置"); err != nil {
 		t.Fatal(err)
 	}
-	if v.Settings || tt.HasText("Codex 路径") || state.Threads[0].Draft != "你好，Codex" {
+	if v.Settings || tt.HasText("可执行路径") || state.Threads[0].Draft != "你好，Codex" {
 		t.Fatal("settings did not close or conversation draft was lost")
 	}
 	loaded, err := model.Load(filepath.Join(ctrl.Dir, "state.json"))
@@ -129,7 +129,7 @@ func TestNativeView(t *testing.T) {
 		t.Fatalf("settings overflowed the smallest window: %+v", panel)
 	}
 	tt.Key(0, ui.KeyEscape)
-	if v.Settings || tt.HasText("Codex 路径") {
+	if v.Settings || tt.HasText("可执行路径") {
 		t.Fatal("Escape did not close settings")
 	}
 }
@@ -631,7 +631,7 @@ func TestMCPCallDetailsView(t *testing.T) {
 		t.Fatal("MCP calls should use a localized, initially collapsed group")
 	}
 	click("MCP 工具 × 3")
-	for _, text := range []string{"search_issues · github", "get_issue · github", "未知 MCP 工具", "layout bug", "Access denied to issue 16", "已完成", "失败", "调用失败，但 Codex 未提供错误详情。"} {
+	for _, text := range []string{"search_issues · github", "get_issue · github", "未知 MCP 工具", "layout bug", "Access denied to issue 16", "已完成", "失败", "调用失败，但智能体未提供错误详情。"} {
 		if !tt.HasText(text) {
 			t.Fatalf("collapsed call is missing %q", text)
 		}
@@ -658,12 +658,12 @@ func TestMCPCallDetailsView(t *testing.T) {
 	}
 	click("search_issues · github")
 	click("get_issue · github")
-	if !tt.HasText("错误详情") || !tt.HasText("Access denied to issue 16") || !tt.HasText("Codex 未提供返回结果。") {
+	if !tt.HasText("错误详情") || !tt.HasText("Access denied to issue 16") || !tt.HasText("智能体未提供返回结果。") {
 		t.Fatal("failed call should show its error and missing-result explanation")
 	}
 	click("get_issue · github")
 	click("未知 MCP 工具")
-	for _, text := range []string{"Codex 未提供工具名称或 MCP 服务名称。", "Codex 未提供调用参数。", "Codex 未提供返回结果。", "调用失败，但 Codex 未提供错误详情。"} {
+	for _, text := range []string{"智能体未提供工具名称或 MCP 服务名称。", "智能体未提供调用参数。", "智能体未提供返回结果。", "调用失败，但智能体未提供错误详情。"} {
 		if !tt.HasText(text) {
 			t.Fatalf("legacy call is missing fallback %q", text)
 		}
@@ -681,7 +681,7 @@ func TestMCPCallDetailsView(t *testing.T) {
 	s.Settings.Language = "en"
 	tt.SetLocale("en")
 	tt.Frame()
-	for _, text := range []string{"MCP tools × 3", "Unknown MCP tool", "Arguments", "Result", "Codex did not provide the tool name or MCP server name.", "Access denied to issue 16"} {
+	for _, text := range []string{"MCP tools × 3", "Unknown MCP tool", "Arguments", "Result", "The agent did not provide the tool name or MCP server name.", "Access denied to issue 16"} {
 		if !tt.HasText(text) {
 			t.Fatalf("English MCP detail is missing %q", text)
 		}

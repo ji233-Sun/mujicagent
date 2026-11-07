@@ -6,6 +6,7 @@ import (
 	"github.com/ji233-Sun/mujicagent/internal/codex"
 	"github.com/ji233-Sun/mujicagent/internal/harness"
 	"github.com/ji233-Sun/mujicagent/internal/model"
+	"slices"
 )
 
 func agentName(id string) string {
@@ -43,53 +44,13 @@ func (v *View) agentSidebar(c *ui.Context) {
 			b.Background(c.Theme().Surface).TextColor(c.Theme().Accent)
 		}
 		b.Children(func() { agentGlyph(c, d.ID); ui.Text(c, d.Name).FontSize(12).Grow(1).SingleLine() })
-		b.OnClick(func() { v.agentSection = d.ID })
-	}
-}
-func (v *View) externalAgentPane(c *ui.Context, id string) {
-	tx, h := v.texts(), v.C.HarnessFor(id)
-	path := &v.C.State.Settings.PiPath
-	url := "https://pi.dev/"
-	if id == "droid" {
-		path = &v.C.State.Settings.DroidPath
-		url = "https://docs.factory.com/droid-cli/quickstart"
-	}
-	services := c.Services()
-	ui.Column(c.Key(id)).Radius(10).Border(1, c.Theme().Border).Background(c.Theme().Background).Children(func() {
-		ui.Row(c).Padding(14).Gap(10).AlignItems(ui.Center).Children(func() {
-			ui.Box(c).Size(34, 34).Radius(8).Background(c.Theme().Surface).Center().Children(func() { agentGlyph(c, id) })
-			ui.Column(c).Grow(1).MinWidth(0).Gap(4).Children(func() {
-				ui.Text(c, agentName(id)).Bold().FontSize(15)
-				version := h.Installation.Version
-				if version == "" {
-					version = tx.HarnessUnchecked()
-				}
-				ui.Text(c, version).FontSize(11).TextColor(c.Theme().TextMuted).SingleLine()
-			})
-			ui.Button(c, tx.AgentProbe()).Height(28).FontSize(12).Disabled(h.Checking).OnClick(func() { v.C.CheckAgent(id) })
-			ui.Button(c, tx.AgentSetup()).Height(28).FontSize(12).OnClick(func() { services.OpenURL(url) })
+		b.OnClick(func() {
+			if v.agentSection != d.ID {
+				v.dismissHarnessInstall()
+			}
+			v.agentSection = d.ID
 		})
-		if h.Checking {
-			ui.Progress(c, -1).Height(3)
-		}
-		if h.Error != "" {
-			ui.Text(c, h.Error).FontSize(11).TextColor(c.Theme().Danger).Padding(0, 14, 10)
-		}
-		ui.Divider(c)
-		ui.Column(c).Padding(0, 14).Children(func() {
-			detail := ui.CollapsibleBase(c.Key("details"), v.openState("harness-"+id))
-			detail.Trigger.Height(36).Gap(6).AlignItems(ui.Center).Label(tx.HarnessDetails()).Children(func() {
-				ui.Icon(c, chevron).Size(11, 11).Rotate(90 * detail.Progress()).TextColor(c.Theme().TextMuted)
-				ui.Text(c, tx.HarnessDetails()).FontSize(12).Bold()
-			})
-			detail.Panel(func() {
-				ui.Row(c).Padding(0, 0, 12).AlignItems(ui.Center).Gap(12).Children(func() {
-					ui.Text(c, tx.AgentPath()).Width(112).Shrink(0).FontSize(12).TextColor(c.Theme().TextMuted)
-					ui.TextInput(c, path).Height(28).Radius(6).FontSize(12).Grow(1).MinWidth(0).Placeholder(id).Label(tx.AgentPath()).Disabled(h.Checking).OnChange(func() { v.C.Save(); h.ModelsChecked = false })
-				})
-			})
-		})
-	})
+	}
 }
 func (v *View) harnessRail(c *ui.Context) {
 	favorite := ui.ButtonBase(c.Key("favorites")).Size(32, 32).Radius(7).Center().Label(v.texts().FavoriteModels()).Tooltip(v.texts().FavoriteModels())
@@ -130,8 +91,7 @@ func (v *View) agentModelPanel(c *ui.Context) {
 		if t == nil || t.Driver() != id {
 			return
 		}
-		ui.Text(c, tx.ReasoningEffort()).FontSize(11).TextColor(c.Theme().TextMuted).Padding(6, 8).Margin(0, 0, 3)
-		ui.Box(c).Disabled(v.C.Running[t.ID]).Children(func() { v.modelEffortSlider(c, current, &t.AgentEffort) })
+		ui.Box(c).Disabled(v.C.Running[t.ID]).Children(func() { v.agentThinkingOptions(c, current, t) })
 	})
 	ui.Row(c).Height(28).Shrink(0).Padding(0, 8).Gap(6).AlignItems(ui.Center).Children(func() {
 		ui.Box(c).Grow(1)
@@ -161,10 +121,14 @@ func (v *View) agentPermissions(c *ui.Context, t *model.Thread) {
 			current = p
 		}
 	}
-	button := pickerOption(c.Key("agent-permission-selector"), tx.Permissions(), v.permissionPicker).Height(30).MaxWidth(170).Shrink(1).Tooltip(current.detail).Disabled(v.C.Running[t.ID])
+	button := pickerOption(c.Key("agent-permission-selector"), tx.Permissions(), v.permissionPicker).Height(30).MaxWidth(170).Shrink(1).Tooltip(current.detail)
 	button.Children(func() {
 		ui.Icon(c, permissionIcon(current.icon)).Size(15, 15).Shrink(0)
-		ui.Text(c, current.name).FontSize(12).SingleLine().Shrink(1).MinWidth(0)
+		name := current.name
+		if v.C.Running[t.ID] {
+			name = tx.PermissionNextTurn(name)
+		}
+		ui.Text(c, name).FontSize(12).SingleLine().Shrink(1).MinWidth(0)
 	})
 	button.OnClick(func() { v.permissionPicker = !v.permissionPicker; v.modelPicker = false; v.permissionTarget = t.ID })
 	pickerPopover(c.Key("agent-permission-picker"), button, &v.permissionPicker, tx.PermissionPicker(), 290, func() {
@@ -242,7 +206,9 @@ func (v *View) chooseExternalModel(id string, m codex.Model) {
 	if t == nil || v.C.Running[t.ID] {
 		return
 	}
+	effort := t.AgentEffort
 	if t.Driver() != id {
+		effort = ""
 		if !v.C.Handoff(id, m.Model) {
 			return
 		}
@@ -250,6 +216,112 @@ func (v *View) chooseExternalModel(id string, m codex.Model) {
 	} else {
 		t.AgentModel = m.Model
 	}
-	t.AgentEffort = m.DefaultReasoningEffort
+	t.AgentEffort = thinkingModel(m).ResolveEffort(effort)
 	v.C.Save()
+}
+
+func thinkingModel(m codex.Model) harness.AgentModel {
+	result := harness.AgentModel{ID: m.Model, DefaultEffort: m.DefaultReasoningEffort}
+	for _, effort := range m.SupportedReasoningEfforts {
+		result.Efforts = append(result.Efforts, effort.ReasoningEffort)
+	}
+	return result
+}
+
+func thinkingOff(value string) bool { return value == "off" || value == "none" }
+
+func (v *View) agentThinkingOptions(c *ui.Context, current codex.Model, t *model.Thread) {
+	tx := v.texts()
+	ui.Row(c).Gap(5).AlignItems(ui.Center).Padding(6, 6).Children(func() {
+		ui.Icon(c, thinkingIcon).Size(13, 13).TextColor(c.Theme().TextMuted)
+		ui.Text(c, tx.ReasoningEffort()).FontSize(11).TextColor(c.Theme().TextMuted)
+	})
+	if current.Model == "" {
+		ui.Text(c, tx.ChooseModel()).FontSize(11).TextColor(c.Theme().TextMuted).Padding(8, 6)
+		return
+	}
+	m := thinkingModel(current)
+	value := m.ResolveEffort(t.AgentEffort)
+	choose := func(level string) {
+		if !v.C.Running[t.ID] && slices.Contains(m.Efforts, level) {
+			t.AgentEffort = level
+			v.C.Save()
+		}
+	}
+	label := func(level string) string {
+		if thinkingOff(level) && !(slices.Contains(m.Efforts, "off") && slices.Contains(m.Efforts, "none")) {
+			return tx.ThinkingOff()
+		}
+		return level
+	}
+	ui.Column(c.Key(current.Model)).Margin(0, 2).Padding(8).Gap(7).Radius(9).
+		Background(c.Theme().Surface).Label(tx.AdjustReasoningEffort()).Children(func() {
+		enabledLevels := 0
+		for _, effort := range m.Efforts {
+			if !thinkingOff(effort) {
+				enabledLevels++
+			}
+		}
+		if enabledLevels == 0 {
+			ui.Text(c, tx.ThinkingUnavailable()).FontSize(12).TextColor(c.Theme().TextMuted)
+			return
+		}
+		if len(m.Efforts) == 1 {
+			ui.Text(c, label(m.Efforts[0])).FontSize(14).Bold().TextColor(c.Theme().Accent)
+			ui.Text(c, tx.ThinkingFixed()).FontSize(10).TextColor(c.Theme().TextMuted)
+			return
+		}
+		if len(m.Efforts) == 2 && enabledLevels == 1 {
+			off, on := m.Efforts[0], m.Efforts[1]
+			if !thinkingOff(off) {
+				off, on = on, off
+			}
+			enabled := value == on
+			state := tx.ThinkingOff()
+			if enabled {
+				state = tx.ThinkingOn()
+			}
+			if value == "" {
+				state = tx.AgentDefaultEffort()
+			}
+			ui.Text(c, state).FontSize(13).Bold()
+			if value == "" {
+				// An unreported CLI default is not an off switch. Let the user
+				// explicitly choose either state without implying an active value.
+				ui.Row(c).Gap(4).Label(tx.ThinkingToggle()).Children(func() {
+					ui.Button(c, tx.ThinkingOff()).Grow(1).Height(25).Padding(0, 5).FontSize(11).OnClick(func() { choose(off) })
+					ui.Button(c, tx.ThinkingOn()).Grow(1).Height(25).Padding(0, 5).FontSize(11).OnClick(func() { choose(on) })
+				})
+				ui.Text(c, tx.ThinkingCLIDefault()).FontSize(10).TextColor(c.Theme().TextMuted)
+				return
+			}
+			ui.Switch(c, &enabled).Label(tx.ThinkingToggle()).OnClick(func() {
+				if enabled {
+					choose(on)
+				} else {
+					choose(off)
+				}
+			})
+			return
+		}
+		if value == "" {
+			ui.Text(c, tx.AgentDefaultEffort()).FontSize(11).TextColor(c.Theme().TextMuted)
+		}
+		ui.Scroll(c.Key("thinking-levels")).MaxHeight(236).Gap(4).Children(func() {
+			for _, effort := range m.Efforts {
+				selected := effort == value
+				b := ui.ButtonBase(c.Key(effort)).Height(27).FillWidth().Radius(6).Padding(0, 7).Gap(4).AlignItems(ui.Center).Label(label(effort))
+				if selected {
+					b.Background(c.Theme().Background).TextColor(c.Theme().Accent)
+				}
+				b.Children(func() {
+					ui.Text(c, label(effort)).FontSize(12).Grow(1).SingleLine()
+					if selected {
+						ui.Icon(c, checkIcon).Size(12, 12)
+					}
+				})
+				b.OnClick(func() { choose(effort) })
+			}
+		})
+	})
 }

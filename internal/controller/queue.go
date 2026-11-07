@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/ji233-Sun/mujicagent/internal/codex"
+	"github.com/ji233-Sun/mujicagent/internal/harness"
 	"github.com/ji233-Sun/mujicagent/internal/model"
 )
 
@@ -119,6 +120,9 @@ func (c *Controller) ResumeQueue(threadID string) {
 }
 
 func (c *Controller) CanSteer(t *model.Thread) bool {
+	if t != nil && harness.CanSteer(t.Driver()) {
+		return c.Running[t.ID] && c.agentControls[t.ID] != nil && len(t.Turns) > 0
+	}
 	return t != nil && t.Driver() == "codex" && c.client != nil && c.Connection == "Connected" && c.Running[t.ID] && len(t.Turns) > 0 && t.Turns[len(t.Turns)-1].ID != ""
 }
 
@@ -140,9 +144,24 @@ func (c *Controller) Steer(threadID, id string) {
 		turnIndex := len(t.Turns) - 1
 		turnID, serverID := t.Turns[turnIndex].ID, t.ServerID
 		client, epoch := c.client, c.epoch
+		control := c.agentControls[t.ID]
 		go func() {
 			input, err := messageInput(text, c.Dir)
-			if err == nil {
+			if err == nil && control != nil {
+				prompt := ""
+				var images []string
+				for _, raw := range input {
+					part := raw.(map[string]any)
+					if part["type"] == "text" {
+						prompt += part["text"].(string)
+					} else if part["type"] == "localImage" {
+						images = append(images, part["path"].(string))
+					}
+				}
+				ctx, cancel := codex.Timeout()
+				defer cancel()
+				err = control.Steer(ctx, prompt, images)
+			} else if err == nil {
 				ctx, cancel := codex.Timeout()
 				defer cancel()
 				err = client.Call(ctx, "turn/steer", map[string]any{"threadId": serverID, "expectedTurnId": turnID, "input": input}, nil)

@@ -2,8 +2,10 @@
 package view
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -42,6 +44,7 @@ type View struct {
 	deleteID                    string
 	confirmDelete               bool
 	harnessDialog               bool
+	harnessTarget               string
 	harnessSource               string
 	expanded                    map[string]*bool
 	answers                     map[string]map[string]string
@@ -367,7 +370,10 @@ func (v *View) timeline(c *ui.Context, t *model.Thread) {
 						v.activityGroup(c, turn.Items[start:j], key, turn.Status == "inProgress")
 					}
 					if turn.Status == "inProgress" {
-						ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() { ui.Spinner(c).Size(13, 13); ui.Text(c, "Codex").FontSize(12).TextColor(c.Theme().TextMuted) })
+						ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+							ui.Spinner(c).Size(13, 13)
+							ui.Text(c, agentName(t.Driver())).FontSize(12).TextColor(c.Theme().TextMuted)
+						})
 					}
 					if turn.Error != "" {
 						ui.Text(c, v.statusText(turn.Error)).FontSize(12).TextColor(c.Theme().Danger).Selectable()
@@ -382,7 +388,7 @@ func (v *View) timeline(c *ui.Context, t *model.Thread) {
 }
 func (v *View) item(c *ui.Context, item *model.Item, key string, running bool) {
 	tx := v.texts()
-	if item.Kind == "mcpToolCall" {
+	if (item.MCP != nil && !(item.Kind == "plan" && item.Text != "")) || item.Kind == "mcpToolCall" {
 		v.mcpItem(c, item, key, running)
 		return
 	}
@@ -430,6 +436,8 @@ func (v *View) item(c *ui.Context, item *model.Item, key string, running bool) {
 				ui.Text(c, label).FontSize(12).TextColor(c.Theme().TextMuted)
 			} else if item.Kind == "commandExecution" || item.Kind == "fileChange" {
 				v.activityOutput(c, item, key)
+			} else if item.Kind == "plan" {
+				markdown.View(c, strings.ReplaceAll(item.Text, "\n", "  \n"), &v.md)
 			} else {
 				markdown.View(c, item.Text, &v.md)
 			}
@@ -441,7 +449,7 @@ func (v *View) composer(c *ui.Context, t *model.Thread) {
 	tx := v.texts()
 	ui.Column(c).Shrink(0).Padding(8, 24, 16).Gap(8).Children(func() {
 		for _, r := range v.C.Requests {
-			if t != nil && r.ThreadID == t.ServerID {
+			if t != nil && (r.ThreadID == t.ServerID || r.ThreadID == t.ID) {
 				v.request(c, r)
 			}
 		}
@@ -505,10 +513,13 @@ func (v *View) request(c *ui.Context, r *codex.Request) {
 	values := v.answers[key]
 	if values == nil {
 		values = map[string]string{}
+		for k, value := range r.InitialValues {
+			values[k] = value
+		}
 		v.answers[key] = values
 	}
 	ui.Scroll(c.Key("request-"+key)).MaxHeight(300).Padding(14).Radius(12).Border(1, c.Theme().Accent).Gap(10).Children(func() {
-		if r.Method == "mcpServer/elicitation/request" {
+		if r.Method == "mcpServer/elicitation/request" || r.Method == "client/form" {
 			v.elicitation(c, r, values)
 		} else if r.Method == "item/tool/requestUserInput" {
 			for _, q := range r.Questions {
@@ -516,22 +527,50 @@ func (v *View) request(c *ui.Context, r *codex.Request) {
 					ui.Text(c, q.Question).Bold()
 					for _, o := range q.Options {
 						b := ui.Button(c, o.Label).Tooltip(o.Description).Disabled(r.Responding)
-						if values[q.ID] == o.Label {
+						selected := values[q.ID] == o.Label
+						var choices []string
+						if q.MultiSelect {
+							_ = json.Unmarshal([]byte(values[q.ID]), &choices)
+							selected = slices.Contains(choices, o.Label)
+						}
+						if selected {
 							b.Background(c.Theme().SurfaceHover).Border(1, c.Theme().Accent)
 						}
-						b.OnClick(func() { values[q.ID] = o.Label })
+						b.OnClick(func() {
+							if !q.MultiSelect {
+								values[q.ID] = o.Label
+								return
+							}
+							if selected {
+								choices = slices.DeleteFunc(choices, func(s string) bool { return s == o.Label })
+							} else {
+								choices = append(choices, o.Label)
+							}
+							if choices == nil {
+								choices = []string{}
+							}
+							data, _ := json.Marshal(choices)
+							values[q.ID] = string(data)
+						})
 					}
-					value := values[q.ID]
+					inputKey := q.ID
+					if q.MultiSelect {
+						inputKey += ":other"
+					}
+					value := values[inputKey]
 					in := ui.TextInput(c, &value).Placeholder(tx.AnswerPlaceholder()).Label(q.ID).Disabled(r.Responding)
 					if q.IsSecret {
 						in.Password()
 					}
 					if in.Changed() {
-						values[q.ID] = value
+						values[inputKey] = value
 					}
 				})
 			}
 			ui.PrimaryButton(c, tx.Continue()).Disabled(r.Responding).OnClick(func() { v.C.AnswerQuestions(r, values) })
+			if r.Cancellable {
+				ui.Button(c, tx.Cancel()).Disabled(r.Responding).OnClick(func() { v.C.CancelQuestions(r) })
+			}
 		} else {
 			label := tx.AllowCommand()
 			if r.Method == "item/fileChange/requestApproval" {

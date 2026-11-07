@@ -2,7 +2,7 @@ package harness
 
 import (
 	"archive/tar"
-	"bufio"
+	"archive/zip"
 	"bytes"
 	"compress/gzip"
 	"context"
@@ -11,6 +11,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -48,15 +49,15 @@ func TestLocalManagerPreviewAndExecution(t *testing.T) {
 			if err := os.Symlink(managerPath, path); err != nil {
 				t.Fatal(err)
 			}
-			current := Installation{Path: path, Version: "0.167.0", Method: method, Prefix: root}
+			current := Installation{Driver: "codex", Path: path, Version: "0.167.0", Method: method, Prefix: root}
 			if method == "vp" {
 				current.Prefix = managerPath
-				inspected, err := Inspect(context.Background(), path, filepath.Join(root, "managed"))
+				inspected, err := Inspect(context.Background(), "codex", path, filepath.Join(root, "managed"))
 				if err != nil || inspected != current {
 					t.Fatalf("VP launcher: %+v %v", inspected, err)
 				}
 			}
-			plan, err := PrepareInstall(context.Background(), filepath.Join(root, "managed"), "", Release{Version: "0.168.0"}, current)
+			plan, err := PrepareInstall(context.Background(), "codex", filepath.Join(root, "managed"), "", Release{Version: "0.168.0"}, current)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -87,12 +88,86 @@ func TestLocalManagerPreviewAndExecution(t *testing.T) {
 	}
 }
 
+func TestNativeInstallerOwnership(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "bin", "pi")
+	if err := os.MkdirAll(filepath.Join(root, "install"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	marker, _ := json.Marshal(map[string]any{"kind": "pi-managed-install", "layout": "releases-v1", "schemaVersion": 1, "entrypoint": map[string]string{"path": path}})
+	if err := os.WriteFile(filepath.Join(root, "install", "managed-install.json"), marker, 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ driver, path, method string }{
+		{"pi", path, "native"},
+		{"pi", filepath.Join(root, "bin", "other-pi"), "custom"},
+		{"droid", filepath.FromSlash("/Applications/Factory.app/Contents/Resources/bin/droid"), "Factory.app"},
+		{"pi", filepath.FromSlash("/nix/store/hash-pi/bin/pi"), "nix"},
+	} {
+		i := inspectNative(context.Background(), Installation{Driver: tc.driver, Path: tc.path, Method: "custom"}, tc.path)
+		if i.Method != tc.method || i.CanUpdate() != (tc.method == "native") {
+			t.Fatalf("ownership: %+v", i)
+		}
+	}
+	for _, driver := range []string{"pi", "droid"} {
+		command, args, err := managerAdapters["native"].update(Installation{Driver: driver, Path: path}, "1.6.0")
+		want := []string{"update", "--self", "--no-approve"}
+		if driver == "droid" {
+			want = []string{"update", "--version", "1.6.0"}
+		}
+		if err != nil || command != path || !slices.Equal(args, want) {
+			t.Fatalf("native updater %s: %s %v %v", driver, command, args, err)
+		}
+	}
+}
+
+func TestPiZipExtraction(t *testing.T) {
+	for _, name := range []string{"pi.exe", "../escape", "/absolute", `pi\..\escape`, "C:/escape", "link"} {
+		t.Run(name, func(t *testing.T) {
+			var archive bytes.Buffer
+			z := zip.NewWriter(&archive)
+			header := &zip.FileHeader{Name: name, Method: zip.Deflate}
+			header.SetMode(0700)
+			if name == "link" {
+				header.SetMode(os.ModeSymlink | 0700)
+			}
+			w, err := z.CreateHeader(header)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := w.Write([]byte("fixture")); err != nil {
+				t.Fatal(err)
+			}
+			if err := z.Close(); err != nil {
+				t.Fatal(err)
+			}
+			root := t.TempDir()
+			err = extractZip(bytes.NewReader(archive.Bytes()), int64(archive.Len()), root)
+			if (err == nil) != (name == "pi.exe") {
+				t.Fatalf("unsafe ZIP acceptance: %v", err)
+			}
+			if err == nil {
+				data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(name)))
+				if err != nil || string(data) != "fixture" {
+					t.Fatal("ZIP executable missing", err)
+				}
+			}
+		})
+	}
+}
+
 func TestInstallSourcePolicy(t *testing.T) {
+	for _, d := range Drivers {
+		a, ok := installerAdapters[d.ID]
+		if !ok || a.latest == nil || a.packageName == "" || len(a.helpArgs) == 0 || len(a.sources) == 0 {
+			t.Fatalf("%s is missing an installation contract", d.ID)
+		}
+	}
 	root := t.TempDir()
 	release := Release{Version: "0.168.0", URL: "https://example.test/codex.tar.gz", Digest: "sha256:" + strings.Repeat("0", 64), Entry: "bin/codex"}
 	for _, source := range []string{"", "native-mirror"} {
-		current := Installation{Path: filepath.Join(root, "old", "bin", "codex"), Method: "managed", Source: source}
-		p, err := PrepareInstall(context.Background(), root, "cn", release, current)
+		current := Installation{Driver: "codex", Path: filepath.Join(root, "old", "bin", "codex"), Method: "managed", Source: source}
+		p, err := PrepareInstall(context.Background(), "codex", root, "cn", release, current)
 		if err != nil || p.Source != source || p.Command != "" || p.Stage == "" {
 			t.Fatalf("changed managed source: %+v %v", p, err)
 		}
@@ -108,10 +183,10 @@ func TestInstallSourcePolicy(t *testing.T) {
 			t.Fatal("failed stage retained")
 		}
 	}
-	if _, err := PrepareInstall(context.Background(), root, "", release, Installation{Path: "/custom/codex", Method: "custom"}); err == nil {
+	if _, err := PrepareInstall(context.Background(), "codex", root, "", release, Installation{Path: "/custom/codex", Method: "custom"}); err == nil {
 		t.Fatal("unknown install silently migrated")
 	}
-	if _, err := PrepareInstall(context.Background(), root, "bad", release, Installation{}); err == nil {
+	if _, err := PrepareInstall(context.Background(), "codex", root, "bad", release, Installation{}); err == nil {
 		t.Fatal("accepted unknown source")
 	}
 }
@@ -135,7 +210,7 @@ func TestManagedSourceInspection(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(stage, "source.json"), data, 0600); err != nil {
 			t.Fatal(err)
 		}
-		current, err := Inspect(context.Background(), path, root)
+		current, err := Inspect(context.Background(), "codex", path, root)
 		if err != nil || current.Method != "managed" || current.Source != source {
 			t.Fatal(current, err)
 		}
@@ -159,7 +234,7 @@ func TestManagedNpmExecutionPreservesSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	current, err := Inspect(context.Background(), path, filepath.Dir(stage))
+	current, err := Inspect(context.Background(), "codex", path, filepath.Dir(stage))
 	if err != nil || current.Method != "managed" || current.Source != "cn" {
 		t.Fatal(current, err)
 	}
@@ -196,20 +271,41 @@ func TestWindowsNpmRuntimeOutsideGlobalPrefix(t *testing.T) {
 	}
 }
 
+func TestInstalledHarnessSource(t *testing.T) {
+	driver := os.Getenv("MUJICAGENT_HARNESS_INSPECT_TEST")
+	if driver == "" {
+		t.Skip("explicit read-only local inspection")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	current, err := Inspect(ctx, driver, driver, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("%s %s: source=%s, update=%v", driver, current.Version, current.Method, current.CanUpdate())
+	if current.CanUpdate() {
+		p, err := PrepareInstall(ctx, driver, t.TempDir(), UpdateSource(current), Release{Version: current.Version}, current)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Log(p.CommandPreview())
+	}
+}
+
 func TestInstalledCodexManager(t *testing.T) {
 	if os.Getenv("MUJICAGENT_CODEX_INSPECT_TEST") != "1" {
 		t.Skip("explicit read-only local inspection")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	current, err := Inspect(ctx, "codex", t.TempDir())
+	current, err := Inspect(ctx, "codex", "codex", t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if current.Method != "vp" {
 		t.Fatalf("expected local VP installation: %+v", current)
 	}
-	plan, err := PrepareInstall(ctx, t.TempDir(), "", Release{Version: current.Version}, current)
+	plan, err := PrepareInstall(ctx, "codex", t.TempDir(), "", Release{Version: current.Version}, current)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -281,6 +377,10 @@ func TestExtractPreservesCompanionsAndRejectsUnsafePaths(t *testing.T) {
 
 // Downloads only to a temporary directory; never changes the existing installation.
 func TestDownloadNativePackage(t *testing.T) {
+	driver := os.Getenv("MUJICAGENT_INSTALL_DRIVER")
+	if driver == "" {
+		driver = "codex"
+	}
 	source := os.Getenv("MUJICAGENT_INSTALL_TEST")
 	if source == "" {
 		t.Skip("explicit download test only")
@@ -288,10 +388,13 @@ func TestDownloadNativePackage(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Minute)
 	defer cancel()
 	lookupSource := source
+	if source == "cn" && driver == "droid" {
+		lookupSource = "native-mirror"
+	}
 	if source == "cn-npm" {
 		lookupSource = "cn"
 	}
-	release, err := Latest(ctx, lookupSource)
+	release, err := Latest(ctx, driver, lookupSource)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -302,7 +405,7 @@ func TestDownloadNativePackage(t *testing.T) {
 	if source == "cn" {
 		installSource = "native-mirror"
 	}
-	path, err := Install(ctx, t.TempDir(), installSource, release, Installation{})
+	path, err := Install(ctx, driver, t.TempDir(), installSource, release, Installation{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -347,14 +450,307 @@ func TestAgentProtocol(t *testing.T) {
 	}
 }
 
+func TestPiToolAndMessageBoundaries(t *testing.T) {
+	p := agentParser{driver: "pi"}
+	var events []AgentEvent
+	for _, line := range []string{
+		`{"type":"message_start","message":{"role":"assistant"}}`,
+		`{"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":"Before"}}`,
+		`{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"Before"}]}}`,
+		`{"type":"tool_execution_start","toolCallId":"read-1","toolName":"read","args":{"path":"proof.txt"}}`,
+		`{"type":"tool_execution_update","toolCallId":"read-1","toolName":"read","partialResult":{"content":[{"type":"text","text":"partial"}]}}`,
+		`{"type":"tool_execution_end","toolCallId":"read-1","toolName":"read","result":{"content":[{"type":"text","text":"proof"}]},"isError":false}`,
+		`{"type":"message_start","message":{"role":"assistant"}}`,
+		`{"type":"message_end","message":{"role":"assistant","content":[{"type":"thinking","thinking":"summary"},{"type":"text","text":"After"}]}}`,
+	} {
+		if err := p.line([]byte(line), func(e AgentEvent) { events = append(events, e) }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(events) != 7 || events[0].ID != events[1].ID || events[6].ID == events[0].ID || events[5].Kind != "reasoning" {
+		t.Fatalf("message boundaries: %+v", events)
+	}
+	for _, e := range events[2:5] {
+		if e.ID != "read-1" || e.Tool == nil {
+			t.Fatal("tool event dropped")
+		}
+	}
+	if events[4].Status != "completed" || !strings.Contains(string(events[4].Tool.Result), "proof") {
+		t.Fatal("result lost")
+	}
+}
+
+func TestRegisteredAgentContracts(t *testing.T) {
+	for _, driver := range Drivers {
+		if driver.ID == "codex" {
+			continue
+		}
+		a := agentAdapters[driver.ID]
+		if a.run == nil || a.steer == nil {
+			t.Fatalf("%s lacks a complete session adapter", driver.ID)
+		}
+		args, err := agentArgs(RunOptions{Driver: driver.ID, Session: "session"})
+		if err != nil || len(args) == 0 {
+			t.Fatalf("%s cannot launch: %v", driver.ID, err)
+		}
+	}
+	a := droidRPC{emit: func(AgentEvent) {}}
+	if err := a.update(json.RawMessage(`{"type":"agent_turn_completed","reason":"permission_rejected"}`)); err == nil {
+		t.Fatal("rejected turn treated as success")
+	}
+	if err := a.update(json.RawMessage(`{"type":"agent_turn_completed","reason":"completed"}`)); err != nil || !a.done {
+		t.Fatal("completion missing", err)
+	}
+}
+
+func TestSteerWaitsForAcknowledgment(t *testing.T) {
+	for _, driver := range []string{"pi", "droid"} {
+		reader, writer := io.Pipe()
+		c := &Control{in: json.NewEncoder(writer), driver: driver}
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		done := make(chan error, 1)
+		go func() { done <- c.Steer(ctx, "next", nil) }()
+		var request map[string]any
+		if err := json.NewDecoder(reader).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case <-done:
+			t.Fatal("write treated as acceptance")
+		default:
+		}
+		c.response(request["id"].(string), nil)
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+		c.close()
+		if err := c.Steer(ctx, "late", nil); err == nil {
+			t.Fatal("stopped run accepted steer")
+		}
+		cancel()
+		reader.Close()
+		writer.Close()
+	}
+}
+
+func TestDroidRPCNotifications(t *testing.T) {
+	for _, streaming := range []bool{false, true} {
+		var events []AgentEvent
+		a := droidRPC{ctx: context.Background(), session: "s", streaming: streaming, emit: func(e AgentEvent) { events = append(events, e) }}
+		for _, line := range []string{
+			`{"method":"droid.session_notification","params":{"sessionId":"other","notification":{"type":"assistant_text_delta","messageId":"x","textDelta":"wrong"}}}`,
+			`{"method":"droid.session_notification","params":{"sessionId":"s","notification":{"type":"tool_call","toolUse":{"id":"read-1","name":"Read","input":{"path":"proof.txt"}}}}}`,
+			`{"method":"droid.session_notification","params":{"sessionId":"s","notification":{"type":"tool_result","toolUseId":"read-1","content":[{"type":"text","text":"proof"}]}}}`,
+			`{"method":"droid.session_notification","params":{"sessionId":"s","notification":{"type":"assistant_text_delta","messageId":"m","blockIndex":0,"textDelta":"answer"}}}`,
+		} {
+			if err := a.consume([]byte(line)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if !streaming && len(events) != 0 {
+			t.Fatal("history replayed")
+		}
+		if streaming && (len(events) != 3 || events[0].ID != "read-1" || events[1].Status != "completed" || events[2].Text != "answer") {
+			t.Fatalf("events: %+v", events)
+		}
+	}
+}
+
+func TestAgentInteractionReplies(t *testing.T) {
+	for _, decision := range []string{"accept", "cancel"} {
+		a := droidRPC{ctx: context.Background(), emit: func(e AgentEvent) {
+			if e.Interaction != nil {
+				e.Interaction.Reply <- map[string]any{"decision": decision}
+			}
+		}}
+		result, err := a.interaction([]byte(`{"id":"p","method":"droid.request_permission","params":{"options":[{"value":"proceed_once"},{"value":"cancel"}],"toolUses":[{"toolUse":{"name":"Execute","input":{"command":"pwd"}}}]}}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := "cancel"
+		if decision == "accept" {
+			want = "proceed_once"
+		}
+		if result.(map[string]string)["selectedOption"] != want {
+			t.Fatal(result)
+		}
+	}
+	var output bytes.Buffer
+	c := &Control{in: json.NewEncoder(&output)}
+	err := piInteraction(context.Background(), []byte(`{"type":"extension_ui_request","id":"q","method":"input","title":"Name?"}`), c, func(e AgentEvent) {
+		if e.Interaction != nil {
+			e.Interaction.Reply <- map[string]any{"action": "accept", "content": map[string]string{"answer": "Ada"}}
+		}
+	})
+	if err != nil || !strings.Contains(output.String(), `"value":"Ada"`) {
+		t.Fatal(output.String(), err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := ask(ctx, func(AgentEvent) {}, nil); err == nil {
+		t.Fatal("cancelled interaction did not stop")
+	}
+}
+
+func TestDroidPickerAndMultiSelect(t *testing.T) {
+	for _, action := range []string{"accept", "cancel", "refresh"} {
+		resolved := false
+		a := droidRPC{ctx: context.Background(), emit: func(e AgentEvent) {
+			if e.Resolved != nil {
+				resolved = true
+				return
+			}
+			if e.Interaction == nil {
+				return
+			}
+			r := e.Interaction.Request
+			if r.Method != "client/form" || !r.Refreshable || !r.FilterOptions || r.Search != "beta" || r.InitialValues["selection"] != `["b"]` {
+				t.Fatalf("picker defaults: %+v", r)
+			}
+			form, err := r.ElicitationForm()
+			if err != nil {
+				t.Fatal(err)
+			}
+			content, err := form.Content(map[string]string{"selection": `["a","b"]`})
+			if err != nil {
+				t.Fatal(err)
+			}
+			e.Interaction.Reply <- map[string]any{"action": action, "content": content}
+		}}
+		result, err := a.interaction([]byte(`{"id":"picker","method":"droid.pick_options","params":{"title":"Choose channels","multi":true,"initialSearch":"beta","preselectedIds":["b","missing"],"rows":[{"id":"a","label":"Alpha"},{"id":"b","label":"Beta"}]}}`))
+		if err != nil || !resolved {
+			t.Fatal(result, err, resolved)
+		}
+		value := result.(map[string]any)
+		if action == "accept" && len(value["selectedIds"].([]string)) != 2 {
+			t.Fatal(result)
+		}
+		if action == "cancel" && value["cancelled"] != true {
+			t.Fatal(result)
+		}
+		if action == "refresh" && value["refresh"] != true {
+			t.Fatal(result)
+		}
+	}
+	a := droidRPC{ctx: context.Background(), emit: func(e AgentEvent) {
+		if e.Interaction == nil {
+			return
+		}
+		if !e.Interaction.Request.Questions[0].MultiSelect {
+			t.Fatal("multiSelect lost")
+		}
+		e.Interaction.Reply <- map[string]any{"answers": map[string]any{"2": map[string]any{"answers": []string{"A", "B"}}}}
+	}}
+	result, err := a.interaction([]byte(`{"id":"q","method":"droid.ask_user","params":{"questions":[{"index":2,"question":"Choose","options":["A","B"],"multiSelect":true}]}}`))
+	data, _ := json.Marshal(result)
+	if err != nil || !strings.Contains(string(data), `"answer":"A, B"`) {
+		t.Fatal(string(data), err)
+	}
+}
+
+func TestPiEditorTimeoutAndPlan(t *testing.T) {
+	var output bytes.Buffer
+	control := &Control{in: json.NewEncoder(&output)}
+	resolved := false
+	err := piInteraction(context.Background(), []byte(`{"id":"editor","method":"editor","title":"Edit","prefill":"first\nsecond"}`), control, func(e AgentEvent) {
+		if e.Resolved != nil {
+			resolved = true
+		}
+		if e.Interaction == nil {
+			return
+		}
+		r := e.Interaction.Request
+		if !r.Multiline || r.InitialValues["answer"] != "first\nsecond" {
+			t.Fatal(r)
+		}
+		e.Interaction.Reply <- map[string]any{"action": "accept", "content": map[string]string{"answer": "first\nchanged"}}
+	})
+	if err != nil || !resolved || !strings.Contains(output.String(), `first\nchanged`) {
+		t.Fatal(output.String(), err)
+	}
+	output.Reset()
+	resolved = false
+	err = piInteraction(context.Background(), []byte(`{"id":"timeout","method":"select","title":"Choose","options":["A"],"timeout":1}`), control, func(e AgentEvent) {
+		if e.Resolved != nil {
+			resolved = true
+		}
+	})
+	if err != nil || !resolved || !strings.Contains(output.String(), `"cancelled":true`) {
+		t.Fatal(output.String(), err)
+	}
+	var events []AgentEvent
+	for _, raw := range []string{`{"method":"setWidget","widgetKey":"plan-todos","widgetLines":["\u001b[32m☑ Read\u001b[0m","☐ Verify"]}`, `{"method":"setWidget","widgetKey":"plan-todos"}`} {
+		if err := piInteraction(context.Background(), []byte(raw), control, func(e AgentEvent) { events = append(events, e) }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(events) != 1 || events[0].Kind != "plan" || events[0].Text != "☑ Read\n☐ Verify" {
+		t.Fatal(events)
+	}
+}
+
+func TestMCPMetadataAndOfferedPermissions(t *testing.T) {
+	p := agentParser{driver: "pi"}
+	var event AgentEvent
+	err := p.line([]byte(`{"type":"tool_execution_end","toolCallId":"m","toolName":"opaque","result":{"details":{"server":"docs","tool":"lookup"},"content":[]}}`), func(e AgentEvent) { event = e })
+	if err != nil || event.Tool.Server != "docs" || event.Tool.Name != "lookup" || event.Tool.Kind != "mcp" {
+		t.Fatal(event, err)
+	}
+	var metadata *ToolEvent
+	a := droidRPC{ctx: context.Background(), emit: func(e AgentEvent) {
+		if e.Tool != nil {
+			metadata = e.Tool
+		}
+		if e.Interaction == nil {
+			return
+		}
+		for _, o := range e.Interaction.Request.ApprovalOptions() {
+			if o.Kind == "accept" {
+				t.Fatal("unoffered permission exposed")
+			}
+		}
+		e.Interaction.Reply <- map[string]string{"decision": "accept"}
+	}}
+	result, err := a.interaction([]byte(`{"id":"p","method":"droid.request_permission","params":{"options":[{"value":"cancel"}],"toolUses":[{"toolUse":{"id":"m","name":"opaque","input":{}},"details":{"type":"mcp_tool","serverName":"docs","actualToolName":"lookup"}}]}}`))
+	if err != nil || result.(map[string]string)["selectedOption"] != "cancel" || metadata == nil || metadata.Server != "docs" {
+		t.Fatal(result, metadata, err)
+	}
+}
+
 func TestModelCatalogParsing(t *testing.T) {
 	pi, err := parseModelCatalog("pi", []byte(`{"models":[{"provider":"a","id":"shared","name":"A","reasoning":true,"thinkingLevelMap":{"low":"x","high":"y"},"headers":{"Authorization":"secret"}},{"provider":"b","id":"shared","name":"B"}]}`))
-	if err != nil || len(pi) != 2 || pi[0].ID != "a/shared" || pi[1].ID != "b/shared" || len(pi[0].Efforts) != 3 {
+	if err != nil || len(pi) != 2 || pi[0].ID != "a/shared" || pi[1].ID != "b/shared" || !slices.Equal(pi[0].Efforts, []string{"off", "minimal", "low", "medium", "high"}) {
 		t.Fatalf("Pi catalog: %+v %v", pi, err)
 	}
 	droid, err := parseModelCatalog("droid", []byte(`{"models":[{"id":"custom:Mine-0","displayName":"Mine","supportedReasoningEfforts":["low","high"],"defaultReasoningEffort":"high"},{"id":"blocked","disabled":true}]}`))
 	if err != nil || len(droid) != 1 || droid[0].ID != "custom:Mine-0" || droid[0].DefaultEffort != "high" {
 		t.Fatalf("Droid catalog: %+v %v", droid, err)
+	}
+	for _, tc := range []struct {
+		name, driver, metadata string
+		want                   []string
+		previous, selected     string
+	}{
+		{"single", "pi", `"reasoning":true,"thinkingLevelMap":{"off":null,"minimal":null,"low":null,"medium":null,"high":"high","xhigh":null,"max":null}`, []string{"high"}, "low", "high"},
+		{"toggle", "pi", `"reasoning":true,"thinkingLevelMap":{"minimal":null,"low":null,"medium":null,"high":"enabled"}`, []string{"off", "high"}, "high", "high"},
+		{"extended", "pi", `"reasoning":true,"thinkingLevelMap":{"off":null,"xhigh":"high","max":null}`, []string{"minimal", "low", "medium", "high", "xhigh"}, "max", ""},
+		{"none", "pi", `"reasoning":false`, []string{"off"}, "high", "off"},
+		{"empty", "pi", `"reasoning":true,"thinkingLevelMap":{"off":null,"minimal":null,"low":null,"medium":null,"high":null}`, []string{}, "high", ""},
+		{"single", "droid", `"supportedReasoningEfforts":["high"],"defaultReasoningEffort":"low"`, []string{"high"}, "", "high"},
+		{"toggle", "droid", `"supportedReasoningEfforts":["none","high"],"defaultReasoningEffort":"none"`, []string{"none", "high"}, "low", "none"},
+		{"ordered", "droid", `"supportedReasoningEfforts":["dynamic","low","high","high",""],"defaultReasoningEffort":"low"`, []string{"dynamic", "low", "high"}, "high", "high"},
+		{"none", "droid", `"supportedReasoningEfforts":[],"defaultReasoningEffort":"high"`, []string{}, "high", ""},
+	} {
+		t.Run(tc.driver+"-"+tc.name, func(t *testing.T) {
+			models, err := parseModelCatalog(tc.driver, []byte(`{"models":[{"id":"model","provider":"provider",`+tc.metadata+`}]}`))
+			if err != nil || len(models) != 1 {
+				t.Fatal(models, err)
+			}
+			m := models[0]
+			if !slices.Equal(m.Efforts, tc.want) || m.ResolveEffort(tc.previous) != tc.selected {
+				t.Fatalf("%+v, resolved=%q", m, m.ResolveEffort(tc.previous))
+			}
+		})
 	}
 	for _, driver := range []string{"pi", "droid"} {
 		args, err := agentArgs(RunOptions{Driver: driver, Effort: "high"})
@@ -425,6 +821,11 @@ func TestInstalledModelCatalog(t *testing.T) {
 			t.Fatal(driver, err)
 		}
 		t.Logf("%s: %d models", driver, len(models))
+		for _, m := range models {
+			if strings.Contains(m.ID, "hy4std") || len(m.Efforts) == 1 {
+				t.Logf("%s %s: thinking=%v default=%q", driver, m.ID, m.Efforts, m.DefaultEffort)
+			}
+		}
 	}
 }
 
@@ -456,46 +857,6 @@ func TestAgentPermissionsAndImages(t *testing.T) {
 	data, _ := os.ReadFile(path)
 	if part["mimeType"] != "image/png" || part["data"] != base64.StdEncoding.EncodeToString(data) {
 		t.Fatal("image lost")
-	}
-	var output bytes.Buffer
-	a := droidACP{in: json.NewEncoder(&output), out: bufio.NewScanner(strings.NewReader(`{"jsonrpc":"2.0","id":"approval","method":"session/request_permission"}
-{"jsonrpc":"2.0","id":1,"result":{}}
-`))}
-	if err := a.call("session/set_mode", map[string]string{"modeId": "normal"}, nil); err != nil {
-		t.Fatal(err)
-	}
-	if !a.permissionDenied || !strings.Contains(output.String(), `"outcome":"cancelled"`) {
-		t.Fatal(output.String())
-	}
-}
-
-func TestDroidACPNotifications(t *testing.T) {
-	for _, method := range []string{"session/load", "session/prompt"} {
-		t.Run(method, func(t *testing.T) {
-			var output bytes.Buffer
-			var text string
-			a := droidACP{in: json.NewEncoder(&output), session: "s", emit: func(e AgentEvent) { text += e.Text }, out: bufio.NewScanner(strings.NewReader(`{"method":"session/update","params":{"sessionId":"s","update":{"sessionUpdate":"tool_call_update","content":[{"type":"content"}]}}}
-{"method":"session/update","params":{"sessionId":"other","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"wrong"}}}}
-{"method":"session/update","params":{"sessionId":"s","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"answer"}}}}
-{"id":1,"result":{"stopReason":"end_turn"}}
-`))}
-			if err := a.call(method, map[string]any{}, nil); err != nil {
-				t.Fatal(err)
-			}
-			want := ""
-			if method == "session/prompt" {
-				want = "answer"
-			}
-			if text != want {
-				t.Fatal(text)
-			}
-		})
-	}
-	for _, response := range []string{`{"id":1,"error":{"code":-32602}}`, "", `broken`} {
-		a := droidACP{in: json.NewEncoder(&bytes.Buffer{}), out: bufio.NewScanner(strings.NewReader(response))}
-		if err := a.call("session/new", map[string]any{}, nil); err == nil {
-			t.Fatal("failure accepted", response)
-		}
 	}
 }
 
@@ -532,6 +893,16 @@ func TestInstalledAgentTurns(t *testing.T) {
 			defer cancel()
 			var answer string
 			emit := func(e AgentEvent) {
+				if e.Interaction != nil {
+					e.Interaction.Reply <- map[string]any{"decision": "cancel"}
+					return
+				}
+				if e.Session != "" {
+					o.Session = e.Session
+				}
+				if e.Kind != "agentMessage" {
+					return
+				}
 				if e.Delta {
 					answer += e.Text
 				} else {
@@ -562,7 +933,7 @@ func TestInstalledAgentTurns(t *testing.T) {
 			}
 			o.Prompt = "Create a file named forbidden.txt containing hello in the current directory. Use a tool to do it."
 			answer = ""
-			if err := Run(ctx, o, emit); err != nil && !strings.Contains(err.Error(), "blocked by the selected permissions") {
+			if err := Run(ctx, o, emit); err != nil && !strings.Contains(err.Error(), "permission_rejected") {
 				t.Fatal(err)
 			}
 			if _, err := os.Stat(filepath.Join(dir, "forbidden.txt")); !os.IsNotExist(err) {

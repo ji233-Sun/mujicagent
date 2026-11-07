@@ -3,7 +3,7 @@ package controller
 import "github.com/ji233-Sun/mujicagent/internal/codex"
 
 func (c *Controller) RespondElicitation(r *codex.Request, action string, values map[string]string) {
-	if r.Method != "mcpServer/elicitation/request" {
+	if r.Method != "mcpServer/elicitation/request" && r.Method != "client/form" {
 		return
 	}
 	response := codex.ElicitationResponse{Action: action}
@@ -22,6 +22,10 @@ func (c *Controller) RespondElicitation(r *codex.Request, action string, values 
 			if err != nil {
 				return
 			}
+		}
+	case "refresh":
+		if r.Method != "client/form" || !r.Refreshable {
+			return
 		}
 	case "decline", "cancel":
 	default:

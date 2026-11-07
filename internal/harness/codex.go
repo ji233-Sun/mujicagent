@@ -16,6 +16,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -29,7 +30,7 @@ type Driver struct{ ID, Name string }
 
 var Drivers = []Driver{{ID: "codex", Name: "Codex"}, {ID: "pi", Name: "Pi"}, {ID: "droid", Name: "Droid"}}
 
-type Installation struct{ Path, Version, Method, Prefix, Source, Manager, PackageRoot, BinDir, UpdateIssue string }
+type Installation struct{ Driver, Path, Version, Method, Prefix, Source, Manager, PackageRoot, BinDir, UpdateIssue string }
 type Release struct{ Version, URL, Digest, Entry string }
 
 var versionPattern = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
@@ -47,30 +48,51 @@ func Target(goos, arch string) (string, string, error) {
 	return cpu + "-" + platform, exe, nil
 }
 
-func Inspect(ctx context.Context, binary, managed string) (Installation, error) {
+func Inspect(ctx context.Context, driver, binary, managed string) (Installation, error) {
 	cmd, err := codex.Command(ctx, binary, "--version")
 	if err != nil {
 		return Installation{}, err
 	}
+	prepareProcess(cmd)
 	out, err := cmd.Output()
 	if err != nil {
 		return Installation{}, fmt.Errorf("cannot run %s: %w", binary, err)
 	}
-	fields := strings.Fields(string(out))
-	if len(fields) != 2 || fields[0] != "codex-cli" {
-		return Installation{}, fmt.Errorf("unrecognized Codex version")
-	}
-	real, err := filepath.EvalSymlinks(cmd.Path)
+	version, err := installationVersion(driver, out)
 	if err != nil {
 		return Installation{}, err
+	}
+	path := cmd.Path
+	if runtime.GOOS == "windows" {
+		if launcher, e := exec.LookPath(binary); e == nil {
+			path = launcher
+		}
+	}
+	real, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return Installation{}, err
+	}
+	if runtime.GOOS == "windows" {
+		if driver == "pi" && len(cmd.Args) > 1 && strings.HasSuffix(cmd.Args[1], ".js") {
+			real = canonical(cmd.Args[1])
+		}
+		if driver == "droid" {
+			real = canonical(cmd.Path)
+		}
 	}
 	if canonical, err := filepath.EvalSymlinks(managed); err == nil {
 		managed = canonical
 	}
-	method, prefix := classify(real, managed)
+	method, prefix := classifyDriver(driver, real, managed)
+	if runtime.GOOS == "windows" && method == "custom" && strings.EqualFold(filepath.Ext(path), ".cmd") {
+		base := filepath.Dir(path)
+		if filepath.Base(base) != ".bin" && ownsLauncher(driver, path, real, filepath.Join(base, "node_modules"), base) {
+			method, prefix = "npm", base
+		}
+	}
 	// VP dispatches package binaries through symlinks to vp itself. Keep the
 	// launcher path: executing its canonical target would run vp, not Codex.
-	if method == "custom" {
+	if method == "custom" && installerAdapters[driver].packageName != "" {
 		vp := filepath.Join(filepath.Dir(cmd.Path), "vp"+filepath.Ext(real))
 		if filepath.Base(real) == "vp" || filepath.Base(real) == "vp.exe" {
 			if target, e := filepath.EvalSymlinks(vp); e == nil && target == real {
@@ -78,15 +100,18 @@ func Inspect(ctx context.Context, binary, managed string) (Installation, error) 
 			}
 		}
 	}
-	current := Installation{Path: cmd.Path, Version: fields[1], Method: method, Prefix: prefix}
-	if method == "custom" || method == "npm" {
+	current := Installation{Driver: driver, Path: path, Version: version, Method: method, Prefix: prefix}
+	if current.Method == "custom" {
+		current = inspectNative(ctx, current, real)
+	}
+	if current.Method == "custom" || current.Method == "npm" {
 		current = inspectPackageManager(ctx, current, real)
 	}
 	if method == "managed" {
 		rel, _ := filepath.Rel(managed, real)
 		stage := filepath.Join(managed, strings.Split(rel, string(filepath.Separator))[0])
 		if data, e := os.ReadFile(filepath.Join(stage, "source.json")); e == nil {
-			if e = json.Unmarshal(data, &current.Source); e != nil || !validSource(current.Source) {
+			if e = json.Unmarshal(data, &current.Source); e != nil || !validSource(driver, current.Source) {
 				return Installation{}, fmt.Errorf("invalid managed installation source")
 			}
 		} else if !os.IsNotExist(e) {
@@ -160,7 +185,7 @@ func getJSON(ctx context.Context, endpoint string, result any) error {
 	return json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(result)
 }
 
-func Latest(ctx context.Context, source string) (Release, error) {
+func codexLatest(ctx context.Context, source string) (Release, error) {
 	target, exe, err := Target(runtime.GOOS, runtime.GOARCH)
 	if err != nil {
 		return Release{}, err
@@ -239,34 +264,12 @@ func Newer(latest, current string) bool {
 }
 
 // Install stages a complete distribution beside the active one. Windows never replaces a running exe.
-func Install(ctx context.Context, root, source string, release Release, current Installation) (string, error) {
-	plan, err := PrepareInstall(ctx, root, source, release, current)
+func Install(ctx context.Context, driver, root, source string, release Release, current Installation) (string, error) {
+	plan, err := PrepareInstall(ctx, driver, root, source, release, current)
 	if err != nil {
 		return "", err
 	}
 	return plan.Execute(ctx)
-}
-
-func verify(ctx context.Context, path, version string) (string, error) {
-	cmd, err := codex.Command(ctx, path, "--version")
-	if err != nil {
-		return "", err
-	}
-	out, err := cmd.Output()
-	if err != nil {
-		return "", err
-	}
-	if strings.TrimSpace(string(out)) != "codex-cli "+version {
-		return "", fmt.Errorf("installed version does not match %s", version)
-	}
-	cmd, err = codex.Command(ctx, path, "app-server", "--help")
-	if err != nil {
-		return "", err
-	}
-	if err = cmd.Run(); err != nil {
-		return "", fmt.Errorf("app-server unavailable: %w", err)
-	}
-	return path, nil
 }
 
 func downloadExtract(ctx context.Context, release Release, stage string) error {
@@ -310,7 +313,30 @@ func downloadExtract(ctx context.Context, release Release, stage string) error {
 	if _, err = archive.Seek(0, 0); err != nil {
 		return err
 	}
-	return extract(archive, stage)
+	switch {
+	case strings.HasSuffix(release.URL, ".zip"):
+		return extractZip(archive, n, stage)
+	case strings.HasSuffix(release.URL, ".tar.gz"), strings.HasSuffix(release.URL, ".tgz"):
+		return extract(archive, stage)
+	default:
+		if !safeArchivePath(release.Entry) {
+			return fmt.Errorf("unsafe binary path")
+		}
+		path := filepath.Join(stage, filepath.FromSlash(release.Entry))
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			return err
+		}
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0700)
+		if err != nil {
+			return err
+		}
+		_, err = io.Copy(f, archive)
+		closeErr := f.Close()
+		if err != nil {
+			return err
+		}
+		return closeErr
+	}
 }
 
 func extract(source io.Reader, root string) error {

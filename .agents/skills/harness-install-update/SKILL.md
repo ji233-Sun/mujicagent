@@ -23,16 +23,25 @@ description: 修改或新增任何 Harness 的安装、更新、安装来源识�
 1. 检查版本只读；自动检查只提示，不安装。
 2. 用户点击更新后，异步生成不可变的执行计划，展示版本、精确指令及目标路径。准备阶段不安装、不创建安装目录、不断开连接。
 3. 预览与执行使用同一计划中的可执行路径和参数数组；展示字符串只用于阅读，不能交给 shell 执行。
-4. 原生包由应用直接下载时，展示下载地址、校验摘要、目标路径及“下载、校验、解包”动作，不伪造不会执行的 curl 或 shell 指令。
+4. 原生包由应用直接下载时，展示下载地址、校验摘要、目标路径及“下载、校验并安装”动作，不伪造不会执行的 curl 或 shell 指令。完整保留发行包内容，支持 tar.gz、ZIP 与官方裸二进制；解包拒绝路径穿越、符号链接及超限条目。
 5. 用户点击明确的“确认更新／确认安装”后才执行。取消、关闭、切换选择会作废旧计划；旧异步回调不能覆盖新选择。
 6. 确认时重新检查路径、安装来源和版本。发生变化则要求重新预览，不执行另一条指令；确认只消费一次。
-7. 对话运行中、连接中或另一安装进行中禁止执行。安装前释放连接，失败或取消保留配置路径，不声称外部包管理器操作已经回滚。
-8. 成功验证版本及协议可用性，再保存路径并重连。托管安装使用新目录，只清理本次失败的临时目录。
+7. 对话运行中、连接中或另一安装进行中禁止执行。安装前释放目标 Harness 的连接；Pi/Droid 更新不应断开 Codex。失败或取消保留配置路径，不声称外部包管理器操作已经回滚。
+8. 成功验证版本及对应协议入口，再保存目标路径并按需重连。托管安装使用新目录，只清理本次失败的临时目录。
 
 ## 仅全新安装选择渠道
 
 - 设置页不常驻下载渠道选择器。已安装的更新弹窗不提供换渠道入口。
-- 确认未安装后显示“安装”；点击后弹窗三选一：官方原生包、大陆 npm 镜像、大陆免 Node 镜像包。
+- 确认未安装后显示“安装”；渠道来自 Harness 安装适配器，使用同一弹窗和交互，不为凑齐选项伪造上游发行渠道：
+
+  | Harness | 全新安装渠道 |
+  | --- | --- |
+  | Codex | 官方原生包、大陆 npm 镜像、大陆免 Node 镜像包 |
+  | Pi | 官方原生包、官方 npm、大陆 npm 镜像 |
+  | Droid | 官方原生包、官方 npm、大陆 npm 镜像、大陆免 Node 镜像包 |
+
+- Pi 官方 npm 包为 `@earendil-works/pi-coding-agent`，要求 Node.js ≥ 22.19；Droid 为 `@factory/cli`，要求 Node.js ≥ 20。确认前检查运行时；缺失时提示选择原生包，不全局安装 Node。
+- 镜像主包与平台包可能不同步；缺包时保留错误和重试，不在确认后静默改用官方源。Pi 没有已核实的免 Node 镜像发行包，不展示该选项。
 - 在弹窗内展示当前选择的指令或原生下载动作，再由用户确认安装。选择改变立即废弃旧预览，准备完成前不能确认。
 - 无 npm 或 Windows 下的镜像原生包回退须体现在确认前的预览中，并保存实际采用的渠道。执行时不静默切换安装方式。
 - 显式路径失效属于错误，不自动当作从未安装，也不借机覆盖用户配置。
@@ -40,7 +49,7 @@ description: 修改或新增任何 Harness 的安装、更新、安装来源识�
 
 ## 验收
 
-- 覆盖已识别的每种本地安装来源、托管渠道延续、未知来源、未安装、三种全新安装选择、准备中、错误重试、取消、过期预览、重复确认和运行中禁用。
+- 覆盖各 Harness 已识别的本地安装来源、托管渠道延续、未知来源、未安装、全部可用安装选择、准备中、错误重试、取消、过期预览、重复确认、跨 Harness 误用和运行中禁用。
 - 用隔离的可执行文件和目录验证预览无副作用、执行参数与预览一致、失败不切换配置；不要实际升级开发者全局 CLI 来验证产品逻辑。
 - 用真实本机 CLI 的只读探测确认报告的安装布局；这不是包管理器真实升级成功的证据。
 - Windows 单独检查原生 exe、npm 启动器、空格与中文路径及参数数组，不能用 shell 拼接路径。
@@ -49,9 +58,13 @@ description: 修改或新增任何 Harness 的安装、更新、安装来源识�
 
 ## 当前参考实现
 
-- 来源、统一适配器与计划：`internal/harness/codex.go`、`internal/harness/managers.go`、`internal/harness/install.go`
+- 来源、Harness 发行适配器、包管理器与计划：`internal/harness/codex.go`、`internal/harness/installers.go`、`internal/harness/managers.go`、`internal/harness/install.go`
 - 准备、确认、取消与过期保护：`internal/controller/harness.go`
 - 设置入口与确认弹窗：`internal/view/agents.go`、`internal/view/harness_install.go`
 - 回归：`internal/harness/codex_test.go`、`internal/controller/controller_test.go`、`internal/view/agent_picker_test.go`
 
 这些路径相对仓库根目录。复用策略与已有生命周期，不为其他 Harness 直接复制 Codex 包名、版本协议或 app-server 校验。
+
+Pi 官方脚本安装按 `managed-install.json` 及入口归属识别，用 `pi update --self --no-approve`；此命令不提供版本锁定，执行后仍须核对预览版本。Droid 独立原生安装核对默认路径及官方版本摘要，使用 `droid update --version <版本>`；Homebrew 沿用 cask。Factory.app 内置 Droid 与 Nix store 由原工具管理，明确显示来源，不覆盖应用签名文件。Windows Pi 解析官方托管或已知 npm 脚本；Droid npm 解析平台包 exe，不能执行任意 `.cmd`。
+
+官方依据：[Pi 安装](https://pi.dev/)、[Droid 安装](https://docs.factory.com/droid-cli/quickstart)。扩展时重新核对官方当前版本及安装布局。

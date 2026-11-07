@@ -28,8 +28,12 @@ description: 为 MujicAgent 添加或维护 harness、模型发现与收藏、�
 
 - 权限入口复用 Codex 的 `pickerOption`、`pickerPopover`、权限图标、选中标记和高权限确认，不向用户展示工具开关或无解释的 low/medium/high。名称按真实能力映射，不能把不同 Harness 的执行权限说成同一种 OS 沙箱。
 - Pi 当前「只读」只启用内置 read/grep/find/ls，并关闭扩展和 MCP；「完全访问」沿用本机工具配置。没有原生沙箱时不添加假工作区权限。参考 Pi 官方 permission-gate 扩展和其他客户端实现时，先验证当前安装版本的实际能力；不要仅注入 prompt 声称权限已受限。
-- Droid 当前使用 `exec --output-format acp`。先 initialize 检查 promptCapabilities.image/loadSession，再 session/new 或 session/load；每轮显式 session/set_mode、set_model 和 reasoning_effort，不能继承全局配置或恢复会话的高权限。normal/auto-low/auto-medium/auto-high 对应只读/文件编辑/开发权限/完全访问；超出自动授权范围的请求返回 cancelled，不静默批准。
-- ACP 图片通过 MIME + base64 content block 发送，普通文件复用已有本地路径输入，标注发送原图与导出图。先实测原生能力；确实不支持时才考虑托管文件及 URI 映射，并定义模型可访问的解析规则、生命周期和错误反馈，不能只生成模型无法读取的自定义 URL。
+- Droid 使用 `exec --input-format stream-jsonrpc --output-format stream-jsonrpc`。initialize/load 后，每轮显式 update_session_settings：interactionMode=auto、autonomyLevel=off/low/medium/high，以及所选模型与思考强度；权限请求必须经用户选择，仅回传 proceed_once/cancel，AskUser 复用共享请求界面。消息、工具、压缩、失败和完成通过 session_notification 处理；恢复历史不得追加到当前轮。
+- Pi 使用 `--mode rpc`，通过 prompt/steer 与 extension_ui_request/response 双向交互，等待 agent_settled，不能将 agent_end 当作整个任务结束。
+- 新 Harness 在 `internal/harness/agents.go` 注册运行与 Steer 适配器，使用 AgentEvent/ToolEvent/Interaction 契约；缺少 Steer 实现时不启用入口。复用 `mergeAgentEvent`、model.Item、现有请求 UI 与脱敏详情，不写只消费最终文本的旁路。必须扩展现有协议、状态和视图测试，覆盖事件边界、同名并行工具、增量与快照、审批回传、停止、持久化和历史过滤。登记能力未验证项，不以编译通过宣称完整对齐。
+- 交互复用 `ask` 的 Interaction/Resolved 生命周期，回答、取消和超时都清理请求；UI 请求使用独立 ID，不能用可重复的上游 ID 作为跨会话答案缓存键。普通选择/输入用 `client/form` 复用现有表单校验，MCP elicitation 保留原方法，不能把普通表单标为 MCP。Droid picker 保留原选项 ID，支持单/多选、预选、搜索、刷新、空列表和取消；AskUser 多选回传完整答案。Pi editor 保留预填、多行和请求超时；审批选项必须来自实际协议，未提供的一次允许不能补造。
+- MCP 元数据只消费有来源的字段：Pi 工具结果/进度的 `details.server/tool`、Droid 审批的 `mcp_tool` 详情；后续稀疏事件保留已识别服务和类型，不由工具名称猜服务名。Droid TodoWrite 的 `todos` 是字符串；Pi 官方 plan-mode 扩展的 `plan-todos` 组件可转换为计划文本，清除组件不抹去历史。计划展示/交接、计划执行模式和通用 MCP elicitation 分别验收，不能互相替代；Pi 只读模式关闭扩展时不会产生该组件。
+- Pi/Droid 图片通过各自 RPC 的 MIME + base64 image payload 发送，普通文件复用已有本地路径输入，标注发送原图与导出图。先实测原生能力；确实不支持时才考虑托管文件及 URI 映射，并定义模型可访问的解析规则、生命周期和错误反馈，不能只生成模型无法读取的自定义 URL。
 - 事件负载按事件类型解析：工具结果可能为对象或数组，不得强制解码为文本。恢复会话的历史通知不能重复追加到当前回复；停止、错误、缺失能力和未知客户端请求必须有明确结果，子进程必须回收。
 - 在既有测试补权限默认值、未知值拒绝、图片内容、通知类型、恢复和取消回归。获得实际 token 授权后，用用户指定的精确模型验证读取普通文件、图片识别和第二轮续聊；只读目录探测不能替代这些证据。`MUJICAGENT_AGENT_LIVE_TEST=1 go test ./internal/harness -run TestInstalledAgentTurns -v -count=1` 会调用 Pi 的 magpie/workbuddy/deepseek-v4.1-flash 和 Droid 的 custom:magpie/codex-fast/gpt-6.1-sol，产生用量。
 
@@ -43,6 +47,8 @@ description: 为 MujicAgent 添加或维护 harness、模型发现与收藏、�
 
 - 模型选择以 Codex 为参照，复用 `modelCatalogPanel` / `modelChoicesPanel` 和 `modelEffortSlider`。在对话输入栏选择具体模型，不新增「默认模型」、手填模型 ID 或设置页 Models 控件。设置页只放版本、安装/登录入口及折叠连接详情，不铺满协议解释文字；异常通过简短状态和可重试入口表达。
 - 模型目录从 Harness 的官方接口自动读取，包含其已配置的自定义模型；不要硬编码模型名单。已有实现：Codex `model/list`、Pi `get_available_models`、Droid `droid.list_models`。名称用于展示，精确 ID 用于选择与发送；思考强度及速度依据真实能力，不能把 Codex 档位强塞给其他 Harness。
+- Pi 思考能力遵循官方 `getSupportedThinkingLevels`：`thinkingLevelMap` 中 `null` 排除档位（包括 `off`），缺省标准档位继承 provider 规则，`xhigh/max` 必须显式非空；不能把 map 当白名单或强行补 `off`。Droid 直接使用目录的 `supportedReasoningEfforts/defaultReasoningEffort`，去重并验证默认值，保留原始协议值。
+- 思考 UI 区分多档位、单个固定档位、仅开关与不可用。单档位不画滑条或显示虚假默认；只有目录确实包含一个关闭值和一个开启值时使用开关，开启时回传真实档位而非伪造 `on`。多档位列表限制高度，未提供默认值时明确显示沿用 CLI 默认。切模型保留兼容选择，跨 Harness 不继承档位；刷新后按可执行路径/工作目录修正并保存过期值。
 - 发现目录是只读动作，不创建会话、不发送推理。只从打开选择器、切换 Harness 或刷新等动作发起，禁止在渲染中启动进程。复用异步队列、超时和进程树取消；缓存区分可执行文件与工作目录，窗口关闭或替换请求时取消，回调拒绝过期结果。失败显示空列表或错误，不伪造一个可用模型；其他 Harness 的目录缺失不能锁死整个入口。
 - 目录只保留展示及选择字段，不把 provider 端点、密钥或原始诊断写进应用状态。进程无论成功、失败还是取消都要回收。
 - 收藏键始终是严格 `(Harness, Model ID)` 二元组，持久化和列表身份复用 `model.ModelFavorite`；不能仅按模型名或 ID 合并。所属 Harness 内稳定置顶，点击星标不选中模型；顶部星标汇总全部收藏，即使目录暂不可用也保留已收藏 ID。
@@ -57,12 +63,13 @@ description: 为 MujicAgent 添加或维护 harness、模型发现与收藏、�
 
 ## 安装、认证与跨平台
 
-- 保留已有 CodexPath 与会话格式；新增设置使用向后兼容的默认值。Codex 自动检查默认每天，只查版本，不安装；Pi/Droid 当前由官方 CLI 管理安装与登录。手动操作显示进度、错误、取消及可重试入口；所有状态通过 Controller 队列发布，禁止在渲染中启动网络或进程。
+- 保留已有路径设置与会话格式。三个 Harness 共用安装卡片、确认弹窗和 Controller 生命周期；在 `internal/harness/installers.go` 登记包名、发行渠道、版本解析与协议探针，避免复制 Codex 分支。自动检查默认每天，只查版本，不安装。手动操作显示进度、错误、取消及可重试入口；所有状态通过 Controller 队列发布，禁止在渲染中启动网络或进程。
 - 探测必须沿用连接使用的桌面 PATH 解析，并尊重显式路径。通过统一适配器沿用已确认的 VP/npm/Bun/pnpm/Homebrew 等原安装工具，先预览精确指令再确认执行；不支持、归属不明或冲突时明确提示通过原工具处理，不自动切换托管。只有未安装时才在安装弹窗选择渠道，设置页不常驻渠道选择器。任务运行或连接中禁止更新。
 - Codex 官方渠道采用完整原生发行包，不能只复制 codex 可执行文件：伴随 host、rg 等也需要保留。大陆选择 npm 镜像，在私有 prefix 安装；无 npm 或 Windows 使用镜像平台包，提供免 Node 选择。不要全局安装 Node、修改 PATH/npm 配置或使用 sudo。
 - 托管安装先验证 HTTPS 下载摘要、解包路径、版本及相应协议可用性（Codex 为 app-server），再切换配置路径。使用新目录，失败只清理本次临时目录；旧目录保留供原有进程使用。不要在更新过程中清理用户自定义目录。
-- Windows 单独检查 amd64/arm64、空格/中文路径、PATHEXT、npm .cmd 与 .exe。Codex 已知 npm 布局直接解析原生 exe；Pi 已知 npm 启动器解析为 Node + 包内脚本；Droid 使用原生 exe。npm 更新经 node + npm-cli.js 参数数组执行。不要把用户路径插入 cmd.exe/PowerShell 命令字符串；未知 wrapper 要求显式 exe。更新前释放客户端句柄，新安装使用独立版本目录，避免覆盖运行中的文件。
+- Windows 单独检查 amd64/arm64、空格/中文路径、PATHEXT、npm .cmd 与 .exe。Codex 已知 npm 布局直接解析原生 exe；Pi 官方托管及 npm 启动器解析为 Node + 包内脚本，支持 `dist/bundle/cli.js` 和旧入口；Droid npm 启动器解析平台包 exe。同时覆盖私有 prefix 下的 `.bin`。npm 更新经 node + npm-cli.js 参数数组执行。不要把用户路径插入 cmd.exe/PowerShell 命令字符串；未知 wrapper 要求显式 exe。更新前释放目标客户端句柄，新安装使用独立版本目录，避免覆盖运行中的文件。
 - 认证由 harness 管理。Codex 的 account:null 不等于未登录：检查 requiresOpenaiAuth；API key、第三方 base_url 与 env_key 配置由原有 Codex 配置和进程环境继承，不复制密钥到应用状态、日志或 UI。配置状态不代表凭据已验证。
+- Pi/Droid 提供统一位置的登录指南入口，账号详情明确显示登录状态未验证。CLI 可用、安装成功和模型目录可读均不能标记为已登录。
 - account/read 仅对 -32603 且 workspace routing discovery timed out 做最多三次、500ms/1s 退避；独立请求预算、可取消。不重试认证错误，不重放 turn/start、登录或其他写请求。
 
 ## 按变更范围验证
@@ -71,6 +78,6 @@ description: 为 MujicAgent 添加或维护 harness、模型发现与收藏、�
 
 布局直接设置场景状态并生成中英文 CPU 离屏 PNG，检查正常/加载/失败模型目录、无默认或手填入口、无设置页 Models、收藏图标与侧栏对齐。截图场景不通过模拟点击切换；单独的交互回归可验证收藏不触发选中。按交付技能选择相关 Go 测试、并发 race、MyGo vet、生成与 i18n 检查及 Windows 构建。
 
-`MUJICAGENT_MODEL_DISCOVERY_TEST=1` 是本机 CLI 只读目录探测；`MUJICAGENT_INSTALL_TEST=official` 或 `cn` 是写入临时目录的原生包下载测试，按需显式开启。它们不是实际推理验证；真实发送会产生用量，遵循交付技能的授权边界。CPU 截图和交叉编译不能替代 GPU/原生窗口或 Windows 原生执行证据。
+`MUJICAGENT_MODEL_DISCOVERY_TEST=1` 是本机 CLI 只读目录探测；`MUJICAGENT_INSTALL_DRIVER=pi|droid|codex` 配合 `MUJICAGENT_INSTALL_TEST=official|cn|npm|cn-npm` 是写入临时目录的安装测试（仅选择对应 Harness 支持的渠道），按需显式开启。它们不是实际推理验证；真实发送会产生用量，遵循交付技能的授权边界。CPU 截图和交叉编译不能替代 GPU/原生窗口或 Windows 原生执行证据。
 
 协议与标识参考：[Pi RPC](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/rpc-commands.md)、[Pi 品牌资源](https://pi.dev/press-kit)、[Droid SDK](https://docs.factory.com/sdk/typescript)、[Factory 官网](https://factory.com/)。新增接入时查对应 Harness 的官方来源，现有例子不是新 CLI 的协议保证。

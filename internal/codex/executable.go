@@ -2,6 +2,7 @@ package codex
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"os"
 	"os/exec"
@@ -21,6 +22,14 @@ func desktopCommand(ctx context.Context, binary string, args ...string) (*exec.C
 				return nil, err
 			}
 			if strings.EqualFold(filepath.Ext(resolved), ".cmd") || strings.EqualFold(filepath.Ext(resolved), ".bat") {
+				if strings.EqualFold(strings.TrimSuffix(filepath.Base(resolved), filepath.Ext(resolved)), "droid") {
+					native, err := windowsDroidNative(resolved, runtime.GOARCH)
+					if err != nil {
+						return nil, err
+					}
+					cmd := exec.Command(native, args...)
+					return cmd, cmd.Err
+				}
 				if strings.EqualFold(strings.TrimSuffix(filepath.Base(resolved), filepath.Ext(resolved)), "pi") {
 					script, err := windowsPiScript(resolved)
 					if err != nil {
@@ -155,10 +164,55 @@ func windowsCodexNative(wrapper, arch string) (string, error) {
 
 // Resolve only known npm package layouts; never execute arbitrary shell wrappers.
 func windowsPiScript(wrapper string) (string, error) {
-	for _, scope := range []string{"@earendil-works", "@mariozechner"} {
-		path := filepath.Join(filepath.Dir(wrapper), "node_modules", scope, "pi-coding-agent", "dist", "cli.js")
-		if info, err := os.Stat(path); err == nil && !info.IsDir() {
-			return path, nil
+	for _, root := range windowsNpmRoots(wrapper) {
+		for _, scope := range []string{"@earendil-works", "@mariozechner"} {
+			for _, entry := range []string{"dist/bundle/cli.js", "dist/cli.js"} {
+				path := filepath.Join(root, scope, "pi-coding-agent", filepath.FromSlash(entry))
+				if info, err := os.Stat(path); err == nil && !info.IsDir() {
+					return path, nil
+				}
+			}
+		}
+	}
+	root := filepath.Join(filepath.Dir(filepath.Dir(wrapper)), "install")
+	data, err := os.ReadFile(filepath.Join(root, "managed-install.json"))
+	var marker struct {
+		Kind, Layout  string
+		SchemaVersion int
+	}
+	if err == nil && json.Unmarshal(data, &marker) == nil && marker.Kind == "pi-managed-install" && marker.Layout == "releases-v1" && marker.SchemaVersion == 1 {
+		data, err := os.ReadFile(filepath.Join(root, "current-version"))
+		version := strings.TrimSpace(string(data))
+		if err == nil && version != "" && version != "." && version != ".." && !strings.ContainsAny(version, `/\:`) {
+			for _, entry := range []string{"dist/bundle/cli.js", "dist/cli.js"} {
+				path := filepath.Join(root, "releases", version, "node_modules", "@earendil-works", "pi-coding-agent", filepath.FromSlash(entry))
+				if info, err := os.Stat(path); err == nil && !info.IsDir() {
+					return path, nil
+				}
+			}
+		}
+	}
+	return "", &exec.Error{Name: wrapper, Err: exec.ErrNotFound}
+}
+
+func windowsNpmRoots(wrapper string) []string {
+	dir := filepath.Dir(wrapper)
+	if filepath.Base(dir) == ".bin" {
+		return []string{filepath.Dir(dir)}
+	}
+	return []string{filepath.Join(dir, "node_modules")}
+}
+
+func windowsDroidNative(wrapper, arch string) (string, error) {
+	cpu := map[string]string{"amd64": "x64-baseline", "arm64": "arm64"}[arch]
+	if cpu != "" {
+		for _, root := range windowsNpmRoots(wrapper) {
+			for _, base := range []string{root, filepath.Join(root, "@factory", "cli", "node_modules")} {
+				path := filepath.Join(base, "@factory", "cli-win32-"+cpu, "bin", "droid.exe")
+				if info, err := os.Stat(path); err == nil && !info.IsDir() {
+					return path, nil
+				}
+			}
 		}
 	}
 	return "", &exec.Error{Name: wrapper, Err: exec.ErrNotFound}

@@ -25,12 +25,30 @@ type managerAdapter struct {
 	update            func(Installation, string) (string, []string, error)
 }
 
+func driverID(id string) string {
+	if id == "" {
+		return "codex"
+	}
+	return id
+}
+func packageFor(id string) string { return installerAdapters[driverID(id)].packageName }
+
 var managerAdapters = map[string]managerAdapter{
+	"native": {name: "Official", update: func(i Installation, v string) (string, []string, error) {
+		switch i.Driver {
+		case "pi":
+			return i.Path, []string{"update", "--self", "--no-approve"}, nil
+		case "droid":
+			return i.Path, []string{"update", "--version", v}, nil
+		default:
+			return "", nil, fmt.Errorf("unsupported native updater")
+		}
+	}},
 	"vp": {name: "VP", update: func(i Installation, v string) (string, []string, error) {
-		return i.Prefix, []string{"update", "--global", "@openai/codex@" + v}, nil
+		return i.Prefix, []string{"update", "--global", packageFor(i.Driver) + "@" + v}, nil
 	}},
 	"npm": {name: "npm", update: func(i Installation, v string) (string, []string, error) {
-		args := []string{"install", "--global", "--prefix", i.Prefix, "@openai/codex@" + v, "--ignore-scripts", "--no-audit", "--no-fund"}
+		args := []string{"install", "--global", "--prefix", i.Prefix, packageFor(i.Driver) + "@" + v, "--ignore-scripts", "--no-audit", "--no-fund"}
 		if runtime.GOOS == "windows" {
 			node, cli, err := windowsNpmRuntime(i.Prefix)
 			return node, append([]string{cli}, args...), err
@@ -38,7 +56,7 @@ var managerAdapters = map[string]managerAdapter{
 		return filepath.Join(i.Prefix, "bin", "npm"), args, nil
 	}},
 	"brew": {name: "Homebrew", update: func(i Installation, v string) (string, []string, error) {
-		return filepath.Join(i.Prefix, "bin", "brew"), []string{"upgrade", "--cask", "codex"}, nil
+		return filepath.Join(i.Prefix, "bin", "brew"), []string{"upgrade", "--cask", installerAdapters[driverID(i.Driver)].cask}, nil
 	}},
 	"bun": {name: "Bun", rootArgs: []string{"pm", "--global", "ls"}, binArgs: []string{"pm", "bin", "--global"},
 		update: globalPackageUpdate},
@@ -68,12 +86,19 @@ func globalPackageUpdate(i Installation, version string) (string, []string, erro
 	if i.Manager == "" || i.PackageRoot == "" {
 		return "", nil, fmt.Errorf("package manager ownership is not verified")
 	}
-	return i.Manager, []string{"add", "--global", "@openai/codex@" + version, "--ignore-scripts"}, nil
+	return i.Manager, []string{"add", "--global", packageFor(i.Driver) + "@" + version, "--ignore-scripts"}, nil
 }
 
 // Resolve known Node launchers without executing .cmd through a shell.
 func managerCommand(ctx context.Context, binary string, args ...string) (*exec.Cmd, error) {
 	if runtime.GOOS == "windows" {
+		if strings.EqualFold(filepath.Base(binary), "npm") || strings.EqualFold(filepath.Base(binary), "npm.cmd") {
+			node, cli, err := windowsNpmRuntime(filepath.Dir(binary))
+			if err != nil {
+				return nil, err
+			}
+			return codex.Command(ctx, node, append([]string{cli}, args...)...)
+		}
 		if wrapper, err := exec.LookPath(binary); err == nil && strings.EqualFold(filepath.Ext(wrapper), ".cmd") && strings.EqualFold(filepath.Base(wrapper), "pnpm.cmd") {
 			script := filepath.Join(filepath.Dir(wrapper), "node_modules", "pnpm", "bin", "pnpm.cjs")
 			if _, err := os.Stat(script); err != nil {
@@ -164,18 +189,37 @@ func managerRoot(id, output string) string {
 	return output
 }
 
-func ownsLauncher(launcher, real, root, bin string) bool {
-	pkg := filepath.Join(root, "@openai", "codex")
-	var manifest struct{ Name string }
+func ownsLauncher(driver, launcher, real, root, bin string) bool {
+	a := installerAdapters[driverID(driver)]
+	pkg := filepath.Join(root, filepath.FromSlash(a.packageName))
+	var manifest struct {
+		Name string
+		Bin  map[string]string
+	}
 	data, err := readSmallFile(filepath.Join(pkg, "package.json"))
-	if err != nil || json.Unmarshal(data, &manifest) != nil || manifest.Name != "@openai/codex" {
+	if err != nil || json.Unmarshal(data, &manifest) != nil || manifest.Name != a.packageName {
 		return false
 	}
-	entry := canonical(filepath.Join(pkg, "bin", "codex.js"))
+	entryPath := manifest.Bin[driverID(driver)]
+	if entryPath == "" {
+		entryPath = a.entry
+	}
+	if !safeArchivePath(entryPath) {
+		return false
+	}
+	entry := canonical(filepath.Join(pkg, filepath.FromSlash(entryPath)))
 	if entry == real {
 		return true
 	}
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == "windows" && driver == "droid" {
+		cpu := map[string]string{"amd64": "x64-baseline", "arm64": "arm64"}[runtime.GOARCH]
+		for _, base := range []string{root, filepath.Join(pkg, "node_modules")} {
+			if canonical(filepath.Join(base, "@factory", "cli-win32-"+cpu, "bin", "droid.exe")) == real {
+				return true
+			}
+		}
+	}
+	if runtime.GOOS == "windows" && driverID(driver) == "codex" {
 		target, exe, _ := Target(runtime.GOOS, runtime.GOARCH)
 		arch := map[string]string{"amd64": "x64", "arm64": "arm64"}[runtime.GOARCH]
 		for _, dir := range []string{pkg, filepath.Join(pkg, "node_modules", "@openai", "codex-win32-"+arch), filepath.Join(root, "@openai", "codex-win32-"+arch)} {
@@ -198,15 +242,14 @@ func ownsLauncher(launcher, real, root, bin string) bool {
 	for _, variable := range []string{"${basedir}", "$basedir", "%~dp0", "%dp0%"} {
 		script = strings.ReplaceAll(script, variable, base+"/")
 	}
-	for _, match := range shimPackagePath.FindAllStringSubmatch(script, -1) {
+	pattern := regexp.MustCompile(`["']([^"'\r\n]*[/]` + regexp.QuoteMeta(a.packageName+"/"+entryPath) + `)["']`)
+	for _, match := range pattern.FindAllStringSubmatch(script, -1) {
 		if filepath.IsAbs(match[1]) && canonical(filepath.FromSlash(match[1])) == entry {
 			return true
 		}
 	}
 	return false
 }
-
-var shimPackagePath = regexp.MustCompile(`["']([^"'\r\n]*[/]@openai/codex/bin/codex[.]js)["']`)
 
 func inspectPackageManager(ctx context.Context, current Installation, real string) Installation {
 	hint := packageOwner(real)
@@ -228,7 +271,7 @@ func inspectPackageManager(ctx context.Context, current Installation, real strin
 	}
 	// Avoid invoking unrelated tools for arbitrary external executables.
 	body, _ := readSmallFile(current.Path)
-	if hint == "" && !strings.Contains(filepath.ToSlash(real), "/node_modules/") && !strings.Contains(string(body), "@openai/codex") {
+	if hint == "" && !strings.Contains(filepath.ToSlash(real), "/node_modules/") && !strings.Contains(string(body), packageFor(current.Driver)) {
 		return current
 	}
 	var matches []Installation
@@ -267,7 +310,7 @@ func inspectPackageManager(ctx context.Context, current Installation, real strin
 		rootOutput, rootErr := probeManager(ctx, resolved, a.rootArgs)
 		bin, binErr := probeManager(ctx, resolved, a.binArgs)
 		root := managerRoot(id, rootOutput)
-		if rootErr != nil || binErr != nil || !filepath.IsAbs(root) || !filepath.IsAbs(bin) || !ownsLauncher(current.Path, real, root, bin) {
+		if rootErr != nil || binErr != nil || !filepath.IsAbs(root) || !filepath.IsAbs(bin) || !ownsLauncher(current.Driver, current.Path, real, root, bin) {
 			if hint == id {
 				current.Method, current.UpdateIssue = id, "unverified"
 			}

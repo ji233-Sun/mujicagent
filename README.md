@@ -49,7 +49,7 @@ MujicAgent 使用 Go 和 [MyGo](https://github.com/egoist/mygo) 构建，界面�
 
 ## 开始使用
 
-1. 准备 Codex 登录或 API 配置；也可先打开应用，在设置中一键安装 Codex。
+1. 准备所用智能体的登录或 API 配置；也可先打开应用，在设置中安装 Codex、Pi 或 Droid。
 2. 从 [GitHub Releases](https://github.com/ji233-Sun/mujicagent/releases/latest) 下载对应的安装包。
 3. 打开 MujicAgent，添加一个本地项目，或从“无项目”开始第一段对话。
 

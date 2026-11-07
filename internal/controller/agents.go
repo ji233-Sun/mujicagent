@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/ji233-Sun/mujicagent/internal/codex"
 	"github.com/ji233-Sun/mujicagent/internal/harness"
@@ -21,44 +22,6 @@ func (c *Controller) HarnessFor(id string) *HarnessState {
 	}
 	return c.Harnesses[id]
 }
-func (c *Controller) CheckAgent(id string) {
-	if id == "codex" {
-		c.CheckHarness()
-		return
-	}
-	if id != "pi" && id != "droid" {
-		return
-	}
-	h := c.HarnessFor(id)
-	if h.Checking {
-		return
-	}
-	binary := c.State.Settings.AgentPath(id)
-	h.Checking, h.Error = true, ""
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	h.cancel = cancel
-	go func() {
-		defer cancel()
-		cmd, err := codex.Command(ctx, binary, "--version")
-		var version []byte
-		if err == nil {
-			version, err = cmd.Output()
-		}
-		c.post(func() {
-			h.Checking, h.cancel = false, nil
-			if binary != c.State.Settings.AgentPath(id) {
-				return
-			}
-			h.CheckedAt, h.Binary = time.Now(), binary
-			h.Installation = harness.Installation{}
-			if err != nil {
-				h.Error = err.Error()
-				return
-			}
-			h.Installation = harness.Installation{Path: cmd.Path, Version: strings.TrimSpace(string(version)), Method: "custom"}
-		})
-	}()
-}
 
 // Handoff copies visible context, never provider IDs or credentials. The source remains intact.
 func (c *Controller) Handoff(driver, targetModel string) bool {
@@ -72,6 +35,7 @@ func (c *Controller) Handoff(driver, targetModel string) bool {
 	targetModel = strings.TrimSpace(targetModel)
 	if len(old.Turns) == 0 && old.ServerID == "" && old.HandoffContext == "" {
 		old.Harness, old.AgentModel, old.AgentAccess = driver, targetModel, ""
+		old.AgentEffort = ""
 		c.Save()
 		return true
 	}
@@ -109,7 +73,7 @@ func (c *Controller) Handoff(driver, targetModel string) bool {
 }
 
 func (c *Controller) sendAgent(t *model.Thread, text, queuedID string) bool {
-	if c.Running[t.ID] {
+	if c.Running[t.ID] || c.HarnessInstalling() {
 		return false
 	}
 	if t.Driver() != "pi" && t.Driver() != "droid" {
@@ -120,6 +84,7 @@ func (c *Controller) sendAgent(t *model.Thread, text, queuedID string) bool {
 		c.ReportError(err.Error())
 		return false
 	}
+	c.normalizeAgentEffort(t)
 	info, err := os.Stat(t.Cwd)
 	if err != nil || !info.IsDir() {
 		c.ReportError("Choose a project directory.")
@@ -149,11 +114,12 @@ func (c *Controller) sendAgent(t *model.Thread, text, queuedID string) bool {
 	if t.Driver() == "pi" {
 		session = filepath.Join(c.Dir, "sessions", "pi", t.ID+".jsonl")
 	}
-	o := harness.RunOptions{Driver: t.Driver(), Binary: c.State.Settings.AgentPath(t.Driver()), Cwd: t.Cwd, Session: session, Model: t.AgentModel, Effort: t.AgentEffort, Access: t.AgentAccess, Prompt: plain.String(), Images: images}
+	control := &harness.Control{}
+	o := harness.RunOptions{Control: control, Driver: t.Driver(), Binary: c.State.Settings.AgentPath(t.Driver()), Cwd: t.Cwd, Session: session, Model: t.AgentModel, Effort: t.AgentEffort, Access: t.AgentAccess, Prompt: plain.String(), Images: images}
 	if len(t.Turns) == 0 && t.HandoffFrom == "" {
 		t.Title = model.MessageTitle(text)
 	}
-	t.Turns = append(t.Turns, model.Turn{ID: model.ID(), Prompt: text, Status: "inProgress", Started: time.Now(), Items: []model.Item{{Kind: "agentMessage", Status: "inProgress"}}})
+	t.Turns = append(t.Turns, model.Turn{ID: model.ID(), Prompt: text, Status: "inProgress", Started: time.Now()})
 	index := len(t.Turns) - 1
 	c.Error = ""
 	c.Running[t.ID] = true
@@ -170,16 +136,39 @@ func (c *Controller) sendAgent(t *model.Thread, text, queuedID string) bool {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	c.agentRuns[t.ID] = cancel
+	if c.agentControls == nil {
+		c.agentControls = map[string]*harness.Control{}
+	}
+	c.agentControls[t.ID] = control
 	go func() {
 		defer cancel()
 		err := harness.Run(ctx, o, func(e harness.AgentEvent) {
 			c.post(func() {
-				c.removeQueued(t, queuedID)
-				item := &t.Turns[index].Items[0]
-				if e.Delta {
-					item.Text += e.Text
-				} else {
-					item.Text = e.Text
+				if e.Resolved != nil {
+					delete(c.agentReplies, e.Resolved)
+					for i, r := range c.Requests {
+						if r == e.Resolved {
+							c.Requests = append(c.Requests[:i], c.Requests[i+1:]...)
+							break
+						}
+					}
+					return
+				}
+				if e.Accepted || e.ID != "" {
+					c.removeQueued(t, queuedID)
+				}
+				mergeAgentEvent(&t.Turns[index], e)
+				if e.Interaction != nil {
+					r := e.Interaction.Request
+					r.ID = json.RawMessage(fmt.Sprintf("%q", model.ID()))
+					r.Reason = redactMCPText(r.Reason)
+					r.Command = redactMCPText(r.Command)
+					r.ThreadID, r.TurnID = t.ID, t.Turns[index].ID
+					if c.agentReplies == nil {
+						c.agentReplies = map[*codex.Request]chan any{}
+					}
+					c.agentReplies[r] = e.Interaction.Reply
+					c.Requests = append(c.Requests, r)
 				}
 				if e.Session != "" {
 					t.ServerID = e.Session
@@ -194,6 +183,14 @@ func (c *Controller) sendAgent(t *model.Thread, text, queuedID string) bool {
 		interrupted := ctx.Err() != nil
 		c.post(func() {
 			delete(c.agentRuns, t.ID)
+			delete(c.agentControls, t.ID)
+			for i := len(c.Requests) - 1; i >= 0; i-- {
+				r := c.Requests[i]
+				if r.ThreadID == t.ID {
+					delete(c.agentReplies, r)
+					c.Requests = append(c.Requests[:i], c.Requests[i+1:]...)
+				}
+			}
 			c.Running[t.ID] = false
 			turn := &t.Turns[index]
 			turn.Status = "completed"
@@ -208,7 +205,11 @@ func (c *Controller) sendAgent(t *model.Thread, text, queuedID string) bool {
 				}
 				c.ReportError(err.Error())
 			}
-			turn.Items[0].Status = turn.Status
+			for i := range turn.Items {
+				if turn.Items[i].Status == "inProgress" || turn.Items[i].Status == "" {
+					turn.Items[i].Status = turn.Status
+				}
+			}
 			c.Save()
 			if err == nil {
 				c.sendNext(t)
@@ -264,6 +265,39 @@ func (c *Controller) LoadAgentModels(id string, force bool) {
 				return
 			}
 			h.Models = models
+			changed := false
+			for _, t := range c.State.Threads {
+				if t.Driver() == id && c.normalizeAgentEffort(t) {
+					changed = true
+				}
+			}
+			if changed {
+				c.Save()
+			}
 		})
 	}()
+}
+
+// A catalog applies only to its executable/workspace. Refresh also repairs old
+// saved choices, so an unsupported level cannot survive into the next turn.
+func (c *Controller) normalizeAgentEffort(t *model.Thread) bool {
+	h := c.HarnessFor(t.Driver())
+	cwd := t.Cwd
+	if cwd == "" {
+		cwd = c.Dir
+	}
+	if h.ModelsKey != c.State.Settings.AgentPath(t.Driver())+"\x00"+cwd {
+		return false
+	}
+	for _, m := range h.Models {
+		if m.ID == t.AgentModel {
+			value := m.ResolveEffort(t.AgentEffort)
+			if value != t.AgentEffort {
+				t.AgentEffort = value
+				return true
+			}
+			break
+		}
+	}
+	return false
 }
