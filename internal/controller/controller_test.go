@@ -180,6 +180,9 @@ func TestNativeToolMergeDetails(t *testing.T) {
 	mergeAgentEvent(&turn, harness.AgentEvent{ID: "script", Tool: &harness.ToolEvent{Name: "Script", Kind: "execute", Arguments: json.RawMessage(`{"script":"text('ok')"}`)}})
 	mergeAgentEvent(&turn, harness.AgentEvent{ID: "child", Tool: &harness.ToolEvent{Name: "Read", Kind: "read", ParentID: "script", Arguments: json.RawMessage(`{"file_path":"a.go"}`)}})
 	mergeAgentEvent(&turn, harness.AgentEvent{ID: "child", Status: "completed", Tool: &harness.ToolEvent{Result: json.RawMessage(`"package main"`)}})
+	// Message snapshots can follow results, and later heartbeats omit input.
+	mergeAgentEvent(&turn, harness.AgentEvent{ID: "child", Status: "inProgress", Tool: &harness.ToolEvent{Name: "Read", Kind: "read", ParentID: "script", Arguments: json.RawMessage(`{"file_path":"a.go"}`)}})
+	mergeAgentEvent(&turn, harness.AgentEvent{ID: "child", Status: "inProgress", Tool: &harness.ToolEvent{Name: "Read", Kind: "read"}})
 	mergeAgentEvent(&turn, harness.AgentEvent{ID: "todo", Tool: &harness.ToolEvent{Name: "TodoWrite", Kind: "plan", Arguments: json.RawMessage(`{"todos":"1. [in_progress] Verify"}`)}})
 	mergeAgentEvent(&turn, harness.AgentEvent{ID: "todo", Tool: &harness.ToolEvent{Arguments: json.RawMessage(`{"todos":"1. [completed] Verify"}`)}})
 	mergeAgentEvent(&turn, harness.AgentEvent{ID: "compact-1", Kind: "contextCompaction", Status: "completed"})
@@ -187,6 +190,9 @@ func TestNativeToolMergeDetails(t *testing.T) {
 	mergeAgentEvent(&turn, harness.AgentEvent{ID: "compact-2", Kind: "contextCompaction", Status: "interrupted"})
 	if len(turn.Items) != 5 || turn.Items[1].ParentID != "script" || turn.Items[1].Kind != "toolCall" || turn.Items[2].Text != "1. [completed] Verify" || turn.Items[4].Status != "interrupted" {
 		t.Fatal("native details lost", turn.Items)
+	}
+	if child := turn.Items[1]; child.Status != "completed" || !strings.Contains(child.MCP.Arguments, `"file_path": "a.go"`) || child.MCP.Result != `"package main"` {
+		t.Fatal("late Script snapshot or heartbeat discarded completed details", child)
 	}
 	s := model.New()
 	thread := s.AddThread("", "")

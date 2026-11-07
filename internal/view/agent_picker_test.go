@@ -27,11 +27,17 @@ func TestNativeToolCards(t *testing.T) {
 		{"search", "webSearch", "grep", "Grep", `{"pattern":"TODO","path":"/workspace"}`, `"main.go:42: TODO verify"`, " · /workspace", "main.go:42"},
 		{"todo", "plan", "todo", "TodoWrite", `{"todos":"1. [completed] Verify\n2. [in_progress] Review"}`, `"Plan updated"`, "", ""},
 		{"patch", "fileChange", "apply_patch", "ApplyPatch", `"*** Begin Patch\n*** Update File: /workspace/main.go\n@@\n-old\n+new\n*** End Patch"`, `"Successfully applied"`, "", "*** Update File: /workspace/main.go"},
+		{"skill", "toolCall", "Skill", "Skill", `{"skill":"review"}`, `"Skill loaded"`, "Skill", `"skill":`},
+		{"tool-search", "toolCall", "ToolSearch", "ToolSearch", `{"query":"documentation"}`, `"Tools loaded"`, "ToolSearch", `"query":`},
+		{"wait-script", "commandExecution", "WaitForScript", "WaitForScript", `{"toolCallId":"script","action":"status"}`, `{"status":"running"}`, "WaitForScript", "running"},
 	}
 	for _, driver := range []string{"codex", "pi", "droid"} {
 		for _, lang := range []string{"zh-Hans", "en"} {
 			for _, tc := range cases {
 				if tc.scene == "script" && driver != "droid" {
+					continue
+				}
+				if driver == "codex" && (tc.scene == "skill" || tc.scene == "tool-search") {
 					continue
 				}
 				t.Run(lang+"-"+driver+"-"+tc.scene, func(t *testing.T) {
@@ -97,6 +103,51 @@ func TestNativeToolCards(t *testing.T) {
 				})
 			}
 		}
+	}
+}
+
+func TestDroidScriptBatchScreenshots(t *testing.T) {
+	for _, lang := range []string{"zh-Hans", "en"} {
+		t.Run(lang, func(t *testing.T) {
+			s := model.New()
+			s.Settings.Language = lang
+			thread := s.AddThread("", "")
+			thread.Harness = "droid"
+			thread.Turns = []model.Turn{{ID: "turn", Prompt: "Inspect the project in parallel", Status: "completed", Items: []model.Item{
+				{ID: "script", Kind: "commandExecution", Status: "completed", MCP: &model.MCPCall{Tool: "Script", Arguments: `{"script":"const results = await Promise.allSettled([\n  tools.Read({file_path: 'main.go'}),\n  tools.Read({file_path: 'go.mod'}),\n  tools.Skill({skill: 'review'})\n]); results.forEach(text);","unused":"hidden"}`, Result: `"3 calls completed"`}},
+				{ID: "read-1", ParentID: "script", Kind: "toolCall", Status: "completed", MCP: &model.MCPCall{Tool: "Read", Arguments: `{"file_path":"main.go"}`, Result: `"package main"`}},
+				{ID: "read-2", ParentID: "script", Kind: "toolCall", Status: "failed", MCP: &model.MCPCall{Tool: "Read", Arguments: `{"file_path":"go.mod"}`, Result: `"File not found"`}},
+				{ID: "skill", ParentID: "script", Kind: "toolCall", Status: "completed", MCP: &model.MCPCall{Tool: "Skill", Arguments: `{"skill":"review"}`, Result: `"Skill loaded"`}},
+				{ID: "todo", ParentID: "script", Kind: "plan", Status: "completed", Text: "1. [completed] Inspect files\n2. [pending] Review changes", MCP: &model.MCPCall{Tool: "TodoWrite"}},
+				{ID: "compact-1", Kind: "contextCompaction", Status: "completed"},
+				{ID: "compact-2", Kind: "contextCompaction", Status: "interrupted"},
+			}}}
+			c := controller.New(t.TempDir(), s, nil)
+			defer c.Close()
+			v := New(c)
+			*v.openState("activity-" + thread.ID + "-0-0") = true
+			*v.openState(thread.ID + "-0-0-0") = true
+			tt := ui.NewTester(v.Render, 1100, 1000)
+			tt.Frame()
+			tt.Advance(time.Second)
+			tt.Frame()
+			if !tt.HasText("Read · main.go") || !tt.HasText("Read · go.mod") || !tt.HasText("Skill") || !tt.HasText(v.texts().Compaction()) || tt.HasText(v.texts().McpUnknownTool()) {
+				t.Fatal("Script children or Compact missing, or native tools fell back to unknown MCP")
+			}
+			if dir := os.Getenv("MUJICAGENT_AGENTS_SCREENSHOTS"); dir != "" {
+				if err := os.MkdirAll(dir, 0700); err != nil {
+					t.Fatal(err)
+				}
+				f, err := os.Create(filepath.Join(dir, lang+"-droid-script-batch.png"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer f.Close()
+				if err := png.Encode(f, tt.Image()); err != nil {
+					t.Fatal(err)
+				}
+			}
+		})
 	}
 }
 

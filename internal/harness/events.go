@@ -88,9 +88,9 @@ func NativeToolKind(name string) string {
 		name = name[i+1:]
 	}
 	switch name {
-	case "bash", "execute", "script", "shell", "shell_command", "run_command":
+	case "bash", "execute", "script", "waitforscript", "shell", "shell_command", "run_command":
 		return "execute"
-	case "edit", "write", "create", "applypatch", "apply_patch", "edit_file", "write_file", "create_file", "str_replace_editor":
+	case "edit", "multiedit", "write", "create", "applypatch", "apply_patch", "edit_file", "write_file", "create_file", "str_replace_editor":
 		return "edit"
 	case "read", "ls", "read_file", "list_directory":
 		return "read"

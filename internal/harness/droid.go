@@ -27,6 +27,7 @@ type droidRPC struct {
 	progress    map[string]string
 	compactions int
 	compacting  bool
+	summaries   map[string]bool
 }
 
 func (a *droidRPC) call(method string, params any, result any) error {
@@ -142,6 +143,13 @@ func runDroid(ctx context.Context, o RunOptions, args []string, emit func(AgentE
 	control.mu.Unlock()
 	defer control.close()
 	a := droidRPC{ctx: ctx, control: control, out: bufio.NewScanner(out), emit: emit}
+	defer func() {
+		status := "failed"
+		if ctx.Err() != nil {
+			status = "interrupted"
+		}
+		a.finishCompaction(status)
+	}()
 	a.out.Buffer(make([]byte, 4096), 8<<20)
 	method := "droid.initialize_session"
 	params := map[string]any{"machineId": "mujicagent", "cwd": o.Cwd, "autoRejectPermissionRequests": false, "skipPermissionsUnsafe": false}
