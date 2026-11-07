@@ -1,6 +1,7 @@
 package view
 
 import (
+	"fmt"
 	"github.com/egoist/mygo/ui"
 	"github.com/ji233-Sun/mujicagent/internal/codex"
 	"github.com/ji233-Sun/mujicagent/internal/controller"
@@ -210,7 +211,7 @@ func TestHarnessInstallScreenshots(t *testing.T) {
 
 func TestAgentCompactScreenshots(t *testing.T) {
 	for _, lang := range []string{"zh-Hans", "en"} {
-		for _, scene := range []string{"settings-codex", "settings-codex-running", "settings-pi", "settings-droid", "picker-codex", "picker-pi", "picker-droid", "picker-favorites", "picker-loading", "picker-error", "permissions-pi", "permissions-droid"} {
+		for _, scene := range []string{"settings-codex", "settings-codex-running", "settings-pi", "settings-droid", "picker-codex", "picker-pi", "picker-droid", "picker-favorites", "picker-loading", "picker-error", "picker-many", "picker-search-empty", "picker-favorites-empty", "permissions-pi", "permissions-droid"} {
 			t.Run(lang+"-"+scene, func(t *testing.T) {
 				s := model.New()
 				s.Settings.Language = lang
@@ -266,10 +267,36 @@ func TestAgentCompactScreenshots(t *testing.T) {
 						}
 					}
 				}
+				switch scene {
+				case "picker-many":
+					v.pickerHarness = "pi"
+					for i := 0; i < 20; i++ {
+						c.HarnessFor("pi").Models = append(c.HarnessFor("pi").Models, harness.AgentModel{ID: fmt.Sprintf("extra-%02d", i)})
+					}
+				case "picker-search-empty":
+					v.pickerHarness = "codex"
+					v.modelSearch = "no matching model"
+				case "picker-favorites-empty":
+					v.pickerHarness = "favorites"
+					s.Settings.ModelFavorites = nil
+				}
 				tt := ui.NewTester(v.Render, 840, 560)
 				tt.Frame()
 				tt.Advance(time.Second)
 				tt.Frame()
+				if strings.HasPrefix(scene, "picker-") {
+					panel, ok := tt.Find(v.texts().ModelPicker())
+					if !ok || panel.H != 360 || panel.Y < 0 || panel.Y+panel.H > 560 {
+						t.Fatalf("model picker must stay 360px tall within the viewport: %+v", panel)
+					}
+					list, ok := tt.Find(v.texts().ModelList())
+					if !ok || list.H < 280 || list.Y+list.H > panel.Y+panel.H-8 {
+						t.Fatalf("model list must fill the available panel space: %+v", list)
+					}
+					if scene == "picker-many" && v.modelList.AtEnd() {
+						t.Fatal("long catalog must overflow inside the scrollable list")
+					}
+				}
 				if scene == "settings-codex-running" {
 					if !tt.HasText(v.texts().UpToDate()) || tt.HasText(v.texts().UpdateAfterConversation()) {
 						t.Fatal("running Codex settings must show update status without the conversation hint")

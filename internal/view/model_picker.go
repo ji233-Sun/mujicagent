@@ -93,7 +93,8 @@ func pickerPopover(c *ui.Context, anchor ui.Element, open *bool, label string, w
 }
 
 func (v *View) modelPanel(c *ui.Context) {
-	ui.Row(c).Gap(8).AlignItems(ui.Stretch).Children(func() {
+	// Keep the 360px popover stable across catalogs, including its padding and border.
+	ui.Row(c).Height(342).Gap(8).AlignItems(ui.Stretch).Children(func() {
 		ui.Column(c).Width(32).Shrink(0).Gap(4).Children(func() { v.harnessRail(c) })
 		ui.Box(c).Width(1).Background(c.Theme().Border)
 		ui.Column(c).Grow(1).MinWidth(0).Children(func() {
@@ -151,15 +152,15 @@ func (v *View) modelChoicesPanel(c *ui.Context, catalog []modelChoice, selectedM
 	sort.SliceStable(models, func(i, j int) bool {
 		return v.C.State.IsModelFavorite(models[i].key()) && !v.C.State.IsModelFavorite(models[j].key())
 	})
-	ui.Row(c).Gap(8).AlignItems(ui.Stretch).Children(func() {
-		list := ui.Column(c).Gap(5)
+	ui.Row(c).Grow(1).MinHeight(0).Gap(8).AlignItems(ui.Stretch).Children(func() {
+		list := ui.Column(c).MinHeight(0).Gap(5)
 		if side != nil {
 			list.Width(274)
 		} else {
 			list.Grow(1).MinWidth(0)
 		}
 		list.Children(func() {
-			ui.Row(c).Height(28).Padding(0, 8).Gap(14).AlignItems(ui.Center).Children(func() {
+			ui.Row(c).Height(28).Shrink(0).Padding(0, 8).Gap(14).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, tx.Models()).FontSize(11).TextColor(c.Theme().TextMuted).Grow(1)
 				search := ui.Row(c.Key("model-search")).Width(156).Height(26).Gap(6).AlignItems(ui.Center)
 				active := search.Hovered() || search.FocusWithin()
@@ -173,8 +174,7 @@ func (v *View) modelChoicesPanel(c *ui.Context, catalog []modelChoice, selectedM
 						Placeholder(tx.SearchModels()).Label(tx.SearchModels())
 				})
 			})
-			listHeight := float32(min(5, max(1, len(catalog))) * 36)
-			ui.List(c.Key("models"), &v.modelList, len(models)).Height(listHeight).Label(tx.ModelList()).
+			ui.List(c.Key("models"), &v.modelList, len(models)).Height(0).Grow(1).MinHeight(0).Label(tx.ModelList()).
 				ItemKey(func(i int) any { return models[i].key() }).Rows(func(row ui.ListRow) {
 				m := models[row.Index]
 				c := row.Context
