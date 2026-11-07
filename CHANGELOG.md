@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.12
+
+#### What's Changed
+* feat: 输入框项目切换、草稿继承与侧栏迁移动效 by @ji233-Sun in https://github.com/ji233-Sun/mujicagent/pull/59
+* feat: 将队列插入对话操作改为图标按钮 by @ji233-Sun in https://github.com/ji233-Sun/mujicagent/pull/60
+
+
+**Full Changelog**: https://github.com/ji233-Sun/mujicagent/compare/v0.1.11...v0.1.12
+
+### Commits
+
+- feat: 将队列插入对话操作改为图标按钮 (7b89dc3)
+- feat: 添加输入框上方项目切换与草稿迁移动效 (db65605)
+
 ## 0.1.11
 
 #### What's Changed
