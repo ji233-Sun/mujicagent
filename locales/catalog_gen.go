@@ -564,14 +564,98 @@ func (msgs Messages) Search() string {
 	return Catalog.Format(msgs.locale, "search", nil)
 }
 
-// Compaction says "上下文整理"
+// Compaction says "上下文压缩"
 // in the language the app shows.
 func Compaction() string { return In(i18n.Locale()).Compaction() }
 
-// Compaction says "上下文整理"
+// Compaction says "上下文压缩"
 // in the language of msgs.
 func (msgs Messages) Compaction() string {
 	return Catalog.Format(msgs.locale, "compaction", nil)
+}
+
+// CompactionRunning says "正在压缩上下文"
+// in the language the app shows.
+func CompactionRunning() string { return In(i18n.Locale()).CompactionRunning() }
+
+// CompactionRunning says "正在压缩上下文"
+// in the language of msgs.
+func (msgs Messages) CompactionRunning() string {
+	return Catalog.Format(msgs.locale, "compactionRunning", nil)
+}
+
+// CompactionCompleted says "已压缩上下文"
+// in the language the app shows.
+func CompactionCompleted() string { return In(i18n.Locale()).CompactionCompleted() }
+
+// CompactionCompleted says "已压缩上下文"
+// in the language of msgs.
+func (msgs Messages) CompactionCompleted() string {
+	return Catalog.Format(msgs.locale, "compactionCompleted", nil)
+}
+
+// CompactionFailed says "上下文压缩失败"
+// in the language the app shows.
+func CompactionFailed() string { return In(i18n.Locale()).CompactionFailed() }
+
+// CompactionFailed says "上下文压缩失败"
+// in the language of msgs.
+func (msgs Messages) CompactionFailed() string {
+	return Catalog.Format(msgs.locale, "compactionFailed", nil)
+}
+
+// CompactionCancelled says "上下文压缩已取消"
+// in the language the app shows.
+func CompactionCancelled() string { return In(i18n.Locale()).CompactionCancelled() }
+
+// CompactionCancelled says "上下文压缩已取消"
+// in the language of msgs.
+func (msgs Messages) CompactionCancelled() string {
+	return Catalog.Format(msgs.locale, "compactionCancelled", nil)
+}
+
+// CompactionUnknown says "上下文压缩状态未知"
+// in the language the app shows.
+func CompactionUnknown() string { return In(i18n.Locale()).CompactionUnknown() }
+
+// CompactionUnknown says "上下文压缩状态未知"
+// in the language of msgs.
+func (msgs Messages) CompactionUnknown() string {
+	return Catalog.Format(msgs.locale, "compactionUnknown", nil)
+}
+
+// CompactionUnavailable says "暂无可靠的压缩统计"
+// in the language the app shows.
+func CompactionUnavailable() string { return In(i18n.Locale()).CompactionUnavailable() }
+
+// CompactionUnavailable says "暂无可靠的压缩统计"
+// in the language of msgs.
+func (msgs Messages) CompactionUnavailable() string {
+	return Catalog.Format(msgs.locale, "compactionUnavailable", nil)
+}
+
+// CompactionResult says "已压缩上下文：{before} → {after}（减少 {percent}%）"
+// in the language the app shows.
+func CompactionResult(before string, after string, percent string) string {
+	return In(i18n.Locale()).CompactionResult(before, after, percent)
+}
+
+// CompactionResult says "已压缩上下文：{before} → {after}（减少 {percent}%）"
+// in the language of msgs.
+func (msgs Messages) CompactionResult(before string, after string, percent string) string {
+	return Catalog.Format(msgs.locale, "compactionResult", map[string]any{"before": before, "after": after, "percent": percent})
+}
+
+// CompactionExact says "{before} → {after} tokens。百分比表示减少的比例。"
+// in the language the app shows.
+func CompactionExact(before string, after string) string {
+	return In(i18n.Locale()).CompactionExact(before, after)
+}
+
+// CompactionExact says "{before} → {after} tokens。百分比表示减少的比例。"
+// in the language of msgs.
+func (msgs Messages) CompactionExact(before string, after string) string {
+	return Catalog.Format(msgs.locale, "compactionExact", map[string]any{"before": before, "after": after})
 }
 
 // Failed says "失败"

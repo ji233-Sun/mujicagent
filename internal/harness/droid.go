@@ -16,18 +16,19 @@ import (
 // droidRPC consumes the official full-duplex protocol, including client requests.
 // History notifications during initialization are never emitted into the new turn.
 type droidRPC struct {
-	ctx         context.Context
-	control     *Control
-	out         *bufio.Scanner
-	emit        func(AgentEvent)
-	next        int
-	session     string
-	streaming   bool
-	done        bool
-	progress    map[string]string
-	compactions int
-	compacting  bool
-	summaries   map[string]bool
+	ctx               context.Context
+	control           *Control
+	out               *bufio.Scanner
+	emit              func(AgentEvent)
+	next              int
+	session           string
+	streaming         bool
+	done              bool
+	progress          map[string]string
+	compactionSummary string
+	compactions       int
+	compacting        bool
+	summaries         map[string]bool
 }
 
 func (a *droidRPC) call(method string, params any, result any) error {
@@ -144,7 +145,7 @@ func runDroid(ctx context.Context, o RunOptions, args []string, emit func(AgentE
 	defer control.close()
 	a := droidRPC{ctx: ctx, control: control, out: bufio.NewScanner(out), emit: emit}
 	defer func() {
-		status := "failed"
+		status := "unknown"
 		if ctx.Err() != nil {
 			status = "interrupted"
 		}

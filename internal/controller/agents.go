@@ -210,6 +210,9 @@ func (c *Controller) sendAgent(t *model.Thread, text, queuedID string) bool {
 			for i := range turn.Items {
 				if turn.Items[i].Status == "inProgress" || turn.Items[i].Status == "" {
 					turn.Items[i].Status = turn.Status
+					if turn.Items[i].Kind == "contextCompaction" && !interrupted {
+						turn.Items[i].Status = "unknown"
+					}
 				}
 			}
 			c.streamDirty = true
