@@ -133,7 +133,7 @@ func (v *View) agentModelPanel(c *ui.Context) {
 		ui.Text(c, tx.ReasoningEffort()).FontSize(11).TextColor(c.Theme().TextMuted).Padding(6, 8).Margin(0, 0, 3)
 		ui.Box(c).Disabled(v.C.Running[t.ID]).Children(func() { v.modelEffortSlider(c, current, &t.AgentEffort) })
 	})
-	ui.Row(c).Height(28).Padding(0, 8).Gap(6).AlignItems(ui.Center).Children(func() {
+	ui.Row(c).Height(28).Shrink(0).Padding(0, 8).Gap(6).AlignItems(ui.Center).Children(func() {
 		ui.Box(c).Grow(1)
 		label := tx.AgentRefreshModels()
 		if h.ModelsLoading {
