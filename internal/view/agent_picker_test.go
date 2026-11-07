@@ -560,6 +560,171 @@ func TestAgentCompactScreenshots(t *testing.T) {
 	}
 }
 
+func TestAgentThinkingScreenshots(t *testing.T) {
+	for _, lang := range []string{"zh-Hans", "en"} {
+		for _, driver := range []string{"pi", "droid"} {
+			for _, scene := range []string{"levels", "extended", "single", "toggle-on", "toggle-off", "toggle-default", "none", "empty", "stale", "running"} {
+				if scene == "extended" && driver == "pi" {
+					continue
+				}
+				t.Run(lang+"-"+driver+"-"+scene, func(t *testing.T) {
+					s := model.New()
+					s.Settings.Language = lang
+					thread := s.AddThread("", "")
+					thread.Harness, thread.AgentModel, thread.AgentEffort = driver, "workbuddy/hy4std", "high"
+					m := harness.AgentModel{ID: thread.AgentModel, Name: thread.AgentModel, Efforts: []string{"off", "minimal", "low", "medium", "high", "xhigh", "max"}}
+					off := "off"
+					if driver == "droid" {
+						off = "none"
+					}
+					switch scene {
+					case "extended":
+						m.Efforts = []string{"none", "dynamic", "off", "minimal", "low", "medium", "high", "xhigh", "max"}
+					case "single", "stale":
+						m.Efforts = []string{"high"}
+						thread.AgentEffort = ""
+						if scene == "stale" {
+							thread.AgentEffort = "low"
+						}
+					case "toggle-on", "toggle-off", "toggle-default":
+						m.Efforts = []string{off, "high"}
+						if scene == "toggle-off" {
+							thread.AgentEffort = off
+						}
+						if scene == "toggle-default" {
+							thread.AgentEffort = ""
+						}
+					case "none":
+						m.Efforts = []string{off}
+					case "empty":
+						m.Efforts = nil
+					}
+					c := controller.New(t.TempDir(), s, nil)
+					c.HarnessFor(driver).Models = []harness.AgentModel{m, {ID: "another-model", Name: "Another model"}}
+					c.HarnessFor(driver).ModelsChecked = true
+					c.Running[thread.ID] = scene == "running"
+					v := New(c)
+					v.modelPicker, v.pickerHarness = true, driver
+					tt := ui.NewTester(v.Render, 840, 560)
+					tt.Frame()
+					tt.Advance(time.Second)
+					tt.Frame()
+					tx := v.texts()
+					panel, ok := tt.Find(tx.ModelPicker())
+					if !ok || panel.H != 360 || panel.Y < 0 || panel.Y+panel.H > 560 {
+						t.Fatal("thinking changed picker bounds", panel)
+					}
+					wantToggle := strings.HasPrefix(scene, "toggle-")
+					if _, ok := tt.Find(tx.ThinkingToggle()); ok != wantToggle {
+						t.Fatal("incorrect toggle availability")
+					}
+					if scene == "single" || scene == "stale" {
+						if !tt.HasText("high") || !tt.HasText(tx.ThinkingFixed()) || tt.HasText(tx.AgentDefaultEffort()) || tt.HasText(tx.ThinkingOff()) {
+							t.Fatal("single level invented choices or a default")
+						}
+					}
+					if scene == "none" || scene == "empty" {
+						if !tt.HasText(tx.ThinkingUnavailable()) || tt.HasText("high") {
+							t.Fatal("unsupported model exposes an effort")
+						}
+					}
+					for _, label := range []string{tx.AdjustReasoningEffort(), tx.ThinkingToggle(), tx.ThinkingFixed(), "max"} {
+						if scene == "extended" && label == "max" {
+							continue
+						} // Last row scrolls inside the bounded control.
+						if b, ok := tt.Find(label); ok && (b.X < panel.X || b.Y < panel.Y || b.X+b.W > panel.X+panel.W || b.Y+b.H > panel.Y+panel.H) {
+							t.Fatalf("thinking control clipped: %s %+v", label, b)
+						}
+					}
+					if output := os.Getenv("MUJICAGENT_THINKING_SCREENSHOTS"); output != "" {
+						if err := os.MkdirAll(output, 0700); err != nil {
+							t.Fatal(err)
+						}
+						f, err := os.Create(filepath.Join(output, lang+"-"+driver+"-"+scene+".png"))
+						if err != nil {
+							t.Fatal(err)
+						}
+						defer f.Close()
+						if err := png.Encode(f, tt.Image()); err != nil {
+							t.Fatal(err)
+						}
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestAgentThinkingSelection(t *testing.T) {
+	for _, driver := range []string{"pi", "droid"} {
+		t.Run(driver, func(t *testing.T) {
+			s := model.New()
+			s.Settings.Language = "en"
+			thread := s.AddThread("", "")
+			thread.Harness = driver
+			thread.AgentEffort = "high"
+			c := controller.New(t.TempDir(), s, nil)
+			v := New(c)
+			c.HarnessFor(driver).Models = []harness.AgentModel{{ID: "compatible", Efforts: []string{"low", "high"}, DefaultEffort: "low"}, {ID: "single", Efforts: []string{"high"}}, {ID: "none"}, {ID: "toggle", Efforts: []string{"none", "high"}, DefaultEffort: "none"}}
+			catalog := v.externalModels(driver)
+			v.chooseExternalModel(driver, catalog[0])
+			if thread.AgentEffort != "high" {
+				t.Fatal("lost compatible effort")
+			}
+			v.chooseExternalModel(driver, catalog[2])
+			if thread.AgentEffort != "" {
+				t.Fatal("retained unsupported effort")
+			}
+			v.chooseExternalModel(driver, catalog[1])
+			if thread.AgentEffort != "high" {
+				t.Fatal("did not select sole effort")
+			}
+			thread.AgentEffort = "none"
+			v.chooseExternalModel(driver, catalog[3])
+			tt := ui.NewTester(func(ctx *ui.Context) { v.agentThinkingOptions(ctx, catalog[3], thread) }, 160, 320)
+			tt.Frame()
+			if err := tt.Click(v.texts().ThinkingToggle()); err != nil {
+				t.Fatal(err)
+			}
+			if thread.AgentEffort != "high" {
+				t.Fatal("toggle did not send advertised enabled value", thread.AgentEffort)
+			}
+			if err := tt.Click(v.texts().ThinkingToggle()); err != nil {
+				t.Fatal(err)
+			}
+			if thread.AgentEffort != "none" {
+				t.Fatal("toggle changed the wire off value", thread.AgentEffort)
+			}
+			c.Running[thread.ID] = true
+			if err := tt.Click(v.texts().ThinkingToggle()); err != nil {
+				t.Fatal(err)
+			}
+			if thread.AgentEffort != "none" {
+				t.Fatal("changed current turn settings")
+			}
+			c.Running[thread.ID] = false
+			catalog[3].DefaultReasoningEffort = ""
+			thread.AgentEffort = ""
+			tt.Frame()
+			if !tt.HasText(v.texts().ThinkingCLIDefault()) {
+				t.Fatal("unreported default looks like off")
+			}
+			if err := tt.Click(v.texts().ThinkingOff()); err != nil {
+				t.Fatal(err)
+			}
+			if thread.AgentEffort != "none" {
+				t.Fatal("cannot explicitly disable from CLI default")
+			}
+			thread.Harness = "codex"
+			thread.AgentEffort = "high"
+			v.chooseExternalModel(driver, catalog[0])
+			if thread.AgentEffort != "low" {
+				t.Fatal("cross-harness effort leaked")
+			}
+		})
+	}
+}
+
 func TestModelFavoriteOrderingAndHarnessIdentity(t *testing.T) {
 	s := model.New()
 	s.Settings.Language = "en"

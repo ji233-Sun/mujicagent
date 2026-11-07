@@ -2654,6 +2654,66 @@ func (msgs Messages) AgentDefaultEffort() string {
 	return Catalog.Format(msgs.locale, "agentDefaultEffort", nil)
 }
 
+// ThinkingOn says "已开启"
+// in the language the app shows.
+func ThinkingOn() string { return In(i18n.Locale()).ThinkingOn() }
+
+// ThinkingOn says "已开启"
+// in the language of msgs.
+func (msgs Messages) ThinkingOn() string {
+	return Catalog.Format(msgs.locale, "thinkingOn", nil)
+}
+
+// ThinkingOff says "关闭"
+// in the language the app shows.
+func ThinkingOff() string { return In(i18n.Locale()).ThinkingOff() }
+
+// ThinkingOff says "关闭"
+// in the language of msgs.
+func (msgs Messages) ThinkingOff() string {
+	return Catalog.Format(msgs.locale, "thinkingOff", nil)
+}
+
+// ThinkingToggle says "开启思考"
+// in the language the app shows.
+func ThinkingToggle() string { return In(i18n.Locale()).ThinkingToggle() }
+
+// ThinkingToggle says "开启思考"
+// in the language of msgs.
+func (msgs Messages) ThinkingToggle() string {
+	return Catalog.Format(msgs.locale, "thinkingToggle", nil)
+}
+
+// ThinkingFixed says "模型固定档位"
+// in the language the app shows.
+func ThinkingFixed() string { return In(i18n.Locale()).ThinkingFixed() }
+
+// ThinkingFixed says "模型固定档位"
+// in the language of msgs.
+func (msgs Messages) ThinkingFixed() string {
+	return Catalog.Format(msgs.locale, "thinkingFixed", nil)
+}
+
+// ThinkingUnavailable says "不支持思考"
+// in the language the app shows.
+func ThinkingUnavailable() string { return In(i18n.Locale()).ThinkingUnavailable() }
+
+// ThinkingUnavailable says "不支持思考"
+// in the language of msgs.
+func (msgs Messages) ThinkingUnavailable() string {
+	return Catalog.Format(msgs.locale, "thinkingUnavailable", nil)
+}
+
+// ThinkingCLIDefault says "沿用 CLI 默认设置"
+// in the language the app shows.
+func ThinkingCLIDefault() string { return In(i18n.Locale()).ThinkingCLIDefault() }
+
+// ThinkingCLIDefault says "沿用 CLI 默认设置"
+// in the language of msgs.
+func (msgs Messages) ThinkingCLIDefault() string {
+	return Catalog.Format(msgs.locale, "thinkingCLIDefault", nil)
+}
+
 // AgentReadOnlyHint says "可读取文件；阻止修改及需要审批的命令执行。"
 // in the language the app shows.
 func AgentReadOnlyHint() string { return In(i18n.Locale()).AgentReadOnlyHint() }

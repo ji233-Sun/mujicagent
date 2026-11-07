@@ -35,6 +35,7 @@ func (c *Controller) Handoff(driver, targetModel string) bool {
 	targetModel = strings.TrimSpace(targetModel)
 	if len(old.Turns) == 0 && old.ServerID == "" && old.HandoffContext == "" {
 		old.Harness, old.AgentModel, old.AgentAccess = driver, targetModel, ""
+		old.AgentEffort = ""
 		c.Save()
 		return true
 	}
@@ -83,6 +84,7 @@ func (c *Controller) sendAgent(t *model.Thread, text, queuedID string) bool {
 		c.ReportError(err.Error())
 		return false
 	}
+	c.normalizeAgentEffort(t)
 	info, err := os.Stat(t.Cwd)
 	if err != nil || !info.IsDir() {
 		c.ReportError("Choose a project directory.")
@@ -263,6 +265,39 @@ func (c *Controller) LoadAgentModels(id string, force bool) {
 				return
 			}
 			h.Models = models
+			changed := false
+			for _, t := range c.State.Threads {
+				if t.Driver() == id && c.normalizeAgentEffort(t) {
+					changed = true
+				}
+			}
+			if changed {
+				c.Save()
+			}
 		})
 	}()
+}
+
+// A catalog applies only to its executable/workspace. Refresh also repairs old
+// saved choices, so an unsupported level cannot survive into the next turn.
+func (c *Controller) normalizeAgentEffort(t *model.Thread) bool {
+	h := c.HarnessFor(t.Driver())
+	cwd := t.Cwd
+	if cwd == "" {
+		cwd = c.Dir
+	}
+	if h.ModelsKey != c.State.Settings.AgentPath(t.Driver())+"\x00"+cwd {
+		return false
+	}
+	for _, m := range h.Models {
+		if m.ID == t.AgentModel {
+			value := m.ResolveEffort(t.AgentEffort)
+			if value != t.AgentEffort {
+				t.AgentEffort = value
+				return true
+			}
+			break
+		}
+	}
+	return false
 }

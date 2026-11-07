@@ -1659,12 +1659,14 @@ func TestModelDiscoveryReplacesStaleRequest(t *testing.T) {
 		if p == first {
 			script += "sleep 1\n"
 		}
-		script += "printf '%s\\n' '{\"id\":\"models\",\"result\":{\"models\":[{\"id\":\"" + filepath.Base(p) + "\"}]}}'\nsleep 20\n"
+		script += "printf '%s\\n' '{\"id\":\"models\",\"result\":{\"models\":[{\"id\":\"" + filepath.Base(p) + "\",\"supportedReasoningEfforts\":[\"high\"]}]}}'\nsleep 20\n"
 		if err := os.WriteFile(p, []byte(script), 0700); err != nil {
 			t.Fatal(err)
 		}
 	}
 	c.State.Settings.DroidPath = first
+	thread := c.State.AddThread("", dir)
+	thread.Harness, thread.AgentModel, thread.AgentEffort = "droid", "second", "low"
 	c.LoadAgentModels("droid", false)
 	c.State.Settings.DroidPath = second
 	c.LoadAgentModels("droid", false)
@@ -1677,6 +1679,13 @@ func TestModelDiscoveryReplacesStaleRequest(t *testing.T) {
 	c.Drain()
 	if h.ModelsLoading || h.ModelsError != "" || len(h.Models) != 1 || h.Models[0].ID != "second" {
 		t.Fatalf("stale catalog: %+v", h)
+	}
+	if thread.AgentEffort != "high" {
+		t.Fatal("refresh retained unsupported effort", thread.AgentEffort)
+	}
+	saved, err := model.Load(filepath.Join(dir, "state.json"))
+	if err != nil || saved.Thread(thread.ID).AgentEffort != "high" {
+		t.Fatal("normalized effort was not saved", err)
 	}
 	request := h.modelsRequest
 	c.LoadAgentModels("droid", false)

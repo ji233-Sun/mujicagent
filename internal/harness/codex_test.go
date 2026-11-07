@@ -719,12 +719,38 @@ func TestMCPMetadataAndOfferedPermissions(t *testing.T) {
 
 func TestModelCatalogParsing(t *testing.T) {
 	pi, err := parseModelCatalog("pi", []byte(`{"models":[{"provider":"a","id":"shared","name":"A","reasoning":true,"thinkingLevelMap":{"low":"x","high":"y"},"headers":{"Authorization":"secret"}},{"provider":"b","id":"shared","name":"B"}]}`))
-	if err != nil || len(pi) != 2 || pi[0].ID != "a/shared" || pi[1].ID != "b/shared" || len(pi[0].Efforts) != 3 {
+	if err != nil || len(pi) != 2 || pi[0].ID != "a/shared" || pi[1].ID != "b/shared" || !slices.Equal(pi[0].Efforts, []string{"off", "minimal", "low", "medium", "high"}) {
 		t.Fatalf("Pi catalog: %+v %v", pi, err)
 	}
 	droid, err := parseModelCatalog("droid", []byte(`{"models":[{"id":"custom:Mine-0","displayName":"Mine","supportedReasoningEfforts":["low","high"],"defaultReasoningEffort":"high"},{"id":"blocked","disabled":true}]}`))
 	if err != nil || len(droid) != 1 || droid[0].ID != "custom:Mine-0" || droid[0].DefaultEffort != "high" {
 		t.Fatalf("Droid catalog: %+v %v", droid, err)
+	}
+	for _, tc := range []struct {
+		name, driver, metadata string
+		want                   []string
+		previous, selected     string
+	}{
+		{"single", "pi", `"reasoning":true,"thinkingLevelMap":{"off":null,"minimal":null,"low":null,"medium":null,"high":"high","xhigh":null,"max":null}`, []string{"high"}, "low", "high"},
+		{"toggle", "pi", `"reasoning":true,"thinkingLevelMap":{"minimal":null,"low":null,"medium":null,"high":"enabled"}`, []string{"off", "high"}, "high", "high"},
+		{"extended", "pi", `"reasoning":true,"thinkingLevelMap":{"off":null,"xhigh":"high","max":null}`, []string{"minimal", "low", "medium", "high", "xhigh"}, "max", ""},
+		{"none", "pi", `"reasoning":false`, []string{"off"}, "high", "off"},
+		{"empty", "pi", `"reasoning":true,"thinkingLevelMap":{"off":null,"minimal":null,"low":null,"medium":null,"high":null}`, []string{}, "high", ""},
+		{"single", "droid", `"supportedReasoningEfforts":["high"],"defaultReasoningEffort":"low"`, []string{"high"}, "", "high"},
+		{"toggle", "droid", `"supportedReasoningEfforts":["none","high"],"defaultReasoningEffort":"none"`, []string{"none", "high"}, "low", "none"},
+		{"ordered", "droid", `"supportedReasoningEfforts":["dynamic","low","high","high",""],"defaultReasoningEffort":"low"`, []string{"dynamic", "low", "high"}, "high", "high"},
+		{"none", "droid", `"supportedReasoningEfforts":[],"defaultReasoningEffort":"high"`, []string{}, "high", ""},
+	} {
+		t.Run(tc.driver+"-"+tc.name, func(t *testing.T) {
+			models, err := parseModelCatalog(tc.driver, []byte(`{"models":[{"id":"model","provider":"provider",`+tc.metadata+`}]}`))
+			if err != nil || len(models) != 1 {
+				t.Fatal(models, err)
+			}
+			m := models[0]
+			if !slices.Equal(m.Efforts, tc.want) || m.ResolveEffort(tc.previous) != tc.selected {
+				t.Fatalf("%+v, resolved=%q", m, m.ResolveEffort(tc.previous))
+			}
+		})
 	}
 	for _, driver := range []string{"pi", "droid"} {
 		args, err := agentArgs(RunOptions{Driver: driver, Effort: "high"})
@@ -795,6 +821,11 @@ func TestInstalledModelCatalog(t *testing.T) {
 			t.Fatal(driver, err)
 		}
 		t.Logf("%s: %d models", driver, len(models))
+		for _, m := range models {
+			if strings.Contains(m.ID, "hy4std") || len(m.Efforts) == 1 {
+				t.Logf("%s %s: thinking=%v default=%q", driver, m.ID, m.Efforts, m.DefaultEffort)
+			}
+		}
 	}
 }
 

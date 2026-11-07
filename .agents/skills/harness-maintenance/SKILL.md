@@ -47,6 +47,8 @@ description: 为 MujicAgent 添加或维护 harness、模型发现与收藏、�
 
 - 模型选择以 Codex 为参照，复用 `modelCatalogPanel` / `modelChoicesPanel` 和 `modelEffortSlider`。在对话输入栏选择具体模型，不新增「默认模型」、手填模型 ID 或设置页 Models 控件。设置页只放版本、安装/登录入口及折叠连接详情，不铺满协议解释文字；异常通过简短状态和可重试入口表达。
 - 模型目录从 Harness 的官方接口自动读取，包含其已配置的自定义模型；不要硬编码模型名单。已有实现：Codex `model/list`、Pi `get_available_models`、Droid `droid.list_models`。名称用于展示，精确 ID 用于选择与发送；思考强度及速度依据真实能力，不能把 Codex 档位强塞给其他 Harness。
+- Pi 思考能力遵循官方 `getSupportedThinkingLevels`：`thinkingLevelMap` 中 `null` 排除档位（包括 `off`），缺省标准档位继承 provider 规则，`xhigh/max` 必须显式非空；不能把 map 当白名单或强行补 `off`。Droid 直接使用目录的 `supportedReasoningEfforts/defaultReasoningEffort`，去重并验证默认值，保留原始协议值。
+- 思考 UI 区分多档位、单个固定档位、仅开关与不可用。单档位不画滑条或显示虚假默认；只有目录确实包含一个关闭值和一个开启值时使用开关，开启时回传真实档位而非伪造 `on`。多档位列表限制高度，未提供默认值时明确显示沿用 CLI 默认。切模型保留兼容选择，跨 Harness 不继承档位；刷新后按可执行路径/工作目录修正并保存过期值。
 - 发现目录是只读动作，不创建会话、不发送推理。只从打开选择器、切换 Harness 或刷新等动作发起，禁止在渲染中启动进程。复用异步队列、超时和进程树取消；缓存区分可执行文件与工作目录，窗口关闭或替换请求时取消，回调拒绝过期结果。失败显示空列表或错误，不伪造一个可用模型；其他 Harness 的目录缺失不能锁死整个入口。
 - 目录只保留展示及选择字段，不把 provider 端点、密钥或原始诊断写进应用状态。进程无论成功、失败还是取消都要回收。
 - 收藏键始终是严格 `(Harness, Model ID)` 二元组，持久化和列表身份复用 `model.ModelFavorite`；不能仅按模型名或 ID 合并。所属 Harness 内稳定置顶，点击星标不选中模型；顶部星标汇总全部收藏，即使目录暂不可用也保留已收藏 ID。
