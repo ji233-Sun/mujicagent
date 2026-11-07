@@ -226,5 +226,21 @@
   "harnessCustom": "Custom / external",
   "harnessMissing": "Not installed",
   "harnessUnchecked": "Not checked",
-  "harnessProviderAuth": "Configured provider (no OpenAI login required)"
+  "harnessProviderAuth": "Configured provider (no OpenAI login required)",
+  "agentPath": "Executable path",
+  "agentModel": "Model ID",
+  "agentModelHint": "Leave empty for the CLI default; Pi accepts provider/model.",
+  "agentSetup": "Installation & login",
+  "agentProbe": "Check",
+  "agentAuthHint": "Uses local CLI credentials and configuration; a version check does not verify authentication.",
+  "agentExternalInstall": "Install and update using the official CLI, then set its path.",
+  "agentSwitch": "Use model",
+  "agentHandoff": "Hand off to model",
+  "agentHandoffHint": "Keeps the source and creates a conversation with visible history; sends context with your next message.",
+  "agentBusyHint": "Stop the current task before handing off.",
+  "handoffSource": "Source conversation",
+  "agentNoTools": "Tools disabled",
+  "agentNativeTools": "Pi native tools",
+  "agentPiToolsHint": "Pi native tools can edit files and run commands, without Codex sandboxing or approvals.",
+  "agentDroidAccess": "Droid autonomy"
 }

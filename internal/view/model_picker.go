@@ -18,14 +18,24 @@ var openAIIcon = ui.MustParseSVG(openAISVG)
 func (v *View) modelSelector(c *ui.Context) {
 	tx := v.texts()
 	settings := &v.C.State.Settings
+	t := v.C.State.Thread(v.C.State.Selected)
 	label := settings.Model
+	if t != nil && t.AgentModel != "" {
+		label = t.AgentModel
+	}
+	if t.Driver() != "codex" {
+		label = agentName(t.Driver())
+		if t.AgentModel != "" {
+			label += " · " + t.AgentModel
+		}
+	}
 	if label == "" {
 		label = tx.ChooseModel()
-	} else if settings.Effort != "" {
+	} else if t.Driver() == "codex" && settings.Effort != "" {
 		label += " · " + settings.Effort
 	}
 	for _, model := range v.C.Models {
-		if model.Model != settings.Model || !model.SupportsSpeed(settings.ServiceTier) {
+		if t.Driver() != "codex" || model.Model != settings.Model || !model.SupportsSpeed(settings.ServiceTier) {
 			continue
 		}
 		for _, tier := range model.ServiceTiers {
@@ -43,7 +53,7 @@ func (v *View) modelSelector(c *ui.Context) {
 		button.Background(c.Theme().SurfaceHover).TextColor(c.Theme().Accent)
 	}
 	button.Children(func() {
-		modelIcon(c, settings.Model, 16)
+		agentGlyph(c, t.Driver())
 		ui.Text(c, label).FontSize(12).SingleLine().MinWidth(0).Shrink(1)
 		angle := float32(90)
 		if v.modelPicker {
@@ -56,8 +66,13 @@ func (v *View) modelSelector(c *ui.Context) {
 		v.modelPicker = !v.modelPicker
 		v.permissionPicker = false
 		v.modelSearch = ""
+		v.pickerHarness = t.Driver()
+		v.agentModelDraft = ""
+		if t != nil {
+			v.agentModelDraft = t.AgentModel
+		}
 	})
-	pickerPopover(c.Key("model-picker"), button, &v.modelPicker, tx.ModelPicker(), 448, func() { v.modelPanel(c) })
+	pickerPopover(c.Key("model-picker"), button, &v.modelPicker, tx.ModelPicker(), 492, func() { v.modelPanel(c) })
 }
 
 func pickerPopover(c *ui.Context, anchor ui.Element, open *bool, label string, width float32, content func()) {
@@ -79,11 +94,28 @@ func pickerPopover(c *ui.Context, anchor ui.Element, open *bool, label string, w
 }
 
 func (v *View) modelPanel(c *ui.Context) {
+	ui.Row(c).Gap(8).AlignItems(ui.Stretch).Children(func() {
+		ui.Column(c).Width(32).Shrink(0).Gap(4).Children(func() { v.harnessRail(c) })
+		ui.Box(c).Width(1).Background(c.Theme().Border)
+		ui.Column(c).Grow(1).MinWidth(0).Children(func() {
+			if v.pickerHarness == "pi" || v.pickerHarness == "droid" {
+				v.agentModelPanel(c)
+				return
+			}
+			v.codexModelPanel(c)
+		})
+	})
+}
+func (v *View) codexModelPanel(c *ui.Context) {
+	selectedModel := v.C.State.Settings.Model
+	if t := v.C.State.Thread(v.C.State.Selected); t != nil && t.AgentModel != "" && t.Driver() == "codex" {
+		selectedModel = t.AgentModel
+	}
 	tx := v.texts()
 	models := make([]codex.Model, 0, len(v.C.Models))
 	var current codex.Model
 	for _, m := range v.C.Models {
-		if m.Model == v.C.State.Settings.Model {
+		if m.Model == selectedModel {
 			current = m
 		}
 		if strings.Contains(strings.ToLower(m.Model+" "+m.DisplayName), strings.ToLower(v.modelSearch)) {
@@ -111,7 +143,7 @@ func (v *View) modelPanel(c *ui.Context) {
 				ItemKey(func(i int) any { return models[i].Model }).Rows(func(row ui.ListRow) {
 				m := models[row.Index]
 				c := row.Context
-				selected := m.Model == v.C.State.Settings.Model
+				selected := m.Model == selectedModel
 				b := pickerOption(c, m.Model, selected)
 				b.Children(func() {
 					modelIcon(c, m.Model, 18)
@@ -120,7 +152,7 @@ func (v *View) modelPanel(c *ui.Context) {
 						ui.Icon(c, checkIcon).Size(14, 14).TextColor(c.Theme().Accent)
 					}
 				})
-				b.OnClick(func() { v.chooseModel(m) })
+				b.Disabled(v.C.Running[v.C.State.Selected]).OnClick(func() { v.chooseModel(m) })
 			}).Children(func() {
 				if len(models) == 0 {
 					ui.Text(c, tx.NoModels()).FontSize(12).TextColor(c.Theme().TextMuted).Padding(6, 8)
@@ -207,6 +239,20 @@ func (v *View) speedOptions(c *ui.Context, m codex.Model) {
 }
 
 func (v *View) chooseModel(m codex.Model) {
+	if v.C.Running[v.C.State.Selected] {
+		return
+	}
+	t := v.C.State.Thread(v.C.State.Selected)
+	if t != nil && t.Driver() != "codex" {
+		if v.C.Handoff("codex", m.Model) {
+			v.modelPicker = false
+		}
+		return
+	}
+	if t != nil {
+		t.AgentModel = m.Model
+	}
+
 	settings := &v.C.State.Settings
 	settings.Model = m.Model
 	if !m.SupportsSpeed(settings.ServiceTier) {

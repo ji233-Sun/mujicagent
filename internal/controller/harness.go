@@ -41,7 +41,7 @@ func (c *Controller) StartHarnessUpdates() {
 	}()
 }
 func (c *Controller) CheckHarness() {
-	u := &c.Harness
+	u := c.HarnessFor("codex")
 	if u.Checking || u.Installing {
 		return
 	}
@@ -81,12 +81,12 @@ func (c *Controller) CheckHarness() {
 	}()
 }
 func (c *Controller) CancelHarness() {
-	if c.Harness.cancel != nil {
-		c.Harness.cancel()
+	if c.HarnessFor("codex").cancel != nil {
+		c.HarnessFor("codex").cancel()
 	}
 }
 func (c *Controller) InstallHarness() {
-	u := &c.Harness
+	u := c.HarnessFor("codex")
 	if u.Checking || u.Installing || c.Connection == "Connecting" || c.AnyRunning() || u.Release.Version == "" || u.Binary != c.State.Settings.CodexPath || u.Source != c.State.Settings.HarnessSource {
 		return
 	}

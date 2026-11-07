@@ -6,8 +6,15 @@ import (
 )
 
 func (v *View) agentsPane(c *ui.Context) {
-	tx, u := v.texts(), &v.C.Harness
+	tx, u := v.texts(), v.C.HarnessFor("codex")
+	if v.agentSection == "pi" || v.agentSection == "droid" {
+		v.externalAgentPane(c, v.agentSection)
+		return
+	}
 	for _, driver := range harness.Drivers {
+		if driver.ID != "codex" {
+			continue
+		}
 		ui.Column(c.Key("harness-"+driver.ID)).Radius(10).Border(1, c.Theme().Border).Background(c.Theme().Background).Children(func() {
 			ui.Row(c).Padding(14).Gap(10).AlignItems(ui.Center).Children(func() {
 				ui.Box(c).Size(34, 34).Radius(8).Background(c.Theme().Surface).Center().Children(func() { ui.Icon(c, openAIIcon).Size(23, 23) })

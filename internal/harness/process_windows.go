@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-func runInstaller(cmd *exec.Cmd) error {
+func prepareProcess(cmd *exec.Cmd) {
 	cmd.Cancel = func() error {
 		if cmd.Process == nil {
 			return os.ErrProcessDone
@@ -23,5 +23,9 @@ func runInstaller(cmd *exec.Cmd) error {
 		}
 		return nil
 	}
+}
+
+func runInstaller(cmd *exec.Cmd) error {
+	prepareProcess(cmd)
 	return cmd.Run()
 }

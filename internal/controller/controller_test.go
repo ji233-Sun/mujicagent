@@ -231,7 +231,9 @@ func TestServiceTierRequests(t *testing.T) {
 			c.NewThread("")
 			thread = c.State.Thread(c.State.Selected)
 		}
-		c.State.Settings.Model, c.State.Settings.ServiceTier = tc.model, tc.selected
+		// The conversation owns its model independently of the default for new chats.
+		thread.AgentModel = tc.model
+		c.State.Settings.Model, c.State.Settings.ServiceTier = "plain-model", tc.selected
 		if !c.Send("speed test "+attachment.Link()+" end", false) {
 			t.Fatal(c.Error)
 		}
@@ -1278,32 +1280,32 @@ func TestSwitchProjectPreservesPromptAndHistory(t *testing.T) {
 func TestHarnessInstallGuardAndFailure(t *testing.T) {
 	c := New(t.TempDir(), model.New(), nil)
 	original := c.State.Settings.CodexPath
-	c.Harness = HarnessState{Binary: original, Release: harness.Release{Version: "1.2.3"}}
+	*c.HarnessFor("codex") = HarnessState{Binary: original, Release: harness.Release{Version: "1.2.3"}}
 	c.Running["busy"] = true
 	c.InstallHarness()
-	if c.Harness.Installing {
+	if c.HarnessFor("codex").Installing {
 		t.Fatal("installed during a turn")
 	}
 	c.Running["busy"] = false
-	c.Harness.Binary = "stale-path"
+	c.HarnessFor("codex").Binary = "stale-path"
 	c.InstallHarness()
-	if c.Harness.Installing {
+	if c.HarnessFor("codex").Installing {
 		t.Fatal("installed stale selection")
 	}
-	c.Harness.Binary = original
+	c.HarnessFor("codex").Binary = original
 	c.Connection = "Connecting"
 	c.InstallHarness()
-	if c.Harness.Installing {
+	if c.HarnessFor("codex").Installing {
 		t.Fatal("installed while connecting")
 	}
 	c.Connection = "Disconnected"
 	c.InstallHarness() // Missing checksum fails before any download.
 	deadline := time.Now().Add(3 * time.Second)
-	for c.Harness.Installing && time.Now().Before(deadline) {
+	for c.HarnessFor("codex").Installing && time.Now().Before(deadline) {
 		c.Drain()
 		time.Sleep(time.Millisecond)
 	}
-	if c.Harness.Installing || c.Harness.Error == "" {
+	if c.HarnessFor("codex").Installing || c.HarnessFor("codex").Error == "" {
 		t.Fatal("failure was not published")
 	}
 	if c.State.Settings.CodexPath != original {
@@ -1312,5 +1314,126 @@ func TestHarnessInstallGuardAndFailure(t *testing.T) {
 	entries, err := os.ReadDir(filepath.Join(c.Dir, "tools", "codex"))
 	if err != nil || len(entries) != 0 {
 		t.Fatalf("staging not cleaned: %v %v", entries, err)
+	}
+}
+
+func TestAgentHandoffOwnership(t *testing.T) {
+	c := New(t.TempDir(), model.New(), nil)
+	old := c.State.AddThread("project", "/workspace")
+	old.ServerID = "codex-server"
+	old.Draft = "continue"
+	old.Queue = []model.QueuedMessage{{ID: "q", Text: "queued"}}
+	old.Turns = []model.Turn{{Prompt: "task", Items: []model.Item{{Kind: "agentMessage", Text: "answer"}, {Kind: "reasoning", Text: "private reasoning"}}}}
+	c.Running[old.ID] = true
+	if c.Handoff("pi", "provider/model") {
+		t.Fatal("handed off running task")
+	}
+	c.Running[old.ID] = false
+	if !c.Handoff("pi", "provider/model") {
+		t.Fatal("handoff rejected")
+	}
+	next := c.State.Thread(c.State.Selected)
+	if next.ServerID != "" || next.Driver() != "pi" || next.AgentModel != "provider/model" || next.HandoffFrom != old.ID || next.Cwd != old.Cwd {
+		t.Fatalf("wrong ownership: %+v", next)
+	}
+	if !strings.Contains(next.HandoffContext, "answer") || strings.Contains(next.HandoffContext, "private reasoning") {
+		t.Fatal("wrong transcript")
+	}
+	if old.ServerID != "codex-server" || old.Draft != "continue" || len(old.Queue) != 1 || len(next.Queue) != 0 {
+		t.Fatal("source modified or queue replayed")
+	}
+	restored, err := model.Load(filepath.Join(c.Dir, "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restored.Thread(next.ID).Driver() != "pi" || restored.Thread(old.ID).Driver() != "codex" {
+		t.Fatal("ownership lost")
+	}
+	next.Turns = []model.Turn{{Prompt: "followup", Items: []model.Item{{Kind: "agentMessage", Text: "new answer"}}}}
+	if !c.Handoff("droid", "another-model") {
+		t.Fatal("second handoff failed")
+	}
+	last := c.State.Thread(c.State.Selected)
+	if !strings.Contains(last.HandoffContext, "answer") || !strings.Contains(last.HandoffContext, "new answer") {
+		t.Fatal("ancestry lost")
+	}
+	if c.HarnessFor("pi") == c.HarnessFor("codex") {
+		t.Fatal("shared harness state")
+	}
+}
+
+func TestAgentProcessLifecycle(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix fake CLI; Windows argument resolution tested separately")
+	}
+	for _, driver := range []string{"pi", "droid"} {
+		t.Run(driver, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Setenv("MUJICAGENT_DATA_DIR", dir)
+			binary := filepath.Join(dir, "fake agent")
+			output := `{"type":"result","session_id":"owned-droid","result":"done"}`
+			if driver == "pi" {
+				output = "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"done\"}]}}\n{\"type\":\"agent_end\"}"
+			}
+			script := "#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' '" + output + "'\n"
+			if err := os.WriteFile(binary, []byte(script), 0700); err != nil {
+				t.Fatal(err)
+			}
+			c := New(dir, model.New(), nil)
+			defer c.Close()
+			c.State.Settings.PiPath = binary
+			c.State.Settings.DroidPath = binary
+			thread := c.State.AddThread("project", dir)
+			thread.Harness = driver
+			thread.AgentModel = "custom"
+			if !c.Send("first", false) {
+				t.Fatal(c.Error)
+			}
+			deadline := time.Now().Add(5 * time.Second)
+			for c.Running[thread.ID] && time.Now().Before(deadline) {
+				c.Drain()
+				time.Sleep(time.Millisecond)
+			}
+			c.Drain()
+			if c.Running[thread.ID] || thread.Turns[0].Status != "completed" || thread.Turns[0].Items[0].Text != "done" || thread.ServerID == "" {
+				t.Fatalf("%+v %s", thread, c.Error)
+			}
+			if err := os.WriteFile(binary, []byte("#!/bin/sh\nexec sleep 20\n"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			if !c.Send("second", false) {
+				t.Fatal(c.Error)
+			}
+			c.Interrupt()
+			deadline = time.Now().Add(5 * time.Second)
+			for c.Running[thread.ID] && time.Now().Before(deadline) {
+				c.Drain()
+				time.Sleep(time.Millisecond)
+			}
+			c.Drain()
+			if thread.Turns[1].Status != "interrupted" {
+				t.Fatalf("not cancelled: %+v", thread.Turns[1])
+			}
+		})
+	}
+}
+
+func TestAgentFailedQueueRemainsRetryable(t *testing.T) {
+	dir := t.TempDir()
+	c := New(dir, model.New(), nil)
+	defer c.Close()
+	c.State.Settings.DroidPath = filepath.Join(dir, "missing-droid")
+	thread := c.State.AddThread("project", dir)
+	thread.Harness = "droid"
+	thread.Queue = []model.QueuedMessage{{ID: "q", Text: "retry me"}}
+	c.ResumeQueue(thread.ID)
+	deadline := time.Now().Add(5 * time.Second)
+	for c.Running[thread.ID] && time.Now().Before(deadline) {
+		c.Drain()
+		time.Sleep(time.Millisecond)
+	}
+	c.Drain()
+	if len(thread.Queue) != 1 || thread.Queue[0].Sending || thread.Turns[0].Status != "failed" {
+		t.Fatalf("lost failed queue: %+v", thread)
 	}
 }

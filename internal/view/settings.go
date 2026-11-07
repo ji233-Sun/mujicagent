@@ -9,7 +9,7 @@ import (
 func (v *View) settingsDialog(c *ui.Context) {
 	dialog := ui.DialogBase(c.Key("settings-dialog"), &v.Settings, func(backdrop, panel ui.Element) {
 		backdrop.Background(ui.RGBA(0, 0, 0, 0.18))
-		panel.Width(800).Height(420).MaxWidthPercent(94).MaxHeightPercent(90).
+		panel.Width(900).Height(420).MaxWidthPercent(94).MaxHeightPercent(90).
 			Radius(18).Border(1, c.Theme().Border).Background(c.Theme().Background).
 			Shadow(0, 16, 50, 0, ui.RGBA(0, 0, 0, 0.22)).Clip().Label(v.texts().SettingsPanel()).
 			Transition(ui.ElementTransition{Duration: 180 * time.Millisecond, Enter: &ui.Motion{Y: 8, Scale: 0.98}})
@@ -78,6 +78,13 @@ func (v *View) settingsPane(c *ui.Context) {
 		ui.Text(c, title).Bold().FontSize(16).Grow(1)
 		iconButton(c, tx.CloseSettings(), closeIcon, func() { v.Settings = false; v.C.Save() })
 	})
+	if v.section == "Agents" {
+		ui.Row(c).Grow(1).MinHeight(0).AlignItems(ui.Stretch).Children(func() {
+			ui.Column(c).Width(92).Shrink(0).Padding(0, 6).Gap(3).Children(func() { v.agentSidebar(c) })
+			ui.Scroll(c).Grow(1).MinWidth(0).Padding(0, 12, 12).Children(func() { v.agentsPane(c) })
+		})
+		return
+	}
 	ui.Scroll(c).Grow(1).MinHeight(0).Padding(0, 16, 16).Gap(10).Children(func() {
 		if v.section == "Logs" {
 			v.logsPane(c)

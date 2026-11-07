@@ -9,7 +9,7 @@ import (
 )
 
 // npm may spawn a native child; cancelling only its launcher leaves an installation running.
-func runInstaller(cmd *exec.Cmd) error {
+func prepareProcess(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error {
 		if cmd.Process == nil {
@@ -21,5 +21,9 @@ func runInstaller(cmd *exec.Cmd) error {
 		}
 		return err
 	}
+}
+
+func runInstaller(cmd *exec.Cmd) error {
+	prepareProcess(cmd)
 	return cmd.Run()
 }

@@ -405,3 +405,22 @@ func TestWindowsNPMNativeLayout(t *testing.T) {
 		t.Fatal("accepted arbitrary shell wrapper")
 	}
 }
+
+func TestWindowsPiLauncherResolution(t *testing.T) {
+	root := t.TempDir()
+	wrapper := filepath.Join(root, "pi.cmd")
+	script := filepath.Join(root, "node_modules", "@earendil-works", "pi-coding-agent", "dist", "cli.js")
+	if err := os.MkdirAll(filepath.Dir(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(script, []byte("// fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := windowsPiScript(wrapper)
+	if err != nil || got != script {
+		t.Fatalf("%s %v", got, err)
+	}
+	if _, err := windowsPiScript(filepath.Join(root, "missing", "pi.cmd")); err == nil {
+		t.Fatal("accepted missing installation")
+	}
+}

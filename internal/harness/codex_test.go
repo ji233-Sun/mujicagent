@@ -103,3 +103,43 @@ func TestDownloadNativePackage(t *testing.T) {
 	}
 	t.Logf("verified %s at %s", release.Version, path)
 }
+
+func TestAgentProtocol(t *testing.T) {
+	for _, tc := range []struct {
+		driver, line, want string
+		fail               bool
+	}{
+		{"pi", `{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"你好"}}`, "你好", false},
+		{"pi", `{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"done"}]}}`, "done", false},
+		{"pi", `{"type":"message_end","message":{"role":"assistant","stopReason":"error","errorMessage":"bad model"}}`, "", true},
+		{"pi", `broken`, "", true},
+		{"droid", `{"type":"result","result":"done","session_id":"session-1","is_error":false}`, "done", false},
+		{"droid", `{"type":"result","result":"bad login","is_error":true}`, "", true},
+		{"droid", `{"type":"result","result":"missing session"}`, "", true},
+	} {
+		p := agentParser{driver: tc.driver}
+		text := ""
+		err := p.line([]byte(tc.line), func(e AgentEvent) { text = e.Text })
+		if (err != nil) != tc.fail || text != tc.want {
+			t.Fatalf("%s: %q %v", tc.line, text, err)
+		}
+	}
+	for _, driver := range []string{"pi", "droid"} {
+		args, err := agentArgs(RunOptions{Driver: driver, Session: "owned-session", Model: "custom-model"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		found := false
+		for _, arg := range args {
+			if arg == "custom-model" {
+				found = true
+			}
+			if arg == "--skip-permissions-unsafe" {
+				t.Fatal("unsafe default")
+			}
+		}
+		if !found {
+			t.Fatal("model omitted")
+		}
+	}
+}

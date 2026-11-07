@@ -2307,3 +2307,163 @@ func HarnessProviderAuth() string { return In(i18n.Locale()).HarnessProviderAuth
 func (msgs Messages) HarnessProviderAuth() string {
 	return Catalog.Format(msgs.locale, "harnessProviderAuth", nil)
 }
+
+// AgentPath says "可执行路径"
+// in the language the app shows.
+func AgentPath() string { return In(i18n.Locale()).AgentPath() }
+
+// AgentPath says "可执行路径"
+// in the language of msgs.
+func (msgs Messages) AgentPath() string {
+	return Catalog.Format(msgs.locale, "agentPath", nil)
+}
+
+// AgentModel says "模型 ID"
+// in the language the app shows.
+func AgentModel() string { return In(i18n.Locale()).AgentModel() }
+
+// AgentModel says "模型 ID"
+// in the language of msgs.
+func (msgs Messages) AgentModel() string {
+	return Catalog.Format(msgs.locale, "agentModel", nil)
+}
+
+// AgentModelHint says "留空沿用 CLI 默认模型；Pi 支持 provider/model。"
+// in the language the app shows.
+func AgentModelHint() string { return In(i18n.Locale()).AgentModelHint() }
+
+// AgentModelHint says "留空沿用 CLI 默认模型；Pi 支持 provider/model。"
+// in the language of msgs.
+func (msgs Messages) AgentModelHint() string {
+	return Catalog.Format(msgs.locale, "agentModelHint", nil)
+}
+
+// AgentSetup says "安装与登录"
+// in the language the app shows.
+func AgentSetup() string { return In(i18n.Locale()).AgentSetup() }
+
+// AgentSetup says "安装与登录"
+// in the language of msgs.
+func (msgs Messages) AgentSetup() string {
+	return Catalog.Format(msgs.locale, "agentSetup", nil)
+}
+
+// AgentProbe says "检测"
+// in the language the app shows.
+func AgentProbe() string { return In(i18n.Locale()).AgentProbe() }
+
+// AgentProbe says "检测"
+// in the language of msgs.
+func (msgs Messages) AgentProbe() string {
+	return Catalog.Format(msgs.locale, "agentProbe", nil)
+}
+
+// AgentAuthHint says "沿用本机 CLI 的认证与配置；检测版本不代表认证成功。"
+// in the language the app shows.
+func AgentAuthHint() string { return In(i18n.Locale()).AgentAuthHint() }
+
+// AgentAuthHint says "沿用本机 CLI 的认证与配置；检测版本不代表认证成功。"
+// in the language of msgs.
+func (msgs Messages) AgentAuthHint() string {
+	return Catalog.Format(msgs.locale, "agentAuthHint", nil)
+}
+
+// AgentExternalInstall says "使用官方 CLI 安装和更新，再填写路径。"
+// in the language the app shows.
+func AgentExternalInstall() string { return In(i18n.Locale()).AgentExternalInstall() }
+
+// AgentExternalInstall says "使用官方 CLI 安装和更新，再填写路径。"
+// in the language of msgs.
+func (msgs Messages) AgentExternalInstall() string {
+	return Catalog.Format(msgs.locale, "agentExternalInstall", nil)
+}
+
+// AgentSwitch says "使用此模型"
+// in the language the app shows.
+func AgentSwitch() string { return In(i18n.Locale()).AgentSwitch() }
+
+// AgentSwitch says "使用此模型"
+// in the language of msgs.
+func (msgs Messages) AgentSwitch() string {
+	return Catalog.Format(msgs.locale, "agentSwitch", nil)
+}
+
+// AgentHandoff says "交接到此模型"
+// in the language the app shows.
+func AgentHandoff() string { return In(i18n.Locale()).AgentHandoff() }
+
+// AgentHandoff says "交接到此模型"
+// in the language of msgs.
+func (msgs Messages) AgentHandoff() string {
+	return Catalog.Format(msgs.locale, "agentHandoff", nil)
+}
+
+// AgentHandoffHint says "保留原会话，以可见对话创建新会话；发送下一条消息时交接。"
+// in the language the app shows.
+func AgentHandoffHint() string { return In(i18n.Locale()).AgentHandoffHint() }
+
+// AgentHandoffHint says "保留原会话，以可见对话创建新会话；发送下一条消息时交接。"
+// in the language of msgs.
+func (msgs Messages) AgentHandoffHint() string {
+	return Catalog.Format(msgs.locale, "agentHandoffHint", nil)
+}
+
+// AgentBusyHint says "停止当前任务后可交接。"
+// in the language the app shows.
+func AgentBusyHint() string { return In(i18n.Locale()).AgentBusyHint() }
+
+// AgentBusyHint says "停止当前任务后可交接。"
+// in the language of msgs.
+func (msgs Messages) AgentBusyHint() string {
+	return Catalog.Format(msgs.locale, "agentBusyHint", nil)
+}
+
+// HandoffSource says "原会话"
+// in the language the app shows.
+func HandoffSource() string { return In(i18n.Locale()).HandoffSource() }
+
+// HandoffSource says "原会话"
+// in the language of msgs.
+func (msgs Messages) HandoffSource() string {
+	return Catalog.Format(msgs.locale, "handoffSource", nil)
+}
+
+// AgentNoTools says "禁用工具"
+// in the language the app shows.
+func AgentNoTools() string { return In(i18n.Locale()).AgentNoTools() }
+
+// AgentNoTools says "禁用工具"
+// in the language of msgs.
+func (msgs Messages) AgentNoTools() string {
+	return Catalog.Format(msgs.locale, "agentNoTools", nil)
+}
+
+// AgentNativeTools says "Pi 原生工具"
+// in the language the app shows.
+func AgentNativeTools() string { return In(i18n.Locale()).AgentNativeTools() }
+
+// AgentNativeTools says "Pi 原生工具"
+// in the language of msgs.
+func (msgs Messages) AgentNativeTools() string {
+	return Catalog.Format(msgs.locale, "agentNativeTools", nil)
+}
+
+// AgentPiToolsHint says "Pi 原生工具可读写文件和执行命令，无 Codex 沙箱或审批。"
+// in the language the app shows.
+func AgentPiToolsHint() string { return In(i18n.Locale()).AgentPiToolsHint() }
+
+// AgentPiToolsHint says "Pi 原生工具可读写文件和执行命令，无 Codex 沙箱或审批。"
+// in the language of msgs.
+func (msgs Messages) AgentPiToolsHint() string {
+	return Catalog.Format(msgs.locale, "agentPiToolsHint", nil)
+}
+
+// AgentDroidAccess says "Droid 自主等级"
+// in the language the app shows.
+func AgentDroidAccess() string { return In(i18n.Locale()).AgentDroidAccess() }
+
+// AgentDroidAccess says "Droid 自主等级"
+// in the language of msgs.
+func (msgs Messages) AgentDroidAccess() string {
+	return Catalog.Format(msgs.locale, "agentDroidAccess", nil)
+}
