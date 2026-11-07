@@ -1376,6 +1376,23 @@ func TestAgentProcessLifecycle(t *testing.T) {
 				output = "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"done\"}]}}\n{\"type\":\"agent_end\"}"
 			}
 			script := "#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' '" + output + "'\n"
+			if driver == "droid" {
+				script = `#!/bin/sh
+read request
+printf '%s\n' '{"id":1,"result":{"agentCapabilities":{"loadSession":true,"promptCapabilities":{"image":true}}}}'
+read request
+printf '%s\n' '{"id":2,"result":{"sessionId":"owned-droid"}}'
+read request
+case "$request" in *'"modeId":"normal"'*) ;; *) exit 2;; esac
+printf '%s\n' '{"id":3,"result":{}}'
+read request
+printf '%s\n' '{"id":4,"result":{}}'
+read request
+printf '%s\n' '{"method":"session/update","params":{"sessionId":"owned-droid","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"done"}}}}'
+printf '%s\n' '{"id":5,"result":{"stopReason":"end_turn"}}'
+sleep 20
+`
+			}
 			if err := os.WriteFile(binary, []byte(script), 0700); err != nil {
 				t.Fatal(err)
 			}

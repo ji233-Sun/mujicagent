@@ -886,11 +886,11 @@ func (msgs Messages) FullAccessQuestion() string {
 	return Catalog.Format(msgs.locale, "fullAccessQuestion", nil)
 }
 
-// FullAccessWarning says "Codex 将可以修改工作区以外的文件并访问网络，无需逐次询问。仅应用于当前对话。"
+// FullAccessWarning says "智能体将可以修改工作区以外的文件并访问网络，无需逐次询问。仅应用于当前对话。"
 // in the language the app shows.
 func FullAccessWarning() string { return In(i18n.Locale()).FullAccessWarning() }
 
-// FullAccessWarning says "Codex 将可以修改工作区以外的文件并访问网络，无需逐次询问。仅应用于当前对话。"
+// FullAccessWarning says "智能体将可以修改工作区以外的文件并访问网络，无需逐次询问。仅应用于当前对话。"
 // in the language of msgs.
 func (msgs Messages) FullAccessWarning() string {
 	return Catalog.Format(msgs.locale, "fullAccessWarning", nil)
@@ -2378,26 +2378,6 @@ func (msgs Messages) HandoffSource() string {
 	return Catalog.Format(msgs.locale, "handoffSource", nil)
 }
 
-// AgentNoTools says "禁用工具"
-// in the language the app shows.
-func AgentNoTools() string { return In(i18n.Locale()).AgentNoTools() }
-
-// AgentNoTools says "禁用工具"
-// in the language of msgs.
-func (msgs Messages) AgentNoTools() string {
-	return Catalog.Format(msgs.locale, "agentNoTools", nil)
-}
-
-// AgentNativeTools says "Pi 原生工具"
-// in the language the app shows.
-func AgentNativeTools() string { return In(i18n.Locale()).AgentNativeTools() }
-
-// AgentNativeTools says "Pi 原生工具"
-// in the language of msgs.
-func (msgs Messages) AgentNativeTools() string {
-	return Catalog.Format(msgs.locale, "agentNativeTools", nil)
-}
-
 // AgentPiToolsHint says "Pi 原生工具可读写文件和执行命令，无 Codex 沙箱或审批。"
 // in the language the app shows.
 func AgentPiToolsHint() string { return In(i18n.Locale()).AgentPiToolsHint() }
@@ -2406,16 +2386,6 @@ func AgentPiToolsHint() string { return In(i18n.Locale()).AgentPiToolsHint() }
 // in the language of msgs.
 func (msgs Messages) AgentPiToolsHint() string {
 	return Catalog.Format(msgs.locale, "agentPiToolsHint", nil)
-}
-
-// AgentDroidAccess says "Droid 自主等级"
-// in the language the app shows.
-func AgentDroidAccess() string { return In(i18n.Locale()).AgentDroidAccess() }
-
-// AgentDroidAccess says "Droid 自主等级"
-// in the language of msgs.
-func (msgs Messages) AgentDroidAccess() string {
-	return Catalog.Format(msgs.locale, "agentDroidAccess", nil)
 }
 
 // AgentRefreshModels says "刷新"
@@ -2486,4 +2456,64 @@ func AgentDefaultEffort() string { return In(i18n.Locale()).AgentDefaultEffort()
 // in the language of msgs.
 func (msgs Messages) AgentDefaultEffort() string {
 	return Catalog.Format(msgs.locale, "agentDefaultEffort", nil)
+}
+
+// AgentReadOnlyHint says "可读取文件；阻止修改及需要审批的命令执行。"
+// in the language the app shows.
+func AgentReadOnlyHint() string { return In(i18n.Locale()).AgentReadOnlyHint() }
+
+// AgentReadOnlyHint says "可读取文件；阻止修改及需要审批的命令执行。"
+// in the language of msgs.
+func (msgs Messages) AgentReadOnlyHint() string {
+	return Catalog.Format(msgs.locale, "agentReadOnlyHint", nil)
+}
+
+// AgentFileEdits says "文件编辑"
+// in the language the app shows.
+func AgentFileEdits() string { return In(i18n.Locale()).AgentFileEdits() }
+
+// AgentFileEdits says "文件编辑"
+// in the language of msgs.
+func (msgs Messages) AgentFileEdits() string {
+	return Catalog.Format(msgs.locale, "agentFileEdits", nil)
+}
+
+// AgentFileEditsHint says "允许文件编辑和低风险操作。"
+// in the language the app shows.
+func AgentFileEditsHint() string { return In(i18n.Locale()).AgentFileEditsHint() }
+
+// AgentFileEditsHint says "允许文件编辑和低风险操作。"
+// in the language of msgs.
+func (msgs Messages) AgentFileEditsHint() string {
+	return Catalog.Format(msgs.locale, "agentFileEditsHint", nil)
+}
+
+// AgentDevelopment says "开发权限"
+// in the language the app shows.
+func AgentDevelopment() string { return In(i18n.Locale()).AgentDevelopment() }
+
+// AgentDevelopment says "开发权限"
+// in the language of msgs.
+func (msgs Messages) AgentDevelopment() string {
+	return Catalog.Format(msgs.locale, "agentDevelopment", nil)
+}
+
+// AgentDevelopmentHint says "允许本地开发、构建和安装依赖。"
+// in the language the app shows.
+func AgentDevelopmentHint() string { return In(i18n.Locale()).AgentDevelopmentHint() }
+
+// AgentDevelopmentHint says "允许本地开发、构建和安装依赖。"
+// in the language of msgs.
+func (msgs Messages) AgentDevelopmentHint() string {
+	return Catalog.Format(msgs.locale, "agentDevelopmentHint", nil)
+}
+
+// AgentFullAccessHint says "允许高风险操作，包括网络访问和 git push。"
+// in the language the app shows.
+func AgentFullAccessHint() string { return In(i18n.Locale()).AgentFullAccessHint() }
+
+// AgentFullAccessHint says "允许高风险操作，包括网络访问和 git push。"
+// in the language of msgs.
+func (msgs Messages) AgentFullAccessHint() string {
+	return Catalog.Format(msgs.locale, "agentFullAccessHint", nil)
 }

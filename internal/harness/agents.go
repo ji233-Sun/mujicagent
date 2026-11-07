@@ -26,9 +26,14 @@ func agentArgs(o RunOptions) ([]string, error) {
 	switch o.Driver {
 	case "pi":
 		args = []string{"--mode", "json", "--print", "--session", o.Session}
-		// Pi has no native approval sandbox; do not imply Codex permission parity.
-		if o.Access != "native" {
-			args = append(args, "--no-tools", "--no-extensions")
+		// Restricted runs expose only built-in read tools; extensions and MCP can
+		// otherwise add execution paths outside this permission profile.
+		switch o.Access {
+		case "":
+			args = append(args, "--no-extensions", "--no-mcp", "--tools", "read,grep,find,ls")
+		case "native":
+		default:
+			return nil, fmt.Errorf("unsupported Pi permission: %s", o.Access)
 		}
 		if o.Model != "" {
 			args = append(args, "--model", o.Model)
@@ -40,13 +45,7 @@ func agentArgs(o RunOptions) ([]string, error) {
 			args = append(args, "@"+path)
 		}
 	case "droid":
-		if len(o.Images) > 0 {
-			return nil, fmt.Errorf("Droid headless image input is not supported; use Pi or Codex")
-		}
-		args = []string{"exec", "--output-format", "json"}
-		if o.Session != "" {
-			args = append(args, "--session-id", o.Session)
-		}
+		args = []string{"exec", "--output-format", "acp"}
 		if o.Model != "" {
 			args = append(args, "--model", o.Model)
 		}
@@ -54,9 +53,7 @@ func agentArgs(o RunOptions) ([]string, error) {
 			args = append(args, "--reasoning-effort", o.Effort)
 		}
 		switch o.Access {
-		case "":
-		case "low", "medium", "high":
-			args = append(args, "--auto", o.Access)
+		case "", "low", "medium", "high":
 		default:
 			return nil, fmt.Errorf("unsupported Droid autonomy: %s", o.Access)
 		}
@@ -78,21 +75,9 @@ func Run(ctx context.Context, o RunOptions, emit func(AgentEvent)) error {
 		}
 	}
 	if o.Driver == "droid" {
-		f, err := os.CreateTemp("", "mujicagent-prompt-*.txt")
-		if err != nil {
-			return err
-		}
-		defer os.Remove(f.Name())
-		_, err = f.WriteString(o.Prompt)
-		closeErr := f.Close()
-		if err != nil {
-			return err
-		}
-		if closeErr != nil {
-			return closeErr
-		}
-		args = append(args, "--file", f.Name())
+		return runDroid(ctx, o, args, emit)
 	}
+
 	cmd, err := codex.Command(ctx, o.Binary, args...)
 	if err != nil {
 		return err
@@ -149,10 +134,8 @@ type agentParser struct {
 
 func (p *agentParser) line(line []byte, emit func(AgentEvent)) error {
 	var e struct {
-		Type, Result string
-		IsError      bool   `json:"is_error"`
-		Session      string `json:"session_id"`
-		Message      struct {
+		Type    string
+		Message struct {
 			Role, StopReason, ErrorMessage string
 			Content                        json.RawMessage
 		}
@@ -161,20 +144,7 @@ func (p *agentParser) line(line []byte, emit func(AgentEvent)) error {
 	if err := json.Unmarshal(line, &e); err != nil {
 		return fmt.Errorf("invalid %s protocol output: %w", p.driver, err)
 	}
-	if p.driver == "droid" {
-		if e.Type != "result" {
-			return nil
-		}
-		if e.IsError {
-			return fmt.Errorf("Droid: %s", e.Result)
-		}
-		if e.Session == "" {
-			return fmt.Errorf("Droid response has no session ID")
-		}
-		emit(AgentEvent{Text: e.Result, Session: e.Session})
-		p.complete = true
-		return nil
-	}
+
 	switch e.Type {
 	case "message_update":
 		if e.AssistantMessageEvent.Type == "text_delta" {

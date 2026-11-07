@@ -144,10 +144,7 @@ func (c *Controller) sendAgent(t *model.Thread, text, queuedID string) bool {
 			images = append(images, part["path"].(string))
 		}
 	}
-	if t.Driver() == "droid" && len(images) > 0 {
-		c.ReportError("Droid headless image input is not supported; use Pi or Codex")
-		return false
-	}
+
 	session := t.ServerID
 	if t.Driver() == "pi" {
 		session = filepath.Join(c.Dir, "sessions", "pi", t.ID+".jsonl")

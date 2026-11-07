@@ -147,13 +147,51 @@ func (v *View) agentModelPanel(c *ui.Context) {
 }
 func (v *View) agentPermissions(c *ui.Context, t *model.Thread) {
 	tx := v.texts()
-	options := []settingOption{{"", tx.AgentNoTools()}, {"native", tx.AgentNativeTools()}}
-	label := tx.AgentPiToolsHint()
+	type profile struct{ id, name, icon, detail string }
+	options := []profile{{"", tx.ReadOnly(), ":read-only", tx.AgentReadOnlyHint()}, {"native", tx.FullAccess(), ":danger-full-access", tx.AgentPiToolsHint()}}
 	if t.Driver() == "droid" {
-		options = []settingOption{{"", tx.ReadOnly()}, {"low", "Auto · low"}, {"medium", "Auto · medium"}, {"high", "Auto · high"}}
-		label = tx.AgentDroidAccess()
+		options = []profile{{"", tx.ReadOnly(), ":read-only", tx.AgentReadOnlyHint()}, {"low", tx.AgentFileEdits(), ":workspace", tx.AgentFileEditsHint()}, {"medium", tx.AgentDevelopment(), ":workspace", tx.AgentDevelopmentHint()}, {"high", tx.FullAccess(), ":danger-full-access", tx.AgentFullAccessHint()}}
 	}
-	ui.Box(c).Disabled(v.C.Running[t.ID]).Tooltip(label).Children(func() { settingsSelect(c.Key("agent-permissions"), &t.AgentAccess, label, options, v.C.Save) })
+	if v.permissionTarget != t.ID {
+		v.permissionPicker = false
+	}
+	current := options[0]
+	for _, p := range options {
+		if p.id == t.AgentAccess {
+			current = p
+		}
+	}
+	button := pickerOption(c.Key("agent-permission-selector"), tx.Permissions(), v.permissionPicker).Height(30).MaxWidth(170).Shrink(1).Tooltip(current.detail).Disabled(v.C.Running[t.ID])
+	button.Children(func() {
+		ui.Icon(c, permissionIcon(current.icon)).Size(15, 15).Shrink(0)
+		ui.Text(c, current.name).FontSize(12).SingleLine().Shrink(1).MinWidth(0)
+	})
+	button.OnClick(func() { v.permissionPicker = !v.permissionPicker; v.modelPicker = false; v.permissionTarget = t.ID })
+	pickerPopover(c.Key("agent-permission-picker"), button, &v.permissionPicker, tx.PermissionPicker(), 290, func() {
+		ui.Column(c).Gap(4).Children(func() {
+			ui.Text(c, tx.Permissions()).FontSize(11).TextColor(c.Theme().TextMuted).Padding(6, 8)
+			for _, p := range options {
+				selected := p.id == t.AgentAccess
+				b := pickerOption(c.Key(p.id), p.name, selected).Tooltip(p.detail)
+				b.Children(func() {
+					ui.Icon(c, permissionIcon(p.icon)).Size(17, 17).Shrink(0)
+					ui.Text(c, p.name).FontSize(13).Grow(1).SingleLine()
+					if selected {
+						ui.Icon(c, checkIcon).Size(14, 14)
+					}
+				})
+				b.OnClick(func() {
+					v.permissionPicker = false
+					if p.icon == ":danger-full-access" && !selected {
+						v.confirmFullAccess = true
+						return
+					}
+					t.AgentAccess = p.id
+					v.C.Save()
+				})
+			}
+		})
+	})
 }
 
 func (v *View) externalModels(id string) []codex.Model {

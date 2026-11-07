@@ -125,7 +125,17 @@ func (v *View) Render(c *ui.Context) {
 	v.settingsDialog(c)
 	v.attachmentDialog(c)
 	if ui.AlertDialog(c, &v.confirmFullAccess, tx.FullAccessQuestion(), tx.FullAccessWarning(), tx.Cancel(), tx.EnableFullAccess()) == 1 && v.permissionTarget == v.C.State.Selected {
-		v.C.SetPermission(":danger-full-access")
+		if t := v.C.State.Thread(v.permissionTarget); t != nil && t.Driver() != "codex" {
+			if !v.C.Running[t.ID] {
+				t.AgentAccess = "native"
+				if t.Driver() == "droid" {
+					t.AgentAccess = "high"
+				}
+				v.C.Save()
+			}
+		} else {
+			v.C.SetPermission(":danger-full-access")
+		}
 	}
 	if t := v.C.State.Thread(v.deleteID); t != nil {
 		if ui.AlertDialog(c, &v.confirmDelete, tx.DeleteConversation(), tx.DeleteDescription(v.threadTitle(t)), tx.Cancel(), tx.Delete()) == 1 {
