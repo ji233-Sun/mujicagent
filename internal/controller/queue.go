@@ -120,10 +120,11 @@ func (c *Controller) ResumeQueue(threadID string) {
 }
 
 func (c *Controller) CanSteer(t *model.Thread) bool {
-	if t != nil && harness.CanSteer(t.Driver()) {
-		return c.Running[t.ID] && c.agentControls[t.ID] != nil && len(t.Turns) > 0
+	if t == nil || !harness.CanSteer(t.Driver()) || !c.Running[t.ID] {
+		return false
 	}
-	return t != nil && t.Driver() == "codex" && c.client != nil && c.Connection == "Connected" && c.Running[t.ID] && len(t.Turns) > 0 && t.Turns[len(t.Turns)-1].ID != ""
+	run := c.turnRuns[t.ID]
+	return run != nil && run.session != nil && run.accepted && !run.finished
 }
 
 func (c *Controller) Steer(threadID, id string) {
@@ -142,52 +143,58 @@ func (c *Controller) Steer(threadID, id string) {
 		text := q.Text
 		q.Sending = true
 		turnIndex := len(t.Turns) - 1
-		turnID, serverID := t.Turns[turnIndex].ID, t.ServerID
-		client, epoch := c.client, c.epoch
-		control := c.agentControls[t.ID]
+		target := harness.TurnTarget{Session: t.ServerID, Turn: t.Turns[turnIndex].ID}
+		run, epoch := c.turnRuns[t.ID], c.epoch
+		driver, _ := harness.Lookup(t.Driver())
 		go func() {
 			input, err := messageInput(text, c.Dir)
-			if err == nil && control != nil {
-				prompt := ""
-				var images []string
-				for _, raw := range input {
-					part := raw.(map[string]any)
-					if part["type"] == "text" {
-						prompt += part["text"].(string)
-					} else if part["type"] == "localImage" {
-						images = append(images, part["path"].(string))
-					}
-				}
+			if err == nil {
 				ctx, cancel := codex.Timeout()
 				defer cancel()
-				err = control.Steer(ctx, prompt, images)
-			} else if err == nil {
-				ctx, cancel := codex.Timeout()
-				defer cancel()
-				err = client.Call(ctx, "turn/steer", map[string]any{"threadId": serverID, "expectedTurnId": turnID, "input": input}, nil)
+				err = run.session.Steer(ctx, target, input)
 			}
 			c.post(func() {
-				if epoch != c.epoch {
+				if driver.Capabilities.PersistentConnection && epoch != c.epoch {
 					return
 				}
-				for j := range t.Queue {
-					if t.Queue[j].ID == id {
-						t.Queue[j].Sending = false
-					}
-				}
-				if err != nil {
-					c.ReportError(fmt.Sprintf("Steer: %v", err))
-					c.Save()
-					return
-				}
-				c.removeQueued(t, id)
-				t.Turns[turnIndex].Items = append(t.Turns[turnIndex].Items, model.Item{ID: id, Kind: "steerMessage", Text: text, Status: "completed"})
-				c.Save()
-				if t.Turns[turnIndex].Status == "completed" {
-					c.sendNext(t)
-				}
+				c.applySteerResult(t, run, turnIndex, id, text, err)
 			})
 		}()
 		return
+	}
+}
+
+func (c *Controller) applySteerResult(t *model.Thread, run *turnRun, index int, id, text string, err error) {
+	if c.State.Thread(t.ID) != t {
+		return
+	}
+	if current := c.turnRuns[t.ID]; current != nil && current != run {
+		return
+	}
+	turn := &t.Turns[index]
+	if turn.Status != "inProgress" && turn.Status != "completed" {
+		return
+	}
+	pending := false
+	for i := range t.Queue {
+		if t.Queue[i].ID == id && t.Queue[i].Sending {
+			t.Queue[i].Sending = false
+			pending = true
+			break
+		}
+	}
+	if !pending {
+		return
+	}
+	if err != nil {
+		c.ReportError(fmt.Sprintf("Steer: %v", err))
+		c.Save()
+		return
+	}
+	c.removeQueued(t, id)
+	turn.Items = append(turn.Items, model.Item{ID: id, Kind: "steerMessage", Text: text, Status: "completed"})
+	c.Save()
+	if turn.Status == "completed" {
+		c.sendNext(t)
 	}
 }

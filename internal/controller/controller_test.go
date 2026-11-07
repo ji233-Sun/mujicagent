@@ -69,6 +69,8 @@ printf '%s\n' '{"id":"request-3","result":{}}'
 `
 				delta = `{"method":"droid.session_notification","params":{"sessionId":"burst","notification":{"type":"assistant_text_delta","messageId":"m","textDelta":"x"}}}`
 				finish = `{"method":"droid.session_notification","params":{"sessionId":"burst","notification":{"type":"agent_turn_completed","reason":"completed"}}}`
+			} else {
+				script += "printf '%s\\n' '{\"type\":\"response\",\"id\":\"prompt\",\"success\":true}'\n"
 			}
 			script += "i=0\nwhile [ \"$i\" -lt 2048 ]; do\nprintf '%s\\n' '" + delta + "'\ni=$((i+1))\ndone\nprintf '%s\\n' '" + finish + "'\nsleep 20\n"
 			if err := os.WriteFile(binary, []byte(script), 0700); err != nil {
@@ -284,8 +286,8 @@ func TestFileAttachmentInput(t *testing.T) {
 	if len(input) != 3 {
 		t.Fatalf("input: %+v", input)
 	}
-	item := input[1].(map[string]any)
-	if item["type"] != "text" || !strings.Contains(item["text"].(string), fmt.Sprintf("%q", path)) || strings.Contains(item["text"].(string), "file contents") {
+	item := input[1]
+	if item.Type != "text" || !strings.Contains(item.Text, fmt.Sprintf("%q", path)) || strings.Contains(item.Text, "file contents") {
 		t.Fatalf("file input: %+v", item)
 	}
 	for _, path := range []string{path + "missing", filepath.Dir(path)} {
@@ -321,6 +323,7 @@ func TestReleaseHistoryFailures(t *testing.T) {
 func TestServiceTierRequests(t *testing.T) {
 	if os.Getenv("MUJICAGENT_SPEED_CHILD") == "1" {
 		dec, enc := json.NewDecoder(os.Stdin), json.NewEncoder(os.Stdout)
+		earlyTurns := 0
 		for {
 			var m codex.Message
 			if dec.Decode(&m) != nil {
@@ -344,6 +347,14 @@ func TestServiceTierRequests(t *testing.T) {
 					os.Exit(2)
 				}
 				result = map[string]any{"turn": map[string]string{"id": "speed-turn"}}
+				if os.Getenv("MUJICAGENT_SPEED_EARLY_END") == "1" {
+					earlyTurns++
+					id := fmt.Sprintf("early-%d", earlyTurns)
+					result = map[string]any{"turn": map[string]string{"id": id}}
+					enc.Encode(map[string]any{"method": "turn/completed", "params": map[string]any{
+						"threadId": "speed-thread", "turn": map[string]string{"id": id, "status": "completed"},
+					}})
+				}
 			case "turn/steer":
 				path := os.Getenv("MUJICAGENT_SPEED_REQUEST")
 				os.WriteFile(path+"-steer", m.Params, 0600)
@@ -796,6 +807,7 @@ func TestImageViewEvents(t *testing.T) {
 	notify(c, "item/completed", `{"threadId":"server","turnId":"turn","item":{"id":"image","type":"imageView"}}`)
 	notify(c, "item/completed", `{"threadId":"server","turnId":"turn","item":{"id":"second","type":"imageView","path":"/workspace/second.png"}}`)
 	notify(c, "turn/completed", `{"threadId":"server","turn":{"id":"turn","status":"completed"}}`)
+	c.Close()
 	loaded, err := model.Load(filepath.Join(dir, "state.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -823,6 +835,7 @@ func TestMCPCallDetailsEvents(t *testing.T) {
 	notify(c, "item/completed", `{"threadId":"server","turnId":"turn","item":{"id":"fetch","type":"mcpToolCall","server":"github","tool":"get_issue","status":"failed","arguments":{"number":16,"api_key":"fake-api-secret"},"error":{"message":"Access denied: token=fake-error-secret"}}}`)
 	notify(c, "item/completed", `{"threadId":"server","turnId":"turn","item":{"id":"missing","type":"mcpToolCall"}}`)
 	notify(c, "turn/completed", `{"threadId":"server","turn":{"id":"turn","status":"completed"}}`)
+	c.Close()
 	loaded, err := model.Load(filepath.Join(dir, "state.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -866,10 +879,14 @@ func TestMCPCallRedaction(t *testing.T) {
 		{"private key", `{"result":{"content":[{"type":"text","text":"-----BEGIN PRIVATE KEY-----\nprivate-secret\n-----END PRIVATE KEY-----"}]}}`, "private-secret"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			call := decodeMCPCall(json.RawMessage(tc.raw))
-			if call == nil {
-				t.Fatal("valid MCP payload failed to decode")
+			native, known, err := harness.DecodeCodexEvent(codex.Message{Method: "item/completed", Params: json.RawMessage(
+				`{"item":{"id":"call","type":"mcpToolCall",` + tc.raw[1:] + `}`)})
+			if err != nil || !known {
+				t.Fatal("valid MCP payload failed to decode", err)
 			}
+			turn := model.Turn{}
+			mergeAgentEvent(&turn, native.Event)
+			call := turn.Items[0].MCP
 			data, err := json.Marshal(call)
 			if err != nil || strings.Contains(string(data), tc.secret) || !strings.Contains(string(data), mcpRedacted) {
 				t.Fatal("MCP credential redaction failed")
@@ -1379,14 +1396,14 @@ func TestAnnotatedImageInput(t *testing.T) {
 	if len(input) != 3 {
 		t.Fatalf("expected text, original, markup: %+v", input)
 	}
-	prompt := input[0].(map[string]any)["text"].(string)
+	prompt := input[0].Text
 	if !strings.Contains(prompt, "Annotation 1: Move this button") || !strings.Contains(prompt, "arrow at (10.00%, 20.00%)") {
 		t.Fatalf("lost correspondence: %s", prompt)
 	}
-	if input[1].(map[string]any)["path"] != path {
+	if input[1].Path != path {
 		t.Fatal("original not included")
 	}
-	rendered := input[2].(map[string]any)["path"].(string)
+	rendered := input[2].Path
 	data, err := os.ReadFile(rendered)
 	if err != nil {
 		t.Fatal(err)
@@ -1766,7 +1783,7 @@ func TestAgentProcessLifecycle(t *testing.T) {
 			binary := filepath.Join(dir, "fake agent")
 			output := `{"type":"result","session_id":"owned-droid","result":"done"}`
 			if driver == "pi" {
-				output = "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"done\"}]}}\n{\"type\":\"agent_settled\"}"
+				output = "{\"type\":\"response\",\"id\":\"prompt\",\"success\":true}\n{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"done\"}]}}\n{\"type\":\"agent_settled\"}"
 			}
 			script := "#!/bin/sh\nread request\nprintf '%s\\n' '" + output + "'\n"
 			if driver == "droid" {
@@ -2101,5 +2118,272 @@ func TestCodexCompactionNotifications(t *testing.T) {
 	notify(c, "item/completed", `{"threadId":"server","turnId":"turn","item":{"id":"pending","type":"contextCompaction"}}`)
 	if thread.Turns[0].Items[1].Status != "completed" || len(thread.Turns[1].Items) != 0 || !c.streamDirty || !c.streamFinal {
 		t.Fatal(thread.Turns)
+	}
+}
+
+func TestUnifiedTurnAcceptanceAndCompletion(t *testing.T) {
+	for _, driver := range harness.Drivers {
+		t.Run(driver.ID, func(t *testing.T) {
+			c := New(t.TempDir(), model.New(), nil)
+			defer c.Close()
+			thread := c.State.AddThread("", t.TempDir())
+			thread.Harness = driver.ID
+			thread.HandoffContext = "historical context"
+			thread.Turns = []model.Turn{{ID: "turn", Status: "inProgress"}}
+			thread.Queue = []model.QueuedMessage{{ID: "submitted", Text: "first", Sending: true}, {ID: "editing", Text: "second"}}
+			c.EditQueued(thread.ID, "editing")
+			session, err := harness.NewSession(context.Background(), harness.RunOptions{Driver: driver.ID, Client: new(codex.Client)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			run := &turnRun{session: session, queuedID: "submitted"}
+			c.turnRuns = map[string]*turnRun{thread.ID: run}
+			c.Running[thread.ID] = true
+			c.applyTurnEvent(thread, 0, harness.AgentEvent{Session: "native-session"})
+			c.applyTurnEvent(thread, 0, harness.AgentEvent{ID: "tool", Kind: "commandExecution", Text: "$ pwd"})
+			if len(thread.Queue) != 2 || thread.HandoffSent {
+				t.Fatal("session creation or tool output was mistaken for acceptance")
+			}
+			c.applyTurnEvent(thread, 0, harness.AgentEvent{End: &harness.TurnResult{Status: "completed"}})
+			if c.Running[thread.ID] || !c.AnyRunning() || c.turnRuns[thread.ID] != run || len(thread.Queue) != 2 {
+				t.Fatal("completion discarded the outstanding submission")
+			}
+			c.DeleteThread(thread.ID)
+			c.Settle(thread.ID, true)
+			if c.State.Thread(thread.ID) == nil || thread.Settled || c.Handoff("pi", "") {
+				t.Fatal("outstanding submission was treated as an idle conversation")
+			}
+			c.applyTurnEvent(thread, 0, harness.AgentEvent{Accepted: true})
+			if !thread.HandoffSent || c.AnyRunning() || len(thread.Queue) != 1 || thread.Queue[0].ID != "editing" {
+				t.Fatal("acknowledgment failed to release exactly the accepted message")
+			}
+			if len(thread.Turns) != 1 || thread.Turns[0].Items[0].Status != "completed" {
+				t.Fatal("completion did not settle the shared transcript")
+			}
+			c.applyTurnEvent(thread, 0, harness.AgentEvent{End: &harness.TurnResult{Status: "failed", Error: "duplicate"}})
+			if thread.Turns[0].Status != "completed" || c.Error != "" {
+				t.Fatal("duplicate terminal event rewrote a settled turn")
+			}
+		})
+	}
+}
+
+func TestUnifiedTurnFailureAndInterruption(t *testing.T) {
+	for _, driver := range harness.Drivers {
+		for _, status := range []string{"failed", "interrupted"} {
+			t.Run(driver.ID+"/"+status, func(t *testing.T) {
+				c := New(t.TempDir(), model.New(), nil)
+				defer c.Close()
+				thread := c.State.AddThread("", t.TempDir())
+				thread.Harness = driver.ID
+				thread.Turns = []model.Turn{{ID: "turn", Status: "inProgress", Items: []model.Item{
+					{ID: "command", Kind: "commandExecution", Status: "inProgress"},
+					{ID: "compact", Kind: "contextCompaction", Status: "inProgress"},
+				}}}
+				thread.Queue = []model.QueuedMessage{{ID: "queued", Text: "retry", Sending: true}}
+				session, err := harness.NewSession(context.Background(), harness.RunOptions{Driver: driver.ID, Client: new(codex.Client)})
+				if err != nil {
+					t.Fatal(err)
+				}
+				c.turnRuns = map[string]*turnRun{thread.ID: {session: session, queuedID: "queued"}}
+				c.Running[thread.ID] = true
+				r := &codex.Request{ThreadID: thread.ID}
+				c.Requests = []*codex.Request{r}
+				c.agentReplies = map[*codex.Request]chan any{r: make(chan any, 1)}
+				result := harness.TurnResult{Status: status}
+				if status == "failed" {
+					result.Error = "rejected before acceptance"
+				}
+				c.applyTurnEvent(thread, 0, harness.AgentEvent{Session: "created-before-rejection"})
+				c.applyTurnEvent(thread, 0, harness.AgentEvent{End: &result})
+				compact := "unknown"
+				if status == "interrupted" {
+					compact = status
+				}
+				if c.AnyRunning() || len(thread.Queue) != 1 || thread.Queue[0].Sending || thread.HandoffSent ||
+					len(c.Requests) != 0 || len(c.agentReplies) != 0 || thread.Turns[0].Items[0].Status != status ||
+					thread.Turns[0].Items[1].Status != compact || c.Error != result.Error {
+					t.Fatalf("inconsistent terminal state: %+v, error=%q", thread, c.Error)
+				}
+			})
+		}
+	}
+}
+
+func TestCodexDisconnectIsolatesOtherDrivers(t *testing.T) {
+	c := New(t.TempDir(), model.New(), nil)
+	defer c.Close()
+	threads := map[string]*model.Thread{}
+	for _, driver := range harness.Drivers {
+		thread := c.State.AddThread("", "")
+		thread.Harness, thread.ServerID = driver.ID, "same-native-id"
+		thread.Turns = []model.Turn{{ID: "turn", Status: "inProgress", Items: []model.Item{{ID: "compact", Kind: "contextCompaction", Status: "inProgress"}}}}
+		thread.Queue = []model.QueuedMessage{{ID: "queued", Text: "preserve", Sending: true}}
+		c.Running[thread.ID] = true
+		threads[driver.ID] = thread
+		if driver.ID != "codex" {
+			r := &codex.Request{ThreadID: thread.ID}
+			c.Requests = append(c.Requests, r)
+			if c.agentReplies == nil {
+				c.agentReplies = map[*codex.Request]chan any{}
+			}
+			c.agentReplies[r] = make(chan any, 1)
+		}
+	}
+	notify(c, "item/agentMessage/delta", `{"threadId":"same-native-id","turnId":"turn","itemId":"reply","delta":"Codex only"}`)
+	if len(threads["codex"].Turns[0].Items) != 2 || len(threads["pi"].Turns[0].Items) != 1 || len(threads["droid"].Turns[0].Items) != 1 {
+		t.Fatal("native session identity crossed a driver boundary")
+	}
+	notify(c, "transport/closed", `{}`)
+	if len(c.Requests) != 2 || len(c.agentReplies) != 2 {
+		t.Fatal("Codex disconnect removed external pending answers")
+	}
+	for id, thread := range threads {
+		if id == "codex" {
+			if c.Running[thread.ID] || thread.Queue[0].Sending || thread.Turns[0].Items[0].Status != "unknown" {
+				t.Fatal("disconnected Codex turn did not settle")
+			}
+		} else if !c.Running[thread.ID] || !thread.Queue[0].Sending || thread.Turns[0].Status != "inProgress" {
+			t.Fatalf("%s was changed by another driver's disconnect", id)
+		}
+	}
+}
+
+func TestSparseCodexCommandCompletion(t *testing.T) {
+	c := New(t.TempDir(), model.New(), nil)
+	defer c.Close()
+	thread := c.State.AddThread("", "")
+	thread.ServerID = "session"
+	thread.Turns = []model.Turn{{ID: "turn", Status: "inProgress"}}
+	c.Running[thread.ID] = true
+	notify(c, "item/started", `{"threadId":"session","turnId":"turn","item":{"id":"cmd","type":"commandExecution","command":"pwd"}}`)
+	notify(c, "item/commandExecution/outputDelta", `{"threadId":"session","turnId":"turn","itemId":"cmd","delta":"\n/workspace"}`)
+	notify(c, "item/completed", `{"threadId":"session","turnId":"turn","item":{"id":"cmd","type":"commandExecution"}}`)
+	notify(c, "item/started", `{"threadId":"session","turnId":"turn","item":{"id":"cmd","type":"commandExecution"}}`)
+	if item := thread.Turns[0].Items[0]; item.Text != "$ pwd\n/workspace" || item.Status != "completed" {
+		t.Fatalf("sparse or duplicate event erased completed output: %+v", item)
+	}
+}
+
+func TestCodexCompletionBeforeAcknowledgment(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX test launcher")
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	binary := filepath.Join(dir, "codex")
+	launcher := fmt.Sprintf("#!/bin/sh\nexec '%s' -test.run=^TestServiceTierRequests$ -- \"$@\"\n", strings.ReplaceAll(exe, "'", "'\\''"))
+	if err := os.WriteFile(binary, []byte(launcher), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("MUJICAGENT_SPEED_CHILD", "1")
+	t.Setenv("MUJICAGENT_SPEED_EARLY_END", "1")
+	t.Setenv("MUJICAGENT_SPEED_REQUEST", filepath.Join(dir, "request"))
+	c := New(dir, model.New(), nil)
+	defer c.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c.client, err = codex.Start(ctx, binary, func(m codex.Message) {
+		c.post(func() { c.handle(m) })
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Connection = "Connected"
+	thread := c.State.AddThread("project", dir)
+	thread.Queue = []model.QueuedMessage{{ID: "one", Text: "first"}, {ID: "two", Text: "second"}}
+	c.ResumeQueue(thread.ID)
+	deadline := time.Now().Add(5 * time.Second)
+	for (c.AnyRunning() || len(thread.Queue) != 0) && time.Now().Before(deadline) {
+		c.Drain()
+		time.Sleep(time.Millisecond)
+	}
+	if c.AnyRunning() || len(thread.Queue) != 0 || len(thread.Turns) != 2 || !thread.HandoffSent ||
+		thread.Turns[0].Status != "completed" || thread.Turns[1].Status != "completed" ||
+		thread.Turns[0].ID != "early-1" || thread.Turns[1].ID != "early-2" {
+		t.Fatalf("native early completion lost or repeated queued input: %+v, error=%s", thread, c.Error)
+	}
+}
+
+func TestOutstandingAcceptanceFailure(t *testing.T) {
+	for _, reason := range []string{"transport", "submission"} {
+		t.Run(reason, func(t *testing.T) {
+			c := New(t.TempDir(), model.New(), nil)
+			defer c.Close()
+			thread := c.State.AddThread("", "")
+			thread.Turns = []model.Turn{{ID: "turn", Status: "inProgress"}}
+			thread.Queue = []model.QueuedMessage{{ID: "one", Text: "retry", Sending: true}}
+			session, err := harness.NewSession(context.Background(), harness.RunOptions{Driver: "codex", Client: new(codex.Client)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			c.turnRuns = map[string]*turnRun{thread.ID: {session: session, queuedID: "one"}}
+			c.Running[thread.ID] = true
+			c.applyTurnEvent(thread, 0, harness.AgentEvent{End: &harness.TurnResult{Status: "completed"}})
+			want := "failed"
+			if reason == "transport" {
+				want = "interrupted"
+				notify(c, "transport/closed", `{}`)
+			} else {
+				c.applyTurnEvent(thread, 0, harness.AgentEvent{End: &harness.TurnResult{Status: "failed", Error: "submission timed out"}})
+			}
+			if c.AnyRunning() || len(thread.Queue) != 1 || thread.Queue[0].Sending || thread.HandoffSent || thread.Turns[0].Status != want {
+				t.Fatalf("missing acknowledgment permanently locked the conversation: %+v", thread)
+			}
+		})
+	}
+}
+
+func TestCodexHistoryWhileTurnStarts(t *testing.T) {
+	c := New(t.TempDir(), model.New(), nil)
+	defer c.Close()
+	thread := c.State.AddThread("", "")
+	thread.ServerID = "session"
+	thread.Turns = []model.Turn{{ID: "old", Status: "completed"}, {Status: "inProgress"}}
+	c.Running[thread.ID] = true
+	notify(c, "turn/started", `{"threadId":"session","turn":{"id":"old"}}`)
+	notify(c, "item/completed", `{"threadId":"session","turnId":"old","item":{"id":"historical","type":"agentMessage","text":"old output"}}`)
+	notify(c, "turn/completed", `{"threadId":"session","turn":{"id":"old","status":"completed"}}`)
+	notify(c, "item/completed", `{"threadId":"session","turnId":"old","item":{"id":"compact","type":"contextCompaction"}}`)
+	if !c.Running[thread.ID] || thread.Turns[1].ID != "" || len(thread.Turns[1].Items) != 0 ||
+		len(thread.Turns[0].Items) != 1 || thread.Turns[0].Items[0].Kind != "contextCompaction" {
+		t.Fatal("history notifications contaminated the starting turn")
+	}
+	notify(c, "turn/completed", `{"threadId":"session","turn":{"id":"new","status":"completed"}}`)
+	if c.Running[thread.ID] || thread.Turns[1].ID != "new" || thread.Turns[1].Status != "completed" {
+		t.Fatal("completion before turn/started was discarded")
+	}
+}
+
+func TestSteerResultBelongsToItsRun(t *testing.T) {
+	for _, driver := range harness.Drivers {
+		t.Run(driver.ID, func(t *testing.T) {
+			c := New(t.TempDir(), model.New(), nil)
+			defer c.Close()
+			thread := c.State.AddThread("", "")
+			thread.Harness = driver.ID
+			thread.Turns = []model.Turn{{Status: "interrupted"}, {Status: "inProgress"}}
+			thread.Queue = []model.QueuedMessage{{ID: "queued", Text: "retry", Sending: true}}
+			previous, current := &turnRun{index: 0}, &turnRun{index: 1}
+			c.turnRuns = map[string]*turnRun{thread.ID: current}
+			c.applySteerResult(thread, previous, 0, "queued", "old input", fmt.Errorf("stale response"))
+			if !thread.Queue[0].Sending || c.Error != "" || len(thread.Turns[0].Items) != 0 {
+				t.Fatal("a stopped run changed the next run's pending message")
+			}
+			delete(c.turnRuns, thread.ID)
+			c.applySteerResult(thread, previous, 0, "queued", "old input", nil)
+			if len(thread.Queue) != 1 || !thread.Queue[0].Sending {
+				t.Fatal("late acceptance consumed input after interruption")
+			}
+			thread.Turns[1].Status = "completed"
+			c.applySteerResult(thread, current, 1, "queued", "accepted input", nil)
+			c.applySteerResult(thread, current, 1, "queued", "duplicate", nil)
+			if len(thread.Queue) != 0 || len(thread.Turns[1].Items) != 1 || thread.Turns[1].Items[0].Text != "accepted input" {
+				t.Fatal("completed-run steering was lost or applied more than once")
+			}
+		})
 	}
 }

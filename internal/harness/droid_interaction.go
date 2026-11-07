@@ -337,6 +337,9 @@ func (a *droidRPC) update(raw json.RawMessage) error {
 				status = "interrupted"
 			}
 			a.finishCompaction(status)
+			if v.Reason == "cancelled" {
+				return fmt.Errorf("Droid: %w", ErrInterrupted)
+			}
 			return fmt.Errorf("Droid stopped: %s", v.Reason)
 		}
 		a.finishCompaction("unknown")

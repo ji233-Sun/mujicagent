@@ -29,7 +29,7 @@ jobs:
           git diff --exit-code -- locales/catalog_gen.go
           go tool mygo vet .
           CGO_ENABLED=0 go test ./... -count=1
-          go test -race ./internal/codex ./internal/controller -count=1
+          go test -race ./internal/harness ./internal/codex ./internal/controller -count=1
           go vet ./...
           go tool mygo i18n check
       - name: Build macOS

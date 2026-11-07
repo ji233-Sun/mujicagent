@@ -3,14 +3,8 @@ package harness
 import (
 	"bufio"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/ji233-Sun/mujicagent/internal/codex"
-	"io"
-	"net/http"
-	"os"
-	"strings"
 )
 
 // droidRPC consumes the official full-duplex protocol, including client requests.
@@ -112,38 +106,35 @@ func (a *droidRPC) consume(raw []byte) error {
 	}
 	return nil
 }
+func droidArgs(o RunOptions) ([]string, error) {
+	args := []string{"exec", "--input-format", "stream-jsonrpc", "--output-format", "stream-jsonrpc"}
+	if o.Model != "" {
+		args = append(args, "--model", o.Model)
+	}
+	if o.Effort != "" {
+		args = append(args, "--reasoning-effort", o.Effort)
+	}
+	switch o.Access {
+	case "", "low", "medium", "high":
+	default:
+		return nil, fmt.Errorf("unsupported Droid autonomy: %s", o.Access)
+	}
+	return args, nil
+}
+
 func runDroid(ctx context.Context, o RunOptions, args []string, emit func(AgentEvent)) error {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	cmd, err := codex.Command(ctx, o.Binary, args...)
+	process, err := startRPCProcess(ctx, o.Binary, o.Cwd, args)
 	if err != nil {
 		return err
 	}
-	cmd.Dir, cmd.Stderr = o.Cwd, io.Discard
-	in, err := cmd.StdinPipe()
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-	out, err := cmd.StdoutPipe()
-	if err != nil {
-		return err
-	}
-	prepareProcess(cmd)
-	if err = cmd.Start(); err != nil {
-		return err
-	}
-	defer func() { cancel(); _ = cmd.Wait() }()
+	defer process.close()
 	control := o.Control
 	if control == nil {
 		control = &Control{}
 	}
-	control.mu.Lock()
-	control.in = json.NewEncoder(in)
-	control.driver = "droid"
-	control.mu.Unlock()
+	control.attach(process, "droid")
 	defer control.close()
-	a := droidRPC{ctx: ctx, control: control, out: bufio.NewScanner(out), emit: emit}
+	a := droidRPC{ctx: ctx, control: control, out: process.output, emit: emit}
 	defer func() {
 		status := "unknown"
 		if ctx.Err() != nil {
@@ -151,7 +142,6 @@ func runDroid(ctx context.Context, o RunOptions, args []string, emit func(AgentE
 		}
 		a.finishCompaction(status)
 	}()
-	a.out.Buffer(make([]byte, 4096), 8<<20)
 	method := "droid.initialize_session"
 	params := map[string]any{"machineId": "mujicagent", "cwd": o.Cwd, "autoRejectPermissionRequests": false, "skipPermissionsUnsafe": false}
 	if o.Session != "" {
@@ -183,7 +173,7 @@ func runDroid(ctx context.Context, o RunOptions, args []string, emit func(AgentE
 	if err = a.call("droid.update_session_settings", settings, nil); err != nil {
 		return err
 	}
-	parts, err := droidPrompt(o)
+	parts, err := imagePrompt(o)
 	if err != nil {
 		return err
 	}
@@ -229,19 +219,4 @@ func runDroid(ctx context.Context, o RunOptions, args []string, emit func(AgentE
 		return a.readError()
 	}
 	return nil
-}
-func droidPrompt(o RunOptions) ([]any, error) {
-	parts := []any{map[string]string{"type": "text", "text": o.Prompt}}
-	for _, path := range o.Images {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return nil, err
-		}
-		mime := http.DetectContentType(data)
-		if !strings.HasPrefix(mime, "image/") {
-			return nil, fmt.Errorf("unsupported image: %s", path)
-		}
-		parts = append(parts, map[string]string{"type": "image", "mimeType": mime, "data": base64.StdEncoding.EncodeToString(data)})
-	}
-	return parts, nil
 }

@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// mergeAgentEvent is shared by all external adapters. Stable IDs preserve
+// mergeAgentEvent is shared by all drivers. Stable IDs preserve
 // parallel calls and late updates without reordering the visible transcript.
 func mergeAgentEvent(turn *model.Turn, e harness.AgentEvent) {
 	if e.ID == "" {
@@ -41,7 +41,7 @@ func mergeAgentEvent(turn *model.Turn, e harness.AgentEvent) {
 	if e.Tool == nil {
 		if e.Delta {
 			item.Text += e.Text
-		} else if e.Text != "" || item.Kind != "contextCompaction" {
+		} else if !e.PreserveText && (e.Text != "" || item.Kind != "contextCompaction") {
 			item.Text = e.Text
 			if item.Kind == "contextCompaction" {
 				item.Text = redactMCPText(item.Text)
@@ -103,7 +103,9 @@ func mergeAgentEvent(turn *model.Turn, e harness.AgentEvent) {
 	if t.Result != nil {
 		d.Result = redactMCPJSON(t.Result)
 	}
-	if e.Status == "failed" {
+	if t.Error != nil {
+		d.Error = redactMCPText(*t.Error)
+	} else if e.Status == "failed" && t.Result != nil {
 		d.Error = d.Result
 	}
 }

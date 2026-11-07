@@ -1,12 +1,10 @@
 package harness
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"regexp"
 	"strings"
 	"time"
@@ -15,37 +13,18 @@ import (
 )
 
 func runPi(ctx context.Context, o RunOptions, args []string, emit func(AgentEvent)) error {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	cmd, err := codex.Command(ctx, o.Binary, args...)
+	process, err := startRPCProcess(ctx, o.Binary, o.Cwd, args)
 	if err != nil {
 		return err
 	}
-	cmd.Dir, cmd.Stderr = o.Cwd, io.Discard
-	in, err := cmd.StdinPipe()
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-	out, err := cmd.StdoutPipe()
-	if err != nil {
-		return err
-	}
-	prepareProcess(cmd)
-	if err = cmd.Start(); err != nil {
-		return err
-	}
-	defer func() { cancel(); _ = cmd.Wait() }()
+	defer process.close()
 	control := o.Control
 	if control == nil {
 		control = &Control{}
 	}
-	control.mu.Lock()
-	control.in = json.NewEncoder(in)
-	control.driver = "pi"
-	control.mu.Unlock()
+	control.attach(process, "pi")
 	defer control.close()
-	parts, err := droidPrompt(o)
+	parts, err := imagePrompt(o)
 	if err != nil {
 		return err
 	}
@@ -56,9 +35,8 @@ func runPi(ctx context.Context, o RunOptions, args []string, emit func(AgentEven
 	if err = control.send(prompt); err != nil {
 		return err
 	}
-	scanner := bufio.NewScanner(out)
-	scanner.Buffer(make([]byte, 4096), 8<<20)
-	p := agentParser{driver: "pi"}
+	scanner := process.output
+	p := piParser{driver: "pi"}
 	for scanner.Scan() {
 		var e struct {
 			Type, ID, Command string
@@ -96,7 +74,7 @@ func runPi(ctx context.Context, o RunOptions, args []string, emit func(AgentEven
 		}
 		if e.Type == "agent_settled" {
 			if e.Aborted {
-				return fmt.Errorf("Pi aborted")
+				return fmt.Errorf("Pi: %w", ErrInterrupted)
 			}
 			return nil
 		}
