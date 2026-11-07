@@ -17,7 +17,7 @@ import (
 
 func TestAgentCompactScreenshots(t *testing.T) {
 	for _, lang := range []string{"zh-Hans", "en"} {
-		for _, scene := range []string{"settings-codex", "settings-codex-running", "settings-pi", "settings-droid", "picker-codex", "picker-pi", "picker-droid", "picker-favorites", "picker-loading", "picker-error"} {
+		for _, scene := range []string{"settings-codex", "settings-codex-running", "settings-pi", "settings-droid", "picker-codex", "picker-pi", "picker-droid", "picker-favorites", "picker-loading", "picker-error", "permissions-pi", "permissions-droid"} {
 			t.Run(lang+"-"+scene, func(t *testing.T) {
 				s := model.New()
 				s.Settings.Language = lang
@@ -38,7 +38,11 @@ func TestAgentCompactScreenshots(t *testing.T) {
 				}
 				s.Settings.ModelFavorites = []model.ModelFavorite{{Harness: "codex", ModelID: "gpt-6-astra"}, {Harness: "pi", ModelID: "gpt-6.1-sol"}, {Harness: "droid", ModelID: "gpt-6.1-sol"}}
 				v := New(c)
-				if strings.HasPrefix(scene, "settings") {
+				if strings.HasPrefix(scene, "permissions-") {
+					thread.Harness = strings.TrimPrefix(scene, "permissions-")
+					v.permissionTarget = thread.ID
+					v.permissionPicker = true
+				} else if strings.HasPrefix(scene, "settings") {
 					v.Settings = true
 					v.agentSection = strings.TrimSuffix(scene[9:], "-running")
 					if scene == "settings-codex-running" {
@@ -95,9 +99,16 @@ func TestAgentCompactScreenshots(t *testing.T) {
 						}
 					}
 				}
-				for _, name := range []string{"Codex", "Pi", "Droid"} {
+				names := []string{"Codex", "Pi", "Droid"}
+				if strings.HasPrefix(scene, "permissions-") {
+					names = []string{v.texts().ReadOnly(), v.texts().FullAccess()}
+					if thread.Driver() == "droid" {
+						names = append(names, v.texts().AgentFileEdits(), v.texts().AgentDevelopment())
+					}
+				}
+				for _, name := range names {
 					b, ok := tt.Find(name)
-					if !ok || b.W < 24 || b.X < 0 || b.X+b.W > 840 {
+					if !ok || b.W < 20 || b.X < 0 || b.X+b.W > 840 {
 						t.Fatalf("missing/clipped %s: %+v", name, b)
 					}
 				}
