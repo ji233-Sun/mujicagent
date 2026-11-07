@@ -5,30 +5,7 @@ import (
 	"encoding/json"
 	"regexp"
 	"strings"
-
-	"github.com/ji233-Sun/mujicagent/internal/model"
 )
-
-func decodeMCPCall(raw json.RawMessage) *model.MCPCall {
-	var call struct {
-		Server, Tool      string
-		Arguments, Result json.RawMessage
-		Error             *struct{ Message string }
-	}
-	if json.Unmarshal(raw, &call) != nil {
-		return nil
-	}
-	detail := &model.MCPCall{
-		Server:    redactMCPText(call.Server),
-		Tool:      redactMCPText(call.Tool),
-		Arguments: redactMCPJSON(call.Arguments),
-		Result:    redactMCPJSON(call.Result),
-	}
-	if call.Error != nil {
-		detail.Error = redactMCPText(call.Error.Message)
-	}
-	return detail
-}
 
 const mcpRedacted = "[REDACTED]"
 

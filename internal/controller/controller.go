@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,11 +17,10 @@ import (
 )
 
 type Controller struct {
-	agentControls                       map[string]*harness.Control
 	agentReplies                        map[*codex.Request]chan any
 	AppUpdates                          AppUpdateState
 	Harnesses                           map[string]*HarnessState
-	agentRuns                           map[string]context.CancelFunc
+	turnRuns                            map[string]*turnRun
 	State                               *model.State
 	Dir                                 string
 	Error, Connection, Version, Account string
@@ -97,8 +95,8 @@ func (c *Controller) Close() {
 	c.once.Do(func() {
 		close(c.stop)
 		c.CancelHarness("codex")
-		for _, cancel := range c.agentRuns {
-			cancel()
+		for _, run := range c.turnRuns {
+			run.close()
 		}
 		for _, h := range c.Harnesses {
 			if h.modelsCancel != nil {
@@ -119,6 +117,9 @@ func (c *Controller) Close() {
 	})
 }
 func (c *Controller) AnyRunning() bool {
+	if len(c.turnRuns) > 0 {
+		return true
+	}
 	for _, b := range c.Running {
 		if b {
 			return true
@@ -376,7 +377,7 @@ func (c *Controller) SetProjectExpanded(id string, expanded bool) {
 
 // DeleteThread removes only this app's record after the view confirms the action.
 func (c *Controller) DeleteThread(id string) {
-	if c.Running[id] {
+	if c.Running[id] || c.turnRuns[id] != nil {
 		return
 	}
 	for i, t := range c.State.Threads {
@@ -410,7 +411,7 @@ func (c *Controller) DeleteThread(id string) {
 
 func (c *Controller) Settle(id string, settled bool) {
 	t := c.State.Thread(id)
-	if t == nil || c.Running[id] {
+	if t == nil || c.Running[id] || c.turnRuns[id] != nil {
 		return
 	}
 	t.Settled = settled
@@ -448,16 +449,12 @@ func (c *Controller) Send(text string, plan bool) bool {
 		}
 		return false
 	}
-	if c.State.Thread(c.State.Selected).Driver() == "codex" && (c.client == nil || c.Connection != "Connected") {
-		c.ReportError("Connect Codex in Settings before sending.")
-		return false
-	}
 	t := c.State.Thread(c.State.Selected)
 	if t == nil {
 		c.ReportError("Choose a project directory.")
 		return false
 	}
-	if c.Running[t.ID] || len(t.Queue) > 0 {
+	if c.Running[t.ID] || c.turnRuns[t.ID] != nil || len(t.Queue) > 0 {
 		t.Queue = append(t.Queue, model.QueuedMessage{ID: model.ID(), Text: text})
 		t.Draft = ""
 		c.Save()
@@ -469,189 +466,6 @@ func (c *Controller) Send(text string, plan bool) bool {
 	t.Draft = ""
 	c.Save()
 	return true
-}
-
-func (c *Controller) sendThread(t *model.Thread, text string, plan bool, queuedID string) bool {
-	if t.Driver() != "codex" {
-		return c.sendAgent(t, text, queuedID)
-	}
-	if c.HarnessInstalling() || c.client == nil || c.Connection != "Connected" || c.Running[t.ID] || c.permissionUpdates[t.ID] {
-		return false
-	}
-	if err := c.prepareWorkspace(t, text); err != nil {
-		c.ReportError(err.Error())
-		return false
-	}
-	info, directoryErr := os.Stat(t.Cwd)
-	if directoryErr == nil && !info.IsDir() {
-		directoryErr = fmt.Errorf("project is not a directory: %s", t.Cwd)
-	}
-	if directoryErr != nil {
-		c.ReportError(directoryErr.Error())
-		return false
-	}
-	if len(t.Turns) == 0 && t.HandoffFrom == "" {
-		t.Title = model.MessageTitle(text)
-	}
-	t.Settled = false
-	t.Updated = time.Now()
-	t.Turns = append(t.Turns, model.Turn{Prompt: text, Status: "inProgress", Started: time.Now()})
-	c.Running[t.ID] = true
-	c.Error = ""
-	c.Save()
-	id, serverID, cwd := t.ID, t.ServerID, t.Cwd
-	loaded := c.loaded[id]
-	handoff := t.HandoffContext
-	fresh := !t.HandoffSent
-	settings := c.State.Settings
-	if t.AgentModel != "" {
-		settings.Model = t.AgentModel
-	}
-	serviceTier := c.serviceTierFor(settings.Model)
-	permissionID := t.PermissionProfile
-	if permissionID == "" {
-		permissionID = c.State.Settings.DefaultPermissionProfile
-	}
-	turnIndex := len(t.Turns) - 1
-	c.turnPermissions[id] = permissionID
-	client, epoch := c.client, c.epoch
-	go func() {
-		ctx, cancel := codex.Timeout()
-		defer cancel()
-		profiles, err := client.PermissionProfiles(ctx, cwd)
-		if err != nil {
-			c.fail(id, epoch, err)
-			return
-		}
-		var permission *codex.PermissionProfile
-		for i := range profiles {
-			if profiles[i].ID == permissionID && profiles[i].Allowed {
-				permission = &profiles[i]
-				break
-			}
-		}
-		if permission == nil {
-			c.fail(id, epoch, fmt.Errorf("Permission profile is unavailable: %s", permissionID))
-			return
-		}
-		if !loaded {
-			params := map[string]any{"cwd": cwd, "approvalPolicy": permission.ApprovalPolicy(), "permissions": permission.WireID(), "approvalsReviewer": permission.Reviewer()}
-			if settings.Model != "" {
-				params["model"] = settings.Model
-			}
-			method := "thread/start"
-			if serverID != "" {
-				method = "thread/resume"
-				params["threadId"] = serverID
-			}
-			var result struct {
-				Thread struct {
-					ID string `json:"id"`
-				} `json:"thread"`
-			}
-			if err := client.Call(ctx, method, params, &result); err != nil {
-				c.fail(id, epoch, err)
-				return
-			}
-			serverID = result.Thread.ID
-			c.post(func() {
-				if epoch == c.epoch {
-					t.ServerID = serverID
-					c.loaded[id] = true
-					c.Save()
-				}
-			})
-		}
-		prompt := text
-		if fresh {
-			prompt = handoff + text
-		}
-		input, err := messageInput(prompt, c.Dir)
-		if err != nil {
-			c.fail(id, epoch, err)
-			return
-		}
-		params := map[string]any{"threadId": serverID, "serviceTier": serviceTier, "permissions": permission.WireID(), "approvalPolicy": permission.ApprovalPolicy(), "approvalsReviewer": permission.Reviewer(), "summary": "auto", "input": input}
-		if settings.Model != "" {
-			params["model"] = settings.Model
-		}
-		if settings.Effort != "" {
-			params["effort"] = settings.Effort
-		}
-		if settings.Model != "" {
-			mode := "default"
-			if plan {
-				mode = "plan"
-			}
-			params["collaborationMode"] = map[string]any{"mode": mode, "settings": map[string]any{"model": settings.Model, "reasoning_effort": settings.Effort, "developer_instructions": nil}}
-		}
-		var result struct {
-			Turn struct {
-				ID string `json:"id"`
-			} `json:"turn"`
-		}
-		if err := client.Call(ctx, "turn/start", params, &result); err != nil {
-			c.fail(id, epoch, err)
-			return
-		}
-		c.post(func() {
-			if epoch == c.epoch {
-				turn := &t.Turns[turnIndex]
-				c.removeQueued(t, queuedID)
-				t.HandoffSent = true
-				if turn.ID == "" {
-					turn.ID = result.Turn.ID
-				}
-				c.Save()
-				if turn.Status == "completed" {
-					c.sendNext(t)
-				}
-			}
-		})
-	}()
-	return true
-}
-func (c *Controller) fail(id string, epoch int, err error) {
-	c.post(func() {
-		if epoch != c.epoch {
-			return
-		}
-		c.ReportError(err.Error())
-		c.Running[id] = false
-		if t := c.State.Thread(id); t != nil && len(t.Turns) > 0 {
-			turn := &t.Turns[len(t.Turns)-1]
-			turn.Status = "failed"
-			turn.Error = err.Error()
-			for i := range t.Queue {
-				t.Queue[i].Sending = false
-			}
-		}
-		c.Save()
-	})
-}
-func (c *Controller) Interrupt() {
-	if cancel := c.agentRuns[c.State.Selected]; cancel != nil {
-		cancel()
-		return
-	}
-	t := c.State.Thread(c.State.Selected)
-	if t == nil || !c.Running[t.ID] || c.client == nil || len(t.Turns) == 0 {
-		return
-	}
-	turnID := t.Turns[len(t.Turns)-1].ID
-	if turnID == "" {
-		c.LogNotice("The turn is starting. Try Stop again in a moment.")
-		return
-	}
-	client := c.client
-	serverID := t.ServerID
-	go func() {
-		ctx, cancel := codex.Timeout()
-		defer cancel()
-		if err := client.Call(ctx, "turn/interrupt", map[string]string{"threadId": serverID, "turnId": turnID}, nil); err != nil {
-			c.post(func() { c.ReportError(err.Error()) })
-		}
-	}()
 }
 
 func (c *Controller) AnswerQuestions(r *codex.Request, answers map[string]string) {
@@ -750,42 +564,37 @@ func (c *Controller) handle(m codex.Message) {
 	if m.Method == "transport/closed" || m.Method == "transport/error" {
 		c.Connection = "Disconnected"
 		c.client = nil
-		c.Requests = nil
 		if m.Error != nil {
 			c.ReportError(m.Error.Message)
 		}
-		for _, thread := range c.State.Threads {
-			for i := range thread.Queue {
-				thread.Queue[i].Sending = false
+		for _, t := range c.State.Threads {
+			if t.Driver() != "codex" {
+				continue
+			}
+			for i := range t.Queue {
+				t.Queue[i].Sending = false
+			}
+			if (c.Running[t.ID] || c.turnRuns[t.ID] != nil) && len(t.Turns) > 0 {
+				markPendingCompactions(&t.Turns[len(t.Turns)-1], "unknown")
+				c.finishTurn(t, len(t.Turns)-1, harness.TurnResult{Status: "interrupted", Error: "Connection lost. Reconnect to continue."})
 			}
 		}
-		for id, b := range c.Running {
-			if b && c.State.Thread(id).Driver() == "codex" {
-				t := c.State.Thread(id)
-				if t != nil && len(t.Turns) > 0 {
-					turn := &t.Turns[len(t.Turns)-1]
-					turn.Status = "interrupted"
-					turn.Error = "Connection lost. Reconnect to continue."
-					markPendingCompactions(turn, "unknown")
-				}
-				c.Running[id] = false
+		// External driver requests and queue acknowledgments are independent.
+		for i := len(c.Requests) - 1; i >= 0; i-- {
+			if c.agentReplies[c.Requests[i]] == nil {
+				c.Requests = append(c.Requests[:i], c.Requests[i+1:]...)
 			}
 		}
-		c.Save()
+		c.streamDirty, c.streamFinal = true, true
 		return
 	}
-	if len(m.ID) > 0 {
-		switch m.Method {
-		case "item/tool/requestUserInput", "item/commandExecution/requestApproval", "item/fileChange/requestApproval", "mcpServer/elicitation/request":
-			var r codex.Request
-			if err := json.Unmarshal(m.Params, &r); err != nil {
-				c.ReportError(err.Error())
-				return
-			}
-			r.ID = m.ID
-			r.Method = m.Method
-			c.Requests = append(c.Requests, &r)
-		default:
+	native, known, err := harness.DecodeCodexEvent(m)
+	if err != nil {
+		c.ReportError(err.Error())
+		return
+	}
+	if !known {
+		if len(m.ID) > 0 {
 			if c.client != nil {
 				go c.client.Reject(m.ID, "Unsupported request: "+m.Method)
 			}
@@ -793,31 +602,17 @@ func (c *Controller) handle(m codex.Message) {
 		}
 		return
 	}
-	var p struct {
-		ThreadID  string          `json:"threadId"`
-		TurnID    string          `json:"turnId"`
-		ItemID    string          `json:"itemId"`
-		Delta     string          `json:"delta"`
-		RequestID json.RawMessage `json:"requestId"`
-		Item      json.RawMessage `json:"item"`
-		Turn      struct {
-			ID, Status string
-			Error      *struct{ Message string }
-		} `json:"turn"`
-		Error     *struct{ Message string }       `json:"error"`
-		WillRetry bool                            `json:"willRetry"`
-		Plan      []struct{ Step, Status string } `json:"plan"`
-	}
-	if err := json.Unmarshal(m.Params, &p); err != nil {
+	if native.Request != nil {
+		c.Requests = append(c.Requests, native.Request)
 		return
 	}
-	if m.Method == "serverRequest/resolved" {
-		c.removeRequest(p.RequestID)
+	if len(native.ResolvedID) > 0 {
+		c.removeRequest(native.ResolvedID)
 		return
 	}
 	var t *model.Thread
 	for _, candidate := range c.State.Threads {
-		if candidate.ServerID == p.ThreadID && p.ThreadID != "" {
+		if candidate.Driver() == "codex" && candidate.ServerID == native.ThreadID && native.ThreadID != "" {
 			t = candidate
 			break
 		}
@@ -825,186 +620,30 @@ func (c *Controller) handle(m codex.Message) {
 	if t == nil || len(t.Turns) == 0 {
 		return
 	}
-	turn := &t.Turns[len(t.Turns)-1]
-	if p.TurnID != "" && turn.ID != "" && p.TurnID != turn.ID {
-		if (m.Method == "item/started" || m.Method == "item/completed") && decodeItem(p.Item).Kind == "contextCompaction" {
-			for i := range t.Turns {
-				if t.Turns[i].ID == p.TurnID {
-					turn = &t.Turns[i]
-					break
-				}
-			}
-		}
-		if turn.ID != p.TurnID {
-			return
-		}
-	}
-	switch m.Method {
-	case "turn/started":
-		turn.ID = p.Turn.ID
-	case "turn/completed":
-		if !c.Running[t.ID] || turn.ID == "" || p.Turn.ID != turn.ID {
-			return
-		}
-		turn.ID = p.Turn.ID
-		turn.Status = p.Turn.Status
-		compactStatus := "unknown"
-		if turn.Status == "interrupted" {
-			compactStatus = "interrupted"
-		}
-		markPendingCompactions(turn, compactStatus)
-		if p.Turn.Error != nil {
-			turn.Error = p.Turn.Error.Message
-		}
-		c.Running[t.ID] = false
-		for i := len(c.Requests) - 1; i >= 0; i-- {
-			if c.Requests[i].ThreadID == t.ServerID {
-				c.Requests = append(c.Requests[:i], c.Requests[i+1:]...)
-			}
-		}
-		c.Save()
-		if turn.Status == "completed" {
-			c.sendNext(t)
-		}
-	case "error":
-		if p.Error != nil {
-			turn.Error = p.Error.Message
-			if !p.WillRetry {
-				turn.Status = "failed"
-				c.Running[t.ID] = false
-				c.Save()
-			}
-		}
-	case "item/started", "item/completed":
-		item := decodeItem(p.Item)
-		if item.Kind == "contextCompaction" {
-			status := item.Status
-			if status == "" {
-				status = "inProgress"
-				if m.Method == "item/completed" {
-					status = "completed"
-				}
-			}
-			mergeAgentEvent(turn, harness.AgentEvent{ID: item.ID, Kind: item.Kind, Status: status, Text: item.Text})
-			c.streamDirty = true
-			if status != "inProgress" {
-				c.streamFinal = true
-			}
-			break
-		}
-		if item.Kind == "userMessage" || item.ID == "" {
-			return
-		}
-		if m.Method == "item/completed" && item.Status == "" {
-			item.Status = "completed"
-		}
-		found := false
-		for i := range turn.Items {
-			if turn.Items[i].ID == item.ID {
-				if item.Text == "" && item.Kind != "mcpToolCall" {
-					item.Text = turn.Items[i].Text
-				}
-				if item.MCP != nil && turn.Items[i].MCP != nil {
-					previous := turn.Items[i].MCP
-					if item.MCP.Server == "" {
-						item.MCP.Server = previous.Server
-					}
-					if item.MCP.Tool == "" {
-						item.MCP.Tool = previous.Tool
-					}
-					if item.MCP.Arguments == "" {
-						item.MCP.Arguments = previous.Arguments
-					}
-				}
-				turn.Items[i] = item
-				found = true
+	index := len(t.Turns) - 1
+	turn := &t.Turns[index]
+	e := native.Event
+	if native.TurnID != "" && native.TurnID != turn.ID {
+		historical := -1
+		for i := 0; i < index; i++ {
+			if t.Turns[i].ID == native.TurnID {
+				historical = i
 				break
 			}
 		}
-		if !found {
-			turn.Items = append(turn.Items, item)
-		}
-	case "item/agentMessage/delta", "item/reasoning/summaryTextDelta", "item/reasoning/textDelta", "item/commandExecution/outputDelta", "item/plan/delta":
-		kind := "agentMessage"
-		if strings.Contains(m.Method, "reasoning") {
-			kind = "reasoning"
-		}
-		if strings.Contains(m.Method, "commandExecution") {
-			kind = "commandExecution"
-		}
-		if strings.Contains(m.Method, "/plan/") {
-			kind = "plan"
-		}
-		idx := -1
-		for i := range turn.Items {
-			if turn.Items[i].ID == p.ItemID {
-				idx = i
-				break
+		if historical >= 0 {
+			if e.Kind != "contextCompaction" {
+				return
 			}
-		}
-		if idx < 0 {
-			turn.Items = append(turn.Items, model.Item{ID: p.ItemID, Kind: kind, Status: "inProgress"})
-			idx = len(turn.Items) - 1
-		}
-		turn.Items[idx].Text += p.Delta
-	case "turn/plan/updated":
-		text := ""
-		for _, step := range p.Plan {
-			text += fmt.Sprintf("- [%s] %s\n", step.Status, step.Step)
-		}
-		item := model.Item{ID: "plan", Kind: "plan", Text: text}
-		replaced := false
-		for i := range turn.Items {
-			if turn.Items[i].ID == "plan" {
-				turn.Items[i] = item
-				replaced = true
-			}
-		}
-		if !replaced {
-			turn.Items = append(turn.Items, item)
+			index, turn = historical, &t.Turns[historical]
+		} else if turn.ID != "" {
+			return
+		} else if e.End != nil {
+			turn.ID = native.TurnID
 		}
 	}
+	c.applyTurnEvent(t, index, e)
 }
-
-func decodeItem(raw json.RawMessage) model.Item {
-	var v struct {
-		ID, Type, Text, Status, Command, AggregatedOutput string
-		Summary, Content                                  []string
-		Changes                                           []struct{ Path, Diff string }
-		Query, Path                                       string
-	}
-	if json.Unmarshal(raw, &v) != nil {
-		return model.Item{}
-	}
-	text := v.Text
-	switch v.Type {
-	case "reasoning":
-		text = strings.Join(v.Summary, "\n\n")
-		if text == "" {
-			text = strings.Join(v.Content, "\n\n")
-		}
-	case "commandExecution":
-		text = "$ " + v.Command
-		if v.AggregatedOutput != "" {
-			text += "\n" + v.AggregatedOutput
-		}
-	case "fileChange":
-		for _, change := range v.Changes {
-			text += change.Path + "\n" + change.Diff + "\n"
-		}
-	case "webSearch":
-		text = v.Query
-	case "imageView":
-		text = v.Path
-	}
-	item := model.Item{ID: v.ID, Kind: v.Type, Text: text, Status: v.Status}
-	if v.Type == "mcpToolCall" {
-		item.MCP = decodeMCPCall(raw)
-		item.Text = ""
-	}
-	return item
-}
-
 func (c *Controller) CancelQuestions(r *codex.Request) {
 	if r.Cancellable && c.agentReplies[r] != nil {
 		c.replyRequest(r, map[string]any{"cancelled": true, "answers": map[string]any{}})

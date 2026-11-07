@@ -13,14 +13,14 @@ description: 为 MujicAgent 添加或维护 harness、模型发现与收藏、�
 
 | 范围 | 入口 |
 | --- | --- |
-| Harness 目录、CLI 协议与模型目录 | `internal/harness/codex.go`、`internal/harness/agents.go`、`internal/harness/models.go` |
-| 任务生命周期、交接、模型缓存 | `internal/controller/agents.go`、`internal/controller/controller.go`、`internal/controller/queue.go` |
+| 驱动注册、会话契约与 CLI 协议 | `internal/harness/drivers.go`、`internal/harness/session.go`、`internal/harness/agents.go`、`internal/harness/{codex_session,pi,droid}.go` |
+| 任务生命周期、交接、模型缓存 | `internal/controller/turns.go`、`internal/controller/agent_events.go`、`internal/controller/agents.go`、`internal/harness/models.go`、`internal/controller/queue.go` |
 | 独立安装状态、探测及更新 | `internal/controller/harness.go` |
 | 桌面 PATH 与 Windows 启动器 | `internal/codex/executable.go` |
 | 会话归属、模型、收藏持久化 | `internal/model/state.go` |
 | 共享选择器、官方图标、紧凑设置 | `internal/view/model_picker.go`、`internal/view/agent_picker.go`、`internal/view/agents.go` |
 
-新增 Harness 使用稳定 driver ID，串起目录、路径解析、`Thread.Driver()`、`HarnessFor(id)`、协议和 UI；检查现有白名单及分派点，不能只增加侧栏图标。`Drivers` 是展示目录，不是自动协议注册机制。安装更新与会话协议分开；状态、路径、版本、账户及 session ID 按 Harness 隔离。保留旧记录默认为 Codex 的行为，不为单个新接入重写框架。
+新增 Harness 使用稳定 driver ID，串起目录、路径解析、`Thread.Driver()`、`HarnessFor(id)`、协议和 UI；检查现有白名单及分派点，不能只增加侧栏图标。[驱动架构](../../../docs/harness-architecture.md) 中的 `Drivers` 同时登记展示与执行，注册必须提供完整协议适配；安装器、模型目录及持久化设置仍需独立接通。安装更新与会话协议分开；状态、路径、版本、账户及 session ID 按 Harness 隔离。保留旧记录默认为 Codex 的行为，不为单个新接入重写框架。
 
 先确认官方 CLI/SDK 的当前协议：模型目录、会话创建与续聊、模型/思考强度参数、停止、输入附件、工具权限、流式或最终结果。记录真实支持范围，只有 CLI 版本探测不能证明认证或推理成功。能力缺失时不假装与 Codex 等价；未实现的附件类型需明确拒绝，权限不能静默放大。
 
@@ -49,7 +49,7 @@ description: 为 MujicAgent 添加或维护 harness、模型发现与收藏、�
 - Pi 当前「只读」只启用内置 read/grep/find/ls，并关闭扩展和 MCP；「完全访问」沿用本机工具配置。没有原生沙箱时不添加假工作区权限。参考 Pi 官方 permission-gate 扩展和其他客户端实现时，先验证当前安装版本的实际能力；不要仅注入 prompt 声称权限已受限。
 - Droid 使用 `exec --input-format stream-jsonrpc --output-format stream-jsonrpc`。initialize/load 后，每轮显式 update_session_settings：interactionMode=auto、autonomyLevel=off/low/medium/high，以及所选模型与思考强度；权限请求必须经用户选择，仅回传 proceed_once/cancel，AskUser 复用共享请求界面。消息、工具、压缩、失败和完成通过 session_notification 处理；恢复历史不得追加到当前轮。
 - Pi 使用 `--mode rpc`，通过 prompt/steer 与 extension_ui_request/response 双向交互，等待 agent_settled，不能将 agent_end 当作整个任务结束。
-- 新 Harness 在 `internal/harness/agents.go` 注册运行与 Steer 适配器，使用 AgentEvent/ToolEvent/Interaction 契约；缺少 Steer 实现时不启用入口。复用 `mergeAgentEvent`、model.Item、现有请求 UI 与脱敏详情，不写只消费最终文本的旁路。必须扩展现有协议、状态和视图测试，覆盖事件边界、同名并行工具、增量与快照、审批回传、停止、持久化和历史过滤。登记能力未验证项，不以编译通过宣称完整对齐。
+- 新 Harness 在 `internal/harness/drivers.go` 注册运行与 Steer 适配器，通过 `Session` 使用 Input/AgentEvent/ToolEvent/Interaction 契约；缺少 Steer 实现时不启用入口。复用 `sendThread`、`applyTurnEvent`、`finishTurn`、`mergeAgentEvent`、model.Item、现有请求 UI 与脱敏详情，不写独立发送、结束处理或只消费最终文本的旁路。会话创建与工具输出不等于输入已接受：必须明确发送 Accepted，确认后才消费队列和交接上下文；End 与 Accepted 可以交错，完成不能重复推进队列。必须扩展现有协议、状态和视图测试，覆盖事件边界、同名并行工具、增量与快照、审批回传、停止、持久化、历史过滤及跨驱动断连隔离。登记能力未验证项，不以编译通过宣称完整对齐。
 - 交互复用 `ask` 的 Interaction/Resolved 生命周期，回答、取消和超时都清理请求；UI 请求使用独立 ID，不能用可重复的上游 ID 作为跨会话答案缓存键。普通选择/输入用 `client/form` 复用现有表单校验，MCP elicitation 保留原方法，不能把普通表单标为 MCP。Droid picker 保留原选项 ID，支持单/多选、预选、搜索、刷新、空列表和取消；AskUser 多选回传完整答案。Pi editor 保留预填、多行和请求超时；审批选项必须来自实际协议，未提供的一次允许不能补造。
 - MCP 元数据只消费有来源的字段：Pi 工具结果/进度的 `details.server/tool`、Droid 审批的 `mcp_tool` 详情；后续稀疏事件保留已识别服务和类型，不由工具名称猜服务名。Droid TodoWrite 的 `todos` 是字符串；Pi 官方 plan-mode 扩展的 `plan-todos` 组件可转换为计划文本，清除组件不抹去历史。计划展示/交接、计划执行模式和通用 MCP elicitation 分别验收，不能互相替代；Pi 只读模式关闭扩展时不会产生该组件。
 - Pi/Droid 图片通过各自 RPC 的 MIME + base64 image payload 发送，普通文件复用已有本地路径输入，标注发送原图与导出图。先实测原生能力；确实不支持时才考虑托管文件及 URI 映射，并定义模型可访问的解析规则、生命周期和错误反馈，不能只生成模型无法读取的自定义 URL。

@@ -2,7 +2,6 @@ package harness
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 )
 
@@ -13,76 +12,7 @@ type ToolEvent struct {
 	Name, Kind, Title, Server string
 	ParentID                  string
 	Arguments, Result         json.RawMessage
-}
-
-func (p *agentParser) activity(line []byte, emit func(AgentEvent)) error {
-	var v struct {
-		Type, ToolCallID, ToolName, ErrorMessage string
-		Args, PartialResult, Result              json.RawMessage
-		IsError, Aborted                         bool
-		AssistantMessageEvent                    struct {
-			Type, Delta, Content string
-			ContentIndex         int
-		}
-	}
-	if err := json.Unmarshal(line, &v); err != nil {
-		return err
-	}
-	e := AgentEvent{ID: v.ToolCallID, Status: "inProgress"}
-	switch v.Type {
-	case "message_update":
-		a := v.AssistantMessageEvent
-		e.ID, e.Kind = fmt.Sprintf("thinking-%d-%d", p.message, a.ContentIndex), "reasoning"
-		e.Text, e.Delta = a.Delta, true
-		if a.Type == "thinking_end" {
-			e.Text, e.Delta, e.Status = a.Content, false, "completed"
-		}
-	case "compaction_start", "auto_compaction_start", "compaction_end", "auto_compaction_end":
-		if !p.compacting && (!strings.HasSuffix(v.Type, "_end") || p.compactions == 0) {
-			p.compactions++
-		}
-		p.compacting = true
-		e.ID, e.Kind = fmt.Sprintf("compaction-%d", p.compactions), "contextCompaction"
-		if strings.HasSuffix(v.Type, "_end") {
-			p.compacting = false
-			var result struct{ TokensBefore *int64 }
-			if json.Unmarshal(v.Result, &result) == nil && result.TokensBefore != nil && *result.TokensBefore >= 0 {
-				e.Compaction.Before, e.Compaction.BeforeKnown = *result.TokensBefore, true
-			}
-			e.Status = "completed"
-			if v.Aborted {
-				e.Status = "interrupted"
-			}
-			if v.ErrorMessage != "" {
-				e.Status, e.Text = "failed", v.ErrorMessage
-			}
-		}
-	default:
-		if e.ID == "" {
-			return nil
-		}
-		e.Tool = &ToolEvent{Name: v.ToolName, Arguments: v.Args}
-		if v.ToolName != "" {
-			e.Tool.Kind = NativeToolKind(v.ToolName)
-		}
-		if v.Type == "tool_execution_update" {
-			e.Tool.Result = v.PartialResult
-		}
-		if v.Type == "tool_execution_end" {
-			e.Tool.Result, e.Status = v.Result, "completed"
-			if v.IsError {
-				e.Status = "failed"
-			}
-		}
-		var result struct{ Details struct{ Server, Tool string } }
-		if json.Unmarshal(e.Tool.Result, &result) == nil && result.Details.Server != "" && result.Details.Tool != "" {
-			e.Tool.Server = result.Details.Server
-			e.Tool.Name = result.Details.Tool
-			e.Tool.Kind = "mcp"
-		}
-	}
-	emit(e)
-	return nil
+	Error                     *string
 }
 
 // NativeToolKind maps native aliases, never inferring an MCP server identity.

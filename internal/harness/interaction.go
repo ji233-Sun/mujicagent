@@ -52,7 +52,7 @@ func (c *Control) send(v any) error {
 }
 
 func (c *Control) Steer(ctx context.Context, text string, images []string) error {
-	parts, imageErr := droidPrompt(RunOptions{Prompt: text, Images: images})
+	parts, imageErr := imagePrompt(RunOptions{Prompt: text, Images: images})
 	if imageErr != nil {
 		return imageErr
 	}
@@ -69,7 +69,8 @@ func (c *Control) Steer(ctx context.Context, text string, images []string) error
 		c.pending = map[string]chan error{}
 	}
 	c.pending[id] = ch
-	build := agentAdapters[c.driver].steer
+	driver, _ := Lookup(c.driver)
+	build := driver.steer
 	if build == nil {
 		delete(c.pending, id)
 		c.mu.Unlock()

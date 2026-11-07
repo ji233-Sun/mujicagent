@@ -41,12 +41,13 @@ MUJICAGENT_LIVE_TEST=1 go test ./internal/controller -run 'TestLiveCodex|TestLiv
 main.go                        应用和原生窗口入口
 internal/model/state.go        项目、会话、配置与原子文件保存
 internal/controller/           用户操作、会话生命周期、事件归并
+internal/harness/              统一驱动目录、会话契约、CLI 协议与安装管理
 internal/view/                 原生视图、输入状态、交互与确认框
 internal/codex/                stdio JSON-RPC 传输与协议类型
 locales/                       MyGo 中英文语言目录及生成的类型安全访问器
 ```
 
-后台操作通过事件队列回到 UI 线程修改状态；视图不直接操作子进程。App Server 按 `initialize → initialized → thread/start 或 thread/resume → turn/start` 工作。界面处理消息增量、工具事件、结束状态和服务端请求。协议以 [Codex App Server 文档](https://developers.openai.com/codex/app-server) 和本机 CLI 生成的 JSON Schema 校验。
+后台操作通过事件队列回到 UI 线程修改状态；视图不直接操作子进程。Codex、Pi、Droid 共用驱动注册、发送与队列确认、事件归并和结束处理，各驱动保留自己的原生协议。分层、生命周期、能力边界及新增 Harness 的验收要求见 [Harness 驱动架构](harness-architecture.md)。Codex App Server 按 `initialize → initialized → thread/start 或 thread/resume → turn/start` 工作，协议以 [官方文档](https://developers.openai.com/codex/app-server) 和本机 CLI 生成的 JSON Schema 校验。
 
 修改 `locales/zh-Hans.json`、`locales/en.json` 后运行 `go tool mygo generate`；开发和构建命令也会生成访问器。语言使用稳定标识 `zh-Hans`／`en` 保存，旧数据默认使用中文。
 

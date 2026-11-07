@@ -1,15 +1,11 @@
 package harness
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"slices"
 	"strings"
-
-	"github.com/ji233-Sun/mujicagent/internal/codex"
 )
 
 // AgentModel contains only display/selection data, never endpoints or credentials.
@@ -46,31 +42,15 @@ func DiscoverModels(ctx context.Context, driver, binary, cwd string) ([]AgentMod
 	} else if driver != "pi" {
 		return nil, fmt.Errorf("unsupported agent: %s", driver)
 	}
-	cmd, err := codex.Command(ctx, binary, args...)
+	process, err := startRPCProcess(ctx, binary, cwd, args)
 	if err != nil {
 		return nil, err
 	}
-	cmd.Dir = cwd
-	cmd.Stderr = io.Discard
-	in, err := cmd.StdinPipe()
-	if err != nil {
+	defer process.close()
+	if err = process.input.Encode(request); err != nil {
 		return nil, err
 	}
-	defer in.Close()
-	out, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, err
-	}
-	prepareProcess(cmd)
-	if err = cmd.Start(); err != nil {
-		return nil, err
-	}
-	defer func() { cancel(); _ = cmd.Wait() }()
-	if err = json.NewEncoder(in).Encode(request); err != nil {
-		return nil, err
-	}
-	scanner := bufio.NewScanner(out)
-	scanner.Buffer(make([]byte, 4096), 8<<20)
+	scanner := process.output
 	for scanner.Scan() {
 		var envelope struct {
 			ID           string

@@ -424,7 +424,7 @@ func TestAgentProtocol(t *testing.T) {
 		{"pi", `broken`, "", true},
 		{"pi", `{"type":"tool_execution_end","result":{"content":[{"type":"text","text":"file"}]}}`, "", false},
 	} {
-		p := agentParser{driver: tc.driver}
+		p := piParser{driver: tc.driver}
 		text := ""
 		err := p.line([]byte(tc.line), func(e AgentEvent) { text = e.Text })
 		if (err != nil) != tc.fail || text != tc.want {
@@ -472,7 +472,7 @@ func TestNativeToolContracts(t *testing.T) {
 				var err error
 				if driver == "pi" {
 					raw, _ := json.Marshal(map[string]any{"type": "tool_execution_start", "toolCallId": "call", "toolName": tc.pi, "args": json.RawMessage(tc.input)})
-					p := agentParser{driver: driver}
+					p := piParser{driver: driver}
 					err = p.line(raw, emit)
 				} else {
 					raw, _ := json.Marshal(map[string]any{"type": "tool_call", "toolUse": map[string]any{"id": "call", "name": tc.droid, "input": json.RawMessage(tc.input)}})
@@ -512,7 +512,7 @@ func TestCompactionLifecycle(t *testing.T) {
 		t.Run(driver, func(t *testing.T) {
 			var events []AgentEvent
 			emit := func(e AgentEvent) { events = append(events, e) }
-			p := agentParser{driver: driver}
+			p := piParser{driver: driver}
 			a := droidRPC{emit: emit}
 			for range 2 {
 				for _, end := range []bool{false, true} {
@@ -657,7 +657,7 @@ func TestDroidCompactionTerminalEvents(t *testing.T) {
 }
 
 func TestPiToolAndMessageBoundaries(t *testing.T) {
-	p := agentParser{driver: "pi"}
+	p := piParser{driver: "pi"}
 	var events []AgentEvent
 	for _, line := range []string{
 		`{"type":"message_start","message":{"role":"assistant"}}`,
@@ -688,15 +688,11 @@ func TestPiToolAndMessageBoundaries(t *testing.T) {
 
 func TestRegisteredAgentContracts(t *testing.T) {
 	for _, driver := range Drivers {
-		if driver.ID == "codex" {
-			continue
-		}
-		a := agentAdapters[driver.ID]
-		if a.run == nil || a.steer == nil {
+		if driver.run == nil || driver.args == nil || !CanSteer(driver.ID) {
 			t.Fatalf("%s lacks a complete session adapter", driver.ID)
 		}
 		args, err := agentArgs(RunOptions{Driver: driver.ID, Session: "session"})
-		if err != nil || len(args) == 0 {
+		if err != nil || !driver.Capabilities.PersistentConnection && len(args) == 0 {
 			t.Fatalf("%s cannot launch: %v", driver.ID, err)
 		}
 	}
@@ -896,7 +892,7 @@ func TestPiEditorTimeoutAndPlan(t *testing.T) {
 }
 
 func TestMCPMetadataAndOfferedPermissions(t *testing.T) {
-	p := agentParser{driver: "pi"}
+	p := piParser{driver: "pi"}
 	var event AgentEvent
 	err := p.line([]byte(`{"type":"tool_execution_end","toolCallId":"m","toolName":"opaque","result":{"details":{"server":"docs","tool":"lookup"},"content":[]}}`), func(e AgentEvent) { event = e })
 	if err != nil || event.Tool.Server != "docs" || event.Tool.Name != "lookup" || event.Tool.Kind != "mcp" {
@@ -1055,7 +1051,7 @@ func TestAgentPermissionsAndImages(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.Close()
-	parts, err := droidPrompt(RunOptions{Prompt: "color?", Images: []string{path}})
+	parts, err := imagePrompt(RunOptions{Prompt: "color?", Images: []string{path}})
 	if err != nil || len(parts) != 2 {
 		t.Fatal(parts, err)
 	}
@@ -1153,7 +1149,7 @@ func TestInstalledAgentTurns(t *testing.T) {
 
 func TestCompactionDuplicateCompletions(t *testing.T) {
 	var events []AgentEvent
-	p := agentParser{driver: "pi"}
+	p := piParser{driver: "pi"}
 	emit := func(e AgentEvent) { events = append(events, e) }
 	for _, raw := range []string{
 		`{"type":"compaction_start"}`,
@@ -1184,5 +1180,102 @@ func TestCompactionDuplicateCompletions(t *testing.T) {
 	}
 	if len(events) != 4 || events[0].ID != events[2].ID || events[3].ID == events[0].ID {
 		t.Fatal(events)
+	}
+}
+
+func TestSessionCapabilitiesAndInput(t *testing.T) {
+	seen := map[string]bool{}
+	for _, driver := range Drivers {
+		if seen[driver.ID] || driver.ID == "" {
+			t.Fatalf("invalid driver identity: %q", driver.ID)
+		}
+		seen[driver.ID] = true
+		if found, ok := Lookup(driver.ID); !ok || found.Name != driver.Name {
+			t.Fatalf("driver %s is not executable through the catalog", driver.ID)
+		}
+		for _, input := range []Input{
+			{{Type: "unimplementedAttachment", Path: "file"}},
+			{{Type: "localImage"}},
+		} {
+			if _, err := NewSession(context.Background(), RunOptions{Driver: driver.ID, Input: input}); err == nil {
+				t.Fatalf("%s silently accepted an unsupported input", driver.ID)
+			}
+		}
+		if !driver.Capabilities.PlanMode {
+			if _, err := agentArgs(RunOptions{Driver: driver.ID, Plan: true}); err == nil {
+				t.Fatalf("%s silently ignored plan mode", driver.ID)
+			}
+		}
+		if !driver.Capabilities.ServiceTier {
+			if _, err := agentArgs(RunOptions{Driver: driver.ID, ServiceTier: "priority"}); err == nil {
+				t.Fatalf("%s silently ignored service tiers", driver.ID)
+			}
+		}
+		saved := driver.SessionID(t.TempDir(), "local", "native")
+		if driver.ID == "pi" {
+			if !strings.HasSuffix(saved, filepath.Join("sessions", "pi", "local.jsonl")) {
+				t.Fatal("Pi session path is not scoped to the local conversation")
+			}
+		} else if saved != "native" {
+			t.Fatal("driver replaced a native session identity")
+		}
+	}
+	if _, ok := Lookup("unknown"); ok || CanSteer("unknown") {
+		t.Fatal("unknown driver was exposed as executable")
+	}
+	if _, err := NewSession(context.Background(), RunOptions{Driver: "codex"}); err == nil {
+		t.Fatal("disconnected native session accepted")
+	}
+	input := Input{{Type: "text", Text: "before "}, {Type: "localImage", Path: "/image.png"}, {Type: "text", Text: " after"}}
+	text, images := input.TextAndImages()
+	if text != "before  after" || len(images) != 1 || images[0] != "/image.png" {
+		t.Fatal("shared attachment input lost content")
+	}
+	wire, _ := json.Marshal(input.codex())
+	if string(wire) != `[{"text":"before ","text_elements":[],"type":"text"},{"path":"/image.png","type":"localImage"},{"text":" after","text_elements":[],"type":"text"}]` {
+		t.Fatalf("native ordered input changed: %s", wire)
+	}
+}
+
+func TestSessionSettledAcceptanceAndCancellation(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX fake RPC executable")
+	}
+	for _, tc := range []struct {
+		name, output, status string
+		cancel               bool
+	}{
+		{"accepted", "{\"type\":\"response\",\"id\":\"prompt\",\"success\":true}\n{\"type\":\"agent_settled\"}", "completed", false},
+		{"missing-ack", "{\"type\":\"agent_settled\"}", "failed", false},
+		{"native-abort", "{\"type\":\"response\",\"id\":\"prompt\",\"success\":true}\n{\"type\":\"agent_settled\",\"aborted\":true}", "interrupted", false},
+		{"local-stop", "{\"type\":\"response\",\"id\":\"prompt\",\"success\":true}", "interrupted", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			binary := filepath.Join(dir, "pi")
+			script := "#!/bin/sh\nread request\nprintf '%s\\n' '" + tc.output + "'\nexec sleep 20\n"
+			if err := os.WriteFile(binary, []byte(script), 0700); err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			session, err := NewSession(ctx, RunOptions{Driver: "pi", Binary: binary, Cwd: dir, Session: filepath.Join(dir, "session.jsonl"), Input: Input{{Type: "text", Text: "test"}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer session.Close()
+			var ends []*TurnResult
+			session.Run(func(e AgentEvent) {
+				if e.Accepted && tc.cancel {
+					session.Close()
+				}
+				if e.End != nil {
+					ends = append(ends, e.End)
+				}
+			})
+			if len(ends) != 1 || ends[0].Status != tc.status || (tc.status == "interrupted" && ends[0].Error != "") {
+				t.Fatalf("terminal contract: %+v", ends)
+			}
+		})
 	}
 }

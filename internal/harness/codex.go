@@ -1,4 +1,4 @@
-// Package harness owns executable discovery and installation independently of login and sessions.
+// Package harness owns driver registration, session protocols and CLI installation.
 package harness
 
 import (
@@ -25,10 +25,6 @@ import (
 	"github.com/egoist/mygo/netproxy"
 	"github.com/ji233-Sun/mujicagent/internal/codex"
 )
-
-type Driver struct{ ID, Name string }
-
-var Drivers = []Driver{{ID: "codex", Name: "Codex"}, {ID: "pi", Name: "Pi"}, {ID: "droid", Name: "Droid"}}
 
 type Installation struct{ Driver, Path, Version, Method, Prefix, Source, Manager, PackageRoot, BinDir, UpdateIssue string }
 type Release struct{ Version, URL, Digest, Entry string }

@@ -4,14 +4,15 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/ji233-Sun/mujicagent/internal/harness"
 	"github.com/ji233-Sun/mujicagent/internal/markup"
 	"github.com/ji233-Sun/mujicagent/internal/model"
 )
 
-func messageInput(text, dir string) ([]any, error) {
-	var input []any
+func messageInput(text, dir string) (harness.Input, error) {
+	var input harness.Input
 	addText := func(s string) {
-		input = append(input, map[string]any{"type": "text", "text": s, "text_elements": []any{}})
+		input = append(input, harness.InputPart{Type: "text", Text: s})
 	}
 	for _, part := range model.MessageParts(text) {
 		if part.Attachment == nil {
@@ -28,13 +29,13 @@ func messageInput(text, dir string) ([]any, error) {
 		}
 		addText(a.Prompt())
 		if a.Kind == "image" {
-			input = append(input, map[string]any{"type": "localImage", "path": a.Path})
+			input = append(input, harness.InputPart{Type: "localImage", Path: a.Path})
 			if len(a.Annotations) > 0 {
 				path, err := markup.Export(*a, dir)
 				if err != nil {
 					return nil, fmt.Errorf("annotated image: %w", err)
 				}
-				input = append(input, map[string]any{"type": "localImage", "path": path})
+				input = append(input, harness.InputPart{Type: "localImage", Path: path})
 			}
 		}
 	}

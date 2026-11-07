@@ -29,7 +29,7 @@ description: 本仓库任何变更任务开始时，以及提交、推送、创�
   git diff --exit-code -- "locales/catalog_gen.go"
   go tool mygo vet .
   CGO_ENABLED=0 go test ./... -count=1
-  go test -race ./internal/codex ./internal/controller -count=1
+  go test -race ./internal/harness ./internal/codex ./internal/controller -count=1
   go vet ./...
   go tool mygo i18n check
   go tool mygo build -platform "darwin/arm64,darwin/amd64"
@@ -63,7 +63,7 @@ description: 本仓库任何变更任务开始时，以及提交、推送、创�
 ## Issue 提报与关联
 
 - Issue 标签分为主要分类和 Harness 范围：主要分类仍只有 `bug` 和 `feature request`，每个 Issue 选择一个；已有行为不符合预期用 `bug`，新增能力或体验改进用 `feature request`。除下述 Harness 标签外，不另增优先级、状态或模块标签；PR 无需强行套用 Issue 标签。
-- Harness 标签统一使用 `harness:<driver-id>`，后缀与 [Harness 目录](../../../internal/harness/codex.go) 的 `Drivers` ID 一致。当前映射如下；新增 Harness 时按 [接入技能](../harness-maintenance/SKILL.md#新增-harness-的-issue-标签) 同步维护。
+- Harness 标签统一使用 `harness:<driver-id>`，后缀与 [Harness 目录](../../../internal/harness/drivers.go) 的 `Drivers` ID 一致。当前映射如下；新增 Harness 时按 [接入技能](../harness-maintenance/SKILL.md#新增-harness-的-issue-标签) 同步维护。
 
   | Harness | 标签 |
   | --- | --- |
