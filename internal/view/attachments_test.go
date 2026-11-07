@@ -197,6 +197,48 @@ func TestAttachmentComposer(t *testing.T) {
 	}
 }
 
+func TestComposerClipsOverflow(t *testing.T) {
+	for _, width := range []int{840, 1140} {
+		state := model.New()
+		c := controller.New(t.TempDir(), state, nil)
+		c.NewThread("")
+		thread := state.Thread(state.Selected)
+		thread.Draft = "短文"
+		v := New(c)
+		tt := ui.NewTester(func(ctx *ui.Context) { v.composer(ctx, thread) }, width, 300)
+		tt.Frame()
+		bounds, ok := tt.Find("消息")
+		if !ok {
+			t.Fatal("composer missing")
+		}
+		baseline := tt.Image()
+		attachment := model.Attachment{Kind: "file", Path: "/tmp/" + strings.Repeat("long-filename", 30) + ".txt"}
+		for _, draft := range []string{strings.Repeat("中文长段落 mixed text ", 100), attachment.Link()} {
+			thread.Draft = draft
+			tt.Frame()
+			for _, end := range []bool{false, true} {
+				caret := 0
+				if end {
+					caret = v.editor.Text().Len()
+				}
+				v.editor.SetSelection(caret, caret)
+				tt.Frame()
+				got := tt.Image()
+				for y := 0; y < got.Bounds().Dy(); y++ {
+					for x := 0; x < got.Bounds().Dx(); x++ {
+						if float32(x) >= bounds.X && float32(x) < bounds.X+bounds.W && float32(y) >= bounds.Y && float32(y) < bounds.Y+bounds.H {
+							continue
+						}
+						if got.RGBAAt(x, y) != baseline.RGBAAt(x, y) {
+							t.Fatalf("width %v, caret at end %v: editor painted outside bounds %+v at (%d, %d)", width, end, bounds, x, y)
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
 func TestQueuedComposerAndDrag(t *testing.T) {
 	state := model.New()
 	ctrl := controller.New(t.TempDir(), state, nil)
