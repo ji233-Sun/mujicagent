@@ -780,6 +780,32 @@ func notify(c *Controller, method, params string) {
 	c.handle(codex.Message{Method: method, Params: json.RawMessage(params)})
 }
 
+func TestImageViewEvents(t *testing.T) {
+	dir := t.TempDir()
+	c := New(dir, model.New(), nil)
+	defer c.Close()
+	thread := c.State.AddThread("", dir)
+	thread.ServerID = "server"
+	thread.Turns = []model.Turn{{ID: "turn", Status: "inProgress"}}
+	c.Running[thread.ID] = true
+	notify(c, "item/started", `{"threadId":"server","turnId":"turn","item":{"id":"image","type":"imageView","path":"/workspace/截图 sample.png"}}`)
+	if got := thread.Turns[0].Items[0]; got.Kind != "imageView" || got.Text != "/workspace/截图 sample.png" {
+		t.Fatalf("image path missing from started event: %+v", got)
+	}
+	// Preserve the start path when completion only supplies the item identity.
+	notify(c, "item/completed", `{"threadId":"server","turnId":"turn","item":{"id":"image","type":"imageView"}}`)
+	notify(c, "item/completed", `{"threadId":"server","turnId":"turn","item":{"id":"second","type":"imageView","path":"/workspace/second.png"}}`)
+	notify(c, "turn/completed", `{"threadId":"server","turn":{"id":"turn","status":"completed"}}`)
+	loaded, err := model.Load(filepath.Join(dir, "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := loaded.Thread(thread.ID).Turns[0].Items
+	if len(items) != 2 || items[0].Text != "/workspace/截图 sample.png" || items[0].Status != "completed" || items[1].Text != "/workspace/second.png" {
+		t.Fatalf("image paths lost across completion or save/load: %+v", items)
+	}
+}
+
 func TestMCPCallDetailsEvents(t *testing.T) {
 	dir := t.TempDir()
 	c := New(dir, model.New(), nil)

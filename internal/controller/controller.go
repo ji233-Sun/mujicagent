@@ -971,7 +971,7 @@ func decodeItem(raw json.RawMessage) model.Item {
 		ID, Type, Text, Status, Command, AggregatedOutput string
 		Summary, Content                                  []string
 		Changes                                           []struct{ Path, Diff string }
-		Query                                             string
+		Query, Path                                       string
 	}
 	if json.Unmarshal(raw, &v) != nil {
 		return model.Item{}
@@ -994,6 +994,8 @@ func decodeItem(raw json.RawMessage) model.Item {
 		}
 	case "webSearch":
 		text = v.Query
+	case "imageView":
+		text = v.Path
 	}
 	item := model.Item{ID: v.ID, Kind: v.Type, Text: text, Status: v.Status}
 	if v.Type == "mcpToolCall" {

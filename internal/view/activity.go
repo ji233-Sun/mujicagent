@@ -26,6 +26,8 @@ func (v *View) activityKind(kind string) (string, *ui.SVG) {
 		return tx.Reasoning(), thinkingIcon
 	case "webSearch":
 		return tx.Search(), searchIcon
+	case "imageView":
+		return tx.ImagePreview(), imageMarkIcon
 	case "plan":
 		return tx.Plan(), planIcon
 	case "toolCall":
