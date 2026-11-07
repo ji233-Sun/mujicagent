@@ -303,7 +303,7 @@ func (v *View) annotationSidebar(c *ui.Context, p *attachmentPreview, compact bo
 							s.selectNote(n.ID, p.bitmap, s.canvas.Bounds(c))
 						}
 					}).Children(func() {
-						ui.Text(c, text).FillWidth().TextAlign(ui.Start).FontSize(12).TextColor(c.Theme().TextMuted).MaxHeight(52)
+						ui.Text(c, text).FillWidth().TextAlign(ui.Start).FontSize(12).TextColor(c.Theme().TextMuted)
 					})
 				}
 			})

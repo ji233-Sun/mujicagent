@@ -255,6 +255,79 @@ func TestQueuedComposerAndDrag(t *testing.T) {
 	}
 }
 
+func TestAnnotationCommentLayout(t *testing.T) {
+	state := model.New()
+	v := New(controller.New(t.TempDir(), state, nil))
+	long := strings.Repeat("长评论应自动换行并完整显示在卡片内。", 20)
+	v.annotation = newAnnotationEditor([]model.Annotation{{ID: "first", Comment: long}, {ID: "second", Comment: "下一条评论"}})
+	p := &attachmentPreview{ready: true, bitmap: ui.NewBitmap(image.NewRGBA(image.Rect(0, 0, 10, 10)))}
+	tt := ui.NewTester(func(c *ui.Context) {
+		ui.Column(c).Fill().Children(func() { v.annotationSidebar(c, p, false) })
+	}, 304, 1000)
+	bounds := func(label string) ui.Rect {
+		t.Helper()
+		r, ok := tt.Find(label)
+		if !ok {
+			t.Fatalf("missing %q", label)
+		}
+		return r
+	}
+	check := func() ui.Rect {
+		t.Helper()
+		body := bounds(v.annotation.notes[0].Comment)
+		next := bounds("选择标注 2")
+		// Two card paddings plus the list gap must separate the body and next header.
+		if next.Y < body.Y+body.H+32 {
+			t.Fatalf("overlapping cards: body=%+v next=%+v", body, next)
+		}
+		return body
+	}
+	narrow := check()
+	if narrow.H <= 52 {
+		t.Fatalf("long comment height capped: %+v", narrow)
+	}
+	tt.SetSize(500, 1000)
+	wide := check()
+	if wide.H >= narrow.H {
+		t.Fatalf("comment did not reflow: narrow=%+v wide=%+v", narrow, wide)
+	}
+	// Exercise actual editor input, then return to the preview.
+	if err := tt.Click("选择标注 1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := tt.Click("标记说明"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Key(ui.Cmd, ui.KeyA)
+	tt.Type("短评论")
+	v.annotation.selected = ""
+	tt.Frame()
+	short := check()
+	if short.H >= wide.H {
+		t.Fatal("card did not shrink after editing")
+	}
+	if err := tt.Click("选择标注 1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := tt.Click("标记说明"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Key(ui.Cmd, ui.KeyA)
+	tt.Type(long)
+	v.annotation.selected = ""
+	tt.Frame()
+	if check().H <= short.H {
+		t.Fatal("card did not grow after editing")
+	}
+	tt.SetSize(304, 300)
+	tt.Scroll(150, 150, 0, 2000)
+	tt.Frame()
+	last := bounds("下一条评论")
+	if last.Y < 52 || last.Y+last.H > 250 {
+		t.Fatalf("last comment not reachable by scrolling: %+v", last)
+	}
+}
+
 func TestMarkupCommentWorkflow(t *testing.T) {
 	state := model.New()
 	ctrl := controller.New(t.TempDir(), state, nil)
