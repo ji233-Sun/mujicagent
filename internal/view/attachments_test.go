@@ -356,8 +356,13 @@ func TestAttachmentDeletionPreview(t *testing.T) {
 	v.editor.Edit(func(e *richtext.Edit) { e.ReplaceString(0, 0, "目前", attrs) })
 	v.syncComposer(&thread.Draft)
 	tt.Frame()
-	if thread.Draft != "目前" || !tt.HasText("目前") {
-		t.Fatal("plain text missing after attachment deletion")
+	if thread.Draft != "目前" {
+		t.Fatalf("draft after attachment deletion = %q", thread.Draft)
+	}
+	// HasText inspects element labels, not the custom-painted richtext content;
+	// a matching draft-derived conversation title can hide a broken assertion.
+	if !v.editor.Text().Equal(richtext.NewText("目前")) {
+		t.Fatalf("editor must contain unformatted text after attachment deletion: %+v", v.editor.Text().Runs(0, v.editor.Text().Len()))
 	}
 	if output := os.Getenv("MUJICAGENT_DELETION_SCREENSHOT"); output != "" {
 		f, err := os.Create(output)
