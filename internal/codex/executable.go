@@ -15,6 +15,21 @@ import (
 // environment. Finder launches do not inherit the user's terminal PATH.
 func desktopCommand(ctx context.Context, binary string, args ...string) (*exec.Cmd, error) {
 	if runtime.GOOS != "darwin" {
+		if runtime.GOOS == "windows" {
+			resolved, err := exec.LookPath(binary)
+			if err != nil {
+				return nil, err
+			}
+			if strings.EqualFold(filepath.Ext(resolved), ".cmd") || strings.EqualFold(filepath.Ext(resolved), ".bat") {
+				native, err := windowsCodexNative(resolved, runtime.GOARCH)
+				if err != nil {
+					return nil, err
+				}
+				binary = native
+			} else {
+				binary = resolved
+			}
+		}
 		cmd := exec.Command(binary, args...)
 		return cmd, cmd.Err
 	}
@@ -88,4 +103,40 @@ func loginShellPath(ctx context.Context, home string) string {
 		return ""
 	}
 	return strings.TrimSuffix(parts[1], "\n")
+}
+
+// Command shares desktop PATH resolution with installation and version probes.
+func Command(ctx context.Context, binary string, args ...string) (*exec.Cmd, error) {
+	cmd, err := desktopCommand(ctx, binary, args...)
+	if err != nil {
+		return nil, err
+	}
+	run := exec.CommandContext(ctx, cmd.Path, args...)
+	run.Env = cmd.Env
+	run.WaitDelay = time.Second
+	return run, nil
+}
+
+// Resolve the known npm layout without cmd.exe interpolation. Unknown wrappers require an explicit exe.
+func windowsCodexNative(wrapper, arch string) (string, error) {
+	if !strings.EqualFold(strings.TrimSuffix(filepath.Base(wrapper), filepath.Ext(wrapper)), "codex") {
+		return "", &exec.Error{Name: wrapper, Err: exec.ErrNotFound}
+	}
+	target := map[string]string{"amd64": "x86_64-pc-windows-msvc", "arm64": "aarch64-pc-windows-msvc"}[arch]
+	suffix := map[string]string{"amd64": "x64", "arm64": "arm64"}[arch]
+	if target == "" {
+		return "", &exec.Error{Name: wrapper, Err: exec.ErrNotFound}
+	}
+	root := filepath.Join(filepath.Dir(wrapper), "node_modules", "@openai")
+	candidates := []string{
+		filepath.Join(root, "codex", "node_modules", "@openai", "codex-win32-"+suffix, "vendor", target, "bin", "codex.exe"),
+		filepath.Join(root, "codex-win32-"+suffix, "vendor", target, "bin", "codex.exe"),
+		filepath.Join(root, "codex", "vendor", target, "bin", "codex.exe"),
+	}
+	for _, candidate := range candidates {
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			return candidate, nil
+		}
+	}
+	return "", &exec.Error{Name: wrapper, Err: exec.ErrNotFound}
 }

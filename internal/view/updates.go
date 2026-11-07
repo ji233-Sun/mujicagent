@@ -9,9 +9,9 @@ import (
 
 func (v *View) appUpdates(c *ui.Context) {
 	tx, u := v.texts(), &v.C.AppUpdates
-	ui.Column(c).Radius(14).Background(c.Theme().Surface).Padding(20).Gap(16).Children(func() {
+	ui.Column(c).Radius(14).Background(c.Theme().Surface).Padding(12).Gap(10).Children(func() {
 		ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
-			ui.Box(c).Size(42, 42).Radius(12).Background(c.Theme().Background).Center().Children(func() {
+			ui.Box(c).Size(32, 32).Radius(12).Background(c.Theme().Background).Center().Children(func() {
 				ui.Icon(c, downloadIcon).Size(22, 22).TextColor(c.Theme().Accent)
 			})
 			ui.Column(c).Grow(1).Gap(4).Children(func() {

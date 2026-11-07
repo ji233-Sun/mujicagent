@@ -45,6 +45,7 @@ func main() {
 		mygo.App.OnQuit(ctrl.Close)
 		ctrl.Connect()
 		ctrl.StartAppUpdates()
+		ctrl.StartHarnessUpdates()
 	})
 	if err := mygo.App.Run(); err != nil {
 		log.Fatal(err)

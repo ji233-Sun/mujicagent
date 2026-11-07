@@ -136,3 +136,57 @@ func BenchmarkActivityOutputFrame(b *testing.B) {
 		}
 	}
 }
+
+func TestCompactAgentSettings(t *testing.T) {
+	for _, language := range []string{"zh-Hans", "en"} {
+		t.Run(language, func(t *testing.T) {
+			v := New(controller.New(t.TempDir(), model.New(), nil))
+			v.C.State.Settings.Language = language
+			v.Settings = true
+			*v.openState("harness-codex") = true
+			tt := ui.NewTester(func(c *ui.Context) { v.settingsDialog(c) }, 840, 560)
+			tt.SetLocale(language)
+			tt.Frame()
+			panel, ok := tt.Find(v.texts().SettingsPanel())
+			if !ok {
+				t.Fatal("missing settings")
+			}
+			for _, label := range []string{v.texts().CheckForUpdates(), v.texts().Connect(), v.texts().HarnessAuto(), v.texts().CodexPath(), v.texts().CodexDefaultPermissions()} {
+				bounds, ok := tt.Find(label)
+				if !ok || bounds.X < panel.X || bounds.Y < panel.Y || bounds.X+bounds.W > panel.X+panel.W || bounds.Y+bounds.H > panel.Y+panel.H {
+					t.Fatalf("%s outside compact settings: %+v panel=%+v", label, bounds, panel)
+				}
+			}
+			if tt.HasText("安装到应用私有目录") || tt.HasText("Installs privately") {
+				t.Fatal("removed installation prose is still visible")
+			}
+		})
+	}
+	v := New(controller.New(t.TempDir(), model.New(), nil))
+	v.Settings = true
+	tt := ui.NewTester(func(c *ui.Context) { v.settingsDialog(c) }, 1000, 700)
+	tt.Frame()
+	if _, ok := tt.Find(v.texts().HarnessDetails()); !ok {
+		t.Fatal("missing agent disclosure")
+	}
+	if err := tt.Click(v.texts().HarnessDetails()); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	tt.Frame()
+	if !*v.openState("harness-codex") {
+		t.Fatal("details not expanded")
+	}
+	if err := tt.Click(v.texts().HarnessAuto()); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if !v.C.State.Settings.DisableHarnessAutoCheck {
+		t.Fatal("automatic update preference not saved")
+	}
+	for _, section := range []string{"Appearance", "Updates", "Logs", "Agents"} {
+		v.section = section
+		tt.Frame()
+		tt.Frame()
+	}
+}

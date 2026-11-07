@@ -46,6 +46,8 @@ type Thread struct {
 	PermissionProfile                   string
 }
 type Settings struct {
+	HarnessSource                                                                         string `json:",omitempty"`
+	DisableHarnessAutoCheck                                                               bool   `json:",omitempty"`
 	CodexPath, Model, Effort, ServiceTier, Appearance, Language, DefaultPermissionProfile string
 	DeveloperMode                                                                         bool
 }

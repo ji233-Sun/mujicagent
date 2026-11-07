@@ -211,5 +211,20 @@
   "annotationNoComment": "No comment yet",
   "markupColor": "Markup color",
   "markupWidth": "Stroke width",
-  "annotationLimit": "Too much annotation data. Reduce it to apply."
+  "annotationLimit": "Too much annotation data. Reduce it to apply.",
+  "harnessInstall": "Install",
+  "harnessUpdate": "Update",
+  "harnessManagedInstall": "Install managed copy",
+  "harnessSource": "Download method",
+  "harnessOfficial": "Official native package",
+  "harnessCN": "China · npm mirror",
+  "harnessNativeMirror": "China · native mirror",
+  "harnessAuto": "Check automatically (daily)",
+  "harnessDetails": "Connection & permissions",
+  "harnessWorking": "Installing and verifying…",
+  "harnessManaged": "App managed",
+  "harnessCustom": "Custom / external",
+  "harnessMissing": "Not installed",
+  "harnessUnchecked": "Not checked",
+  "harnessProviderAuth": "Configured provider (no OpenAI login required)"
 }

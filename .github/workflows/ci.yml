@@ -62,6 +62,10 @@ jobs:
           CGO_ENABLED=0 go test . ./internal/... ./locales/... -count=1
           go vet ./...
           go tool mygo i18n check
+      - name: Verify native harness packages on Windows
+        run: |
+          MUJICAGENT_INSTALL_TEST=official go test ./internal/harness -run TestDownloadNativePackage -v -count=1
+          MUJICAGENT_INSTALL_TEST=cn go test ./internal/harness -run TestDownloadNativePackage -v -count=1
       - name: Build Windows installers
         run: |
           go tool mygo build -platform "windows/amd64,windows/arm64"

@@ -19,6 +19,9 @@ type RPCError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
 }
+
+func (e *RPCError) Error() string { return fmt.Sprintf("%s (%d)", e.Message, e.Code) }
+
 type Message struct {
 	ID     json.RawMessage `json:"id,omitempty"`
 	Method string          `json:"method,omitempty"`
@@ -145,7 +148,7 @@ func (c *Client) Call(ctx context.Context, method string, params, result any) er
 	select {
 	case m := <-ch:
 		if m.Error != nil {
-			return fmt.Errorf("%s: %s (%d)", method, m.Error.Message, m.Error.Code)
+			return fmt.Errorf("%s: %w", method, m.Error)
 		}
 		if result == nil {
 			return nil
