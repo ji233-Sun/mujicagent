@@ -91,6 +91,9 @@ func (v *View) composerInput(c *ui.Context, draft *string) {
 		v.editorThread, v.editorSource = id, *draft
 		v.editorQueue = queueID
 	}
+	// Draft typing is plain text; deleting or replacing an attachment must not
+	// carry its link and tag into the next characters.
+	v.editor.SetTypingAttributes(richtext.Attributes{})
 	services := c.Services()
 	tx := v.texts()
 	input := richtext.EditorBase(c.Key("draft-"+id+"-"+queueID), v.editor, richtext.EditorOptions{

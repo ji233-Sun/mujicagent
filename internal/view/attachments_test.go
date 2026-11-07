@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/richtext"
 	"github.com/ji233-Sun/mujicagent/internal/controller"
 	"github.com/ji233-Sun/mujicagent/internal/model"
 )
@@ -276,6 +277,97 @@ func TestAttachmentComposer(t *testing.T) {
 	tt.Frame()
 	if v.editor.Text().Len() != 0 {
 		t.Fatal("attachment leaked to new conversation")
+	}
+}
+
+func TestAttachmentDeletionTyping(t *testing.T) {
+	for _, kind := range []string{"image", "file"} {
+		for _, action := range []string{"backspace", "delete", "selection", "replace"} {
+			t.Run(kind+"/"+action, func(t *testing.T) {
+				state := model.New()
+				c := controller.New(t.TempDir(), state, nil)
+				c.NewThread("")
+				thread := state.Thread(state.Selected)
+				a := model.Attachment{Kind: kind, Path: filepath.Join(t.TempDir(), "sample.png")}
+				thread.Draft = a.Link() + "后文"
+				v := New(c)
+				tt := ui.NewTester(v.Render, 1140, 780)
+				tt.Frame()
+				if err := tt.Click("消息"); err != nil {
+					t.Fatal(err)
+				}
+				switch action {
+				case "backspace":
+					v.editor.SetSelection(1, 1)
+				case "delete":
+					v.editor.SetSelection(0, 0)
+				default:
+					v.editor.SetSelection(0, 1)
+				}
+				tt.Frame()
+				if action == "delete" {
+					tt.Key(0, ui.KeyDelete)
+				} else if action != "replace" {
+					tt.Key(0, ui.KeyBackspace)
+				}
+				tt.Type("目前")
+				if thread.Draft != "目前后文" {
+					t.Fatalf("draft = %q", thread.Draft)
+				}
+				for _, run := range v.editor.Text().Runs(0, v.editor.Text().Len()) {
+					if run.Attributes != (richtext.Attributes{}) {
+						t.Fatalf("ordinary text retained attachment formatting: %+v", run.Attributes)
+					}
+				}
+				tt.Key(ui.Cmd, ui.KeyZ)
+				if action != "replace" && thread.Draft != a.Link()+"后文" {
+					tt.Key(ui.Cmd, ui.KeyZ)
+				}
+				if thread.Draft != a.Link()+"后文" || v.editor.Text().AttributesAt(0).Link != a.Link() {
+					t.Fatalf("undo did not restore attachment: %q", thread.Draft)
+				}
+			})
+		}
+	}
+}
+
+func TestAttachmentDeletionPreview(t *testing.T) {
+	state := model.New()
+	c := controller.New(t.TempDir(), state, nil)
+	c.NewThread("")
+	thread := state.Thread(state.Selected)
+	thread.Draft = (model.Attachment{Kind: "file", Path: "/tmp/example.txt"}).Link()
+	v := New(c)
+	tt := ui.NewTester(v.Render, 1140, 780)
+	tt.Frame()
+	// Set the state left by richtext deletion directly, without UI input.
+	attrs := v.editor.Text().AttributesAt(0)
+	v.editor.Edit(func(e *richtext.Edit) {
+		e.Replace(0, 1, richtext.Text{})
+		e.Select(0, 0)
+	})
+	v.editor.SetTypingAttributes(attrs)
+	v.syncComposer(&thread.Draft)
+	tt.Frame()
+	attrs = v.editor.TypingAttributes()
+	if attrs != (richtext.Attributes{}) {
+		t.Fatalf("deleted attachment still supplies typing attributes: %+v", attrs)
+	}
+	v.editor.Edit(func(e *richtext.Edit) { e.ReplaceString(0, 0, "目前", attrs) })
+	v.syncComposer(&thread.Draft)
+	tt.Frame()
+	if thread.Draft != "目前" || !tt.HasText("目前") {
+		t.Fatal("plain text missing after attachment deletion")
+	}
+	if output := os.Getenv("MUJICAGENT_DELETION_SCREENSHOT"); output != "" {
+		f, err := os.Create(output)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		if err := png.Encode(f, tt.Image()); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
