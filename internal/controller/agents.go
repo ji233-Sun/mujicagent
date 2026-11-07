@@ -196,15 +196,18 @@ func (c *Controller) sendAgent(t *model.Thread, text, queuedID string) bool {
 			c.Running[t.ID] = false
 			turn := &t.Turns[index]
 			turn.Status = "completed"
-			if err != nil {
+			if interrupted || err != nil {
 				for i := range t.Queue {
 					t.Queue[i].Sending = false
 				}
+			}
+			// A stop cancels the run context. Adapter errors caused by that
+			// cancellation are part of a normal interruption, not a failed turn.
+			if interrupted {
+				turn.Status = "interrupted"
+			} else if err != nil {
 				turn.Status = "failed"
 				turn.Error = err.Error()
-				if interrupted {
-					turn.Status = "interrupted"
-				}
 				c.ReportError(err.Error())
 			}
 			for i := range turn.Items {
@@ -217,7 +220,7 @@ func (c *Controller) sendAgent(t *model.Thread, text, queuedID string) bool {
 			}
 			c.streamDirty = true
 			c.streamFinal = true
-			if err == nil {
+			if err == nil && !interrupted {
 				c.sendNext(t)
 			}
 		})
