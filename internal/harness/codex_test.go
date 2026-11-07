@@ -267,7 +267,7 @@ func TestAgentPermissionsAndImages(t *testing.T) {
 	if err := a.call("session/set_mode", map[string]string{"modeId": "normal"}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(output.String(), `"outcome":"cancelled"`) {
+	if !a.permissionDenied || !strings.Contains(output.String(), `"outcome":"cancelled"`) {
 		t.Fatal(output.String())
 	}
 }
@@ -365,7 +365,7 @@ func TestInstalledAgentTurns(t *testing.T) {
 			}
 			o.Prompt = "Create a file named forbidden.txt containing hello in the current directory. Use a tool to do it."
 			answer = ""
-			if err := Run(ctx, o, emit); err != nil {
+			if err := Run(ctx, o, emit); err != nil && !strings.Contains(err.Error(), "blocked by the selected permissions") {
 				t.Fatal(err)
 			}
 			if _, err := os.Stat(filepath.Join(dir, "forbidden.txt")); !os.IsNotExist(err) {

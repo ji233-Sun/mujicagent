@@ -16,11 +16,12 @@ import (
 
 // droidACP owns one process and serializes requests while consuming notifications.
 type droidACP struct {
-	in      *json.Encoder
-	out     *bufio.Scanner
-	next    int
-	session string
-	emit    func(AgentEvent)
+	in               *json.Encoder
+	out              *bufio.Scanner
+	next             int
+	session          string
+	permissionDenied bool
+	emit             func(AgentEvent)
 }
 
 func (a *droidACP) call(method string, params any, result any) error {
@@ -50,6 +51,7 @@ func (a *droidACP) call(method string, params any, result any) error {
 			// Requests outside the selected auto-approval policy never gain permission.
 			response := map[string]any{"jsonrpc": "2.0", "id": e.ID}
 			if e.Method == "session/request_permission" {
+				a.permissionDenied = true
 				response["result"] = map[string]any{"outcome": map[string]string{"outcome": "cancelled"}}
 			} else {
 				response["error"] = map[string]any{"code": -32601, "message": "Unsupported client method"}
@@ -169,6 +171,9 @@ func runDroid(ctx context.Context, o RunOptions, args []string, emit func(AgentE
 	var done struct{ StopReason string }
 	if err = a.call("session/prompt", map[string]any{"sessionId": a.session, "prompt": prompt}, &done); err != nil {
 		return err
+	}
+	if a.permissionDenied {
+		return fmt.Errorf("Droid operation blocked by the selected permissions; change permissions and retry if needed")
 	}
 	if done.StopReason != "end_turn" {
 		return fmt.Errorf("Droid stopped: %s", done.StopReason)
