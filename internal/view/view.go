@@ -434,7 +434,11 @@ func (v *View) composer(c *ui.Context, t *model.Thread) {
 		}
 		busy := t != nil && v.C.Running[t.ID]
 		v.messageQueue(c, t)
-		v.projectSelector(c, t)
+		if busy {
+			v.projectPicker = false
+		} else {
+			v.projectSelector(c, t)
+		}
 		ui.Column(c).Radius(14).Border(1, c.Theme().Border).Background(c.Theme().Surface).Padding(12, 14, 8).Gap(8).Children(func() {
 			editing := t != nil && v.C.QueueEdit(t.ID) != nil
 			if editing {
