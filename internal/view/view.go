@@ -41,6 +41,8 @@ type View struct {
 	confirmFullAccess           bool
 	deleteID                    string
 	confirmDelete               bool
+	harnessDialog               bool
+	harnessSource               string
 	expanded                    map[string]*bool
 	answers                     map[string]map[string]string
 	scroll                      map[string]*ui.ScrollState
@@ -123,6 +125,7 @@ func (v *View) Render(c *ui.Context) {
 	v.drawProjectFlight(c)
 	v.errorAlert(c)
 	v.settingsDialog(c)
+	v.harnessInstallDialog(c)
 	v.attachmentDialog(c)
 	if ui.AlertDialog(c, &v.confirmFullAccess, tx.FullAccessQuestion(), tx.FullAccessWarning(), tx.Cancel(), tx.EnableFullAccess()) == 1 && v.permissionTarget == v.C.State.Selected {
 		if t := v.C.State.Thread(v.permissionTarget); t != nil && t.Driver() != "codex" {

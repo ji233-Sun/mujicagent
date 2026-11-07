@@ -5,7 +5,7 @@ description: 为 MujicAgent 添加或维护 harness、模型发现与收藏、�
 
 # 接入与维护 Harness
 
-本技能用于本仓库的 Harness 集成。交付遵循 [mujicagent-delivery](../mujicagent-delivery/SKILL.md)，UI 生命周期及 CPU 截图遵循 [mygo-maintenance](../mygo-maintenance/SKILL.md)。
+本技能用于本仓库的 Harness 集成。交付遵循 [mujicagent-delivery](../mujicagent-delivery/SKILL.md)，安装更新遵循 [harness-install-update](../harness-install-update/SKILL.md)，UI 生命周期及 CPU 截图遵循 [mygo-maintenance](../mygo-maintenance/SKILL.md)。
 
 ## 从现有实现接入
 
@@ -58,7 +58,7 @@ description: 为 MujicAgent 添加或维护 harness、模型发现与收藏、�
 ## 安装、认证与跨平台
 
 - 保留已有 CodexPath 与会话格式；新增设置使用向后兼容的默认值。Codex 自动检查默认每天，只查版本，不安装；Pi/Droid 当前由官方 CLI 管理安装与登录。手动操作显示进度、错误、取消及可重试入口；所有状态通过 Controller 队列发布，禁止在渲染中启动网络或进程。
-- 探测必须沿用连接使用的桌面 PATH 解析，并尊重显式路径。只有证据明确时才能用 npm/Homebrew 原地更新；未知安装只能明确提供“安装并切换到托管版”，不覆盖原文件。任务运行或连接中禁止更新。
+- 探测必须沿用连接使用的桌面 PATH 解析，并尊重显式路径。更新优先沿用已确认的 VP/npm/Homebrew 等原安装工具，先预览精确指令再确认执行；未知来源提示通过原工具更新，不自动切换托管。只有未安装时才在安装弹窗选择渠道，设置页不常驻渠道选择器。任务运行或连接中禁止更新。
 - Codex 官方渠道采用完整原生发行包，不能只复制 codex 可执行文件：伴随 host、rg 等也需要保留。大陆选择 npm 镜像，在私有 prefix 安装；无 npm 或 Windows 使用镜像平台包，提供免 Node 选择。不要全局安装 Node、修改 PATH/npm 配置或使用 sudo。
 - 托管安装先验证 HTTPS 下载摘要、解包路径、版本及相应协议可用性（Codex 为 app-server），再切换配置路径。使用新目录，失败只清理本次临时目录；旧目录保留供原有进程使用。不要在更新过程中清理用户自定义目录。
 - Windows 单独检查 amd64/arm64、空格/中文路径、PATHEXT、npm .cmd 与 .exe。Codex 已知 npm 布局直接解析原生 exe；Pi 已知 npm 启动器解析为 Node + 包内脚本；Droid 使用原生 exe。npm 更新经 node + npm-cli.js 参数数组执行。不要把用户路径插入 cmd.exe/PowerShell 命令字符串；未知 wrapper 要求显式 exe。更新前释放客户端句柄，新安装使用独立版本目录，避免覆盖运行中的文件。

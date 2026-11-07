@@ -16,7 +16,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -30,7 +29,7 @@ type Driver struct{ ID, Name string }
 
 var Drivers = []Driver{{ID: "codex", Name: "Codex"}, {ID: "pi", Name: "Pi"}, {ID: "droid", Name: "Droid"}}
 
-type Installation struct{ Path, Version, Method, Prefix string }
+type Installation struct{ Path, Version, Method, Prefix, Source string }
 type Release struct{ Version, URL, Digest, Entry string }
 
 var versionPattern = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
@@ -69,7 +68,31 @@ func Inspect(ctx context.Context, binary, managed string) (Installation, error) 
 		managed = canonical
 	}
 	method, prefix := classify(real, managed)
-	return Installation{Path: cmd.Path, Version: fields[1], Method: method, Prefix: prefix}, nil
+	// VP dispatches package binaries through symlinks to vp itself. Keep the
+	// launcher path: executing its canonical target would run vp, not Codex.
+	if method == "custom" {
+		vp := filepath.Join(filepath.Dir(cmd.Path), "vp"+filepath.Ext(real))
+		if filepath.Base(real) == "vp" || filepath.Base(real) == "vp.exe" {
+			if target, e := filepath.EvalSymlinks(vp); e == nil && target == real {
+				method, prefix = "vp", vp
+			}
+		}
+	}
+	current := Installation{Path: cmd.Path, Version: fields[1], Method: method, Prefix: prefix}
+	if method == "managed" {
+		rel, _ := filepath.Rel(managed, real)
+		stage := filepath.Join(managed, strings.Split(rel, string(filepath.Separator))[0])
+		if data, e := os.ReadFile(filepath.Join(stage, "source.json")); e == nil {
+			if e = json.Unmarshal(data, &current.Source); e != nil || !validSource(current.Source) {
+				return Installation{}, fmt.Errorf("invalid managed installation source")
+			}
+		} else if !os.IsNotExist(e) {
+			return Installation{}, e
+		} else if strings.Contains(filepath.ToSlash(real), "/node_modules/") {
+			current.Source = "cn"
+		}
+	}
+	return current, nil
 }
 
 func classify(path, managed string) (string, string) {
@@ -78,8 +101,8 @@ func classify(path, managed string) (string, string) {
 		return "managed", ""
 	}
 	slash := filepath.ToSlash(path)
-	if strings.Contains(slash, "/Caskroom/codex/") {
-		return "brew", ""
+	if i := strings.Index(slash, "/Caskroom/codex/"); i >= 0 {
+		return "brew", filepath.FromSlash(slash[:i])
 	}
 	// Only an identified npm package gets a package-manager update; never guess from PATH.
 	const suffix = "/lib/node_modules/@openai/codex/bin/codex.js"
@@ -214,70 +237,11 @@ func Newer(latest, current string) bool {
 
 // Install stages a complete distribution beside the active one. Windows never replaces a running exe.
 func Install(ctx context.Context, root, source string, release Release, current Installation) (string, error) {
-	if current.Method == "npm" {
-		npm := filepath.Join(current.Prefix, "bin", "npm")
-		args := []string{"install", "--global", "--prefix", current.Prefix, "@openai/codex@" + release.Version, "--registry", registry(source), "--ignore-scripts", "--no-audit", "--no-fund"}
-		if runtime.GOOS == "windows" {
-			wrapper, err := exec.LookPath("npm.cmd")
-			if err != nil {
-				return "", err
-			}
-			cli := filepath.Join(filepath.Dir(wrapper), "node_modules", "npm", "bin", "npm-cli.js")
-			if _, err := os.Stat(cli); err != nil {
-				return "", fmt.Errorf("npm runtime unavailable: %w", err)
-			}
-			npm = "node"
-			args = append([]string{cli}, args...)
-		}
-		cmd, err := codex.Command(ctx, npm, args...)
-		if err != nil {
-			return "", err
-		}
-		if err = runInstaller(cmd); err != nil {
-			return "", fmt.Errorf("npm update failed: %w", err)
-		}
-		return verify(ctx, current.Path, release.Version)
-	}
-	if current.Method == "brew" {
-		cmd, err := codex.Command(ctx, "brew", "upgrade", "--cask", "codex")
-		if err != nil {
-			return "", err
-		}
-		if err = runInstaller(cmd); err != nil {
-			return "", fmt.Errorf("Homebrew update failed: %w", err)
-		}
-		return verify(ctx, current.Path, release.Version)
-	}
-	if err := os.MkdirAll(root, 0700); err != nil {
-		return "", err
-	}
-	stage, err := os.MkdirTemp(root, "release-"+release.Version+"-")
+	plan, err := PrepareInstall(ctx, root, source, release, current)
 	if err != nil {
 		return "", err
 	}
-	success := false
-	defer func() {
-		if !success {
-			os.RemoveAll(stage)
-		}
-	}()
-	// A private npm prefix does not require administrator rights or alter the global npm config.
-	if source == "cn" && runtime.GOOS != "windows" {
-		if cmd, lookupErr := codex.Command(ctx, "npm", "install", "--prefix", stage, "@openai/codex@"+release.Version, "--registry", registry(source), "--ignore-scripts", "--no-audit", "--no-fund"); lookupErr == nil {
-			if err := runInstaller(cmd); err != nil {
-				return "", fmt.Errorf("npm install failed (choose the native mirror option to bypass npm): %w", err)
-			}
-			path, err := verify(ctx, filepath.Join(stage, "node_modules", ".bin", "codex"), release.Version)
-			success = err == nil
-			return path, err
-		}
-	}
-	if err := downloadExtract(ctx, release, stage); err != nil {
-		return "", err
-	}
-	path, err := verify(ctx, filepath.Join(stage, filepath.FromSlash(release.Entry)), release.Version)
-	success = err == nil
-	return path, err
+	return plan.Execute(ctx)
 }
 
 func verify(ctx context.Context, path, version string) (string, error) {

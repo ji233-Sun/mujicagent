@@ -15,6 +15,158 @@ import (
 	"time"
 )
 
+func TestHarnessInstallScreenshots(t *testing.T) {
+	scenes := []string{
+		"vp-current", "vp-update", "vp-confirm", "npm-confirm", "brew-confirm",
+		"managed-official-confirm", "managed-npm-confirm", "managed-mirror-confirm",
+		"unknown", "missing", "install-official", "install-npm", "install-mirror", "install-npm-fallback",
+		"preparing", "preview-error", "installing", "install-error", "cancelled", "running",
+	}
+	for _, lang := range []string{"zh-Hans", "en"} {
+		for _, scene := range scenes {
+			t.Run(lang+"/"+scene, func(t *testing.T) {
+				s := model.New()
+				s.Settings.Language = lang
+				s.Settings.HarnessSource = "cn-native" // Legacy global selection must not drive updates.
+				thread := s.AddThread("", "")
+				c := controller.New(t.TempDir(), s, nil)
+				c.Connection = "Connected"
+				u := c.HarnessFor("codex")
+				u.Binary = s.Settings.CodexPath
+				u.CheckedAt = time.Now()
+				u.Installation = harness.Installation{Path: "/Users/demo/.vite-plus/bin/codex", Version: "0.167.0", Method: "vp", Prefix: "/Users/demo/.vite-plus/bin/vp"}
+				u.Release = harness.Release{Version: "0.168.0", URL: "https://github.com/openai/codex/releases/download/rust-v0.168.0/codex-package-aarch64-apple-darwin.tar.gz", Digest: "sha256:" + strings.Repeat("a1", 32), Entry: "bin/codex"}
+				v := New(c)
+				v.Settings = true
+				*v.openState("harness-codex") = true
+				fresh := strings.HasPrefix(scene, "install-") && scene != "install-error"
+				if fresh || scene == "missing" {
+					u.Installation = harness.Installation{}
+					u.Missing = true
+					c.Connection = "Disconnected"
+				}
+				switch scene {
+				case "vp-current":
+					u.Release.Version = u.Installation.Version
+				case "npm-confirm":
+					u.Installation.Method = "npm"
+					u.Installation.Path = "/usr/local/bin/codex"
+					u.Installation.Prefix = "/usr/local"
+				case "brew-confirm":
+					u.Installation.Method = "brew"
+					u.Installation.Path = "/opt/homebrew/bin/codex"
+					u.Installation.Prefix = "/opt/homebrew"
+				case "unknown":
+					u.Installation.Method = "custom"
+					u.Installation.Path = "/opt/custom/codex"
+				case "running":
+					c.Running[thread.ID] = true
+				case "installing":
+					u.Installing = true
+					c.Connection = "Disconnected"
+				case "install-error":
+					u.Error = "installation failed: exit status 1"
+					c.Connection = "Disconnected"
+				}
+				stage := "/Users/demo/Library/Application Support/MujicAgent/tools/codex/release-0.168.0-preview"
+				if strings.HasPrefix(scene, "managed-") {
+					u.Installation.Method = "managed"
+					u.Installation.Path = strings.Replace(stage, "0.168.0-preview", "0.167.0-old", 1) + "/bin/codex"
+				}
+				if strings.HasSuffix(scene, "-confirm") || fresh || scene == "preparing" || scene == "preview-error" {
+					v.harnessDialog = true
+					p := &harness.InstallPlan{Current: u.Installation, Release: u.Release, Path: u.Installation.Path}
+					u.Plan = p
+					switch u.Installation.Method {
+					case "vp":
+						p.Command, p.Args = u.Installation.Prefix, []string{"update", "--global", "@openai/codex@0.168.0"}
+					case "npm":
+						p.Command = "/usr/local/bin/npm"
+						p.Args = []string{"install", "--global", "--prefix", "/usr/local", "@openai/codex@0.168.0", "--ignore-scripts", "--no-audit", "--no-fund"}
+					case "brew":
+						p.Command, p.Args = "/opt/homebrew/bin/brew", []string{"upgrade", "--cask", "codex"}
+					default:
+						p.Stage, p.Path = stage, stage+"/bin/codex"
+						if strings.Contains(scene, "mirror") || strings.Contains(scene, "npm") {
+							p.Source = "native-mirror"
+							p.Release.URL = "https://registry.npmmirror.com/@openai/codex/-/codex-0.168.0-darwin-arm64.tgz"
+							p.Release.Digest = "sha512-" + strings.Repeat("aB12", 22)
+							p.Path = stage + "/package/vendor/aarch64-apple-darwin/bin/codex"
+							v.harnessSource = "native-mirror"
+						}
+						if strings.Contains(scene, "npm") {
+							v.harnessSource = "cn"
+							if scene != "install-npm-fallback" {
+								p.Source = "cn"
+								p.Command = "/usr/local/bin/npm"
+								p.Args = []string{"install", "--prefix", stage, "@openai/codex@0.168.0", "--registry", "https://registry.npmmirror.com", "--ignore-scripts", "--no-audit", "--no-fund"}
+								p.Path = stage + "/node_modules/.bin/codex"
+							}
+						}
+					}
+					if scene == "preparing" {
+						u.Plan, u.Preparing = nil, true
+					} else if scene == "preview-error" {
+						u.Plan = nil
+						u.Error = "download HTTP 503"
+					}
+				}
+				tt := ui.NewTester(v.Render, 1060, 720)
+				tt.Frame()
+				tt.Advance(time.Second)
+				tt.Frame()
+				tx := v.texts()
+				if tt.HasText(tx.HarnessSource()) || tt.HasText(tx.HarnessManagedInstall()) {
+					t.Fatal("legacy channel or managed migration control remains")
+				}
+				for _, label := range []string{tx.HarnessOfficial(), tx.HarnessCN(), tx.HarnessNativeMirror()} {
+					if tt.HasText(label) != fresh {
+						t.Fatalf("install choice visibility: %s, fresh=%v", label, fresh)
+					}
+				}
+				if v.harnessDialog {
+					label := tx.HarnessConfirmUpdate()
+					if fresh {
+						label = tx.HarnessConfirmInstall()
+					}
+					b, ok := tt.Find(label)
+					if !ok || b.X < 0 || b.Y < 0 || b.X+b.W > 1060 || b.Y+b.H > 720 {
+						t.Fatalf("confirmation clipped: %+v", b)
+					}
+					if u.Plan != nil {
+						expected := u.Plan.CommandPreview()
+						if expected == "" {
+							expected = tx.HarnessNativeAction()
+						}
+						if !tt.HasText(expected) || !tt.HasText(u.Plan.Path) {
+							t.Fatal("preview omitted command/action or path")
+						}
+					}
+				}
+				if scene == "unknown" && !tt.HasText(tx.HarnessUnknownManager()) {
+					t.Fatal("unknown manager missing guidance")
+				}
+				if scene == "missing" && !tt.HasText(tx.HarnessInstall()) {
+					t.Fatal("missing install entry")
+				}
+				if output := os.Getenv("MUJICAGENT_INSTALL_SCREENSHOTS"); output != "" {
+					if err := os.MkdirAll(output, 0700); err != nil {
+						t.Fatal(err)
+					}
+					f, err := os.Create(filepath.Join(output, lang+"-"+scene+".png"))
+					if err != nil {
+						t.Fatal(err)
+					}
+					defer f.Close()
+					if err := png.Encode(f, tt.Image()); err != nil {
+						t.Fatal(err)
+					}
+				}
+			})
+		}
+	}
+}
+
 func TestAgentCompactScreenshots(t *testing.T) {
 	for _, lang := range []string{"zh-Hans", "en"} {
 		for _, scene := range []string{"settings-codex", "settings-codex-running", "settings-pi", "settings-droid", "picker-codex", "picker-pi", "picker-droid", "picker-favorites", "picker-loading", "picker-error", "permissions-pi", "permissions-droid"} {

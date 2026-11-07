@@ -41,7 +41,7 @@ func (v *View) agentsPane(c *ui.Context) {
 							version = tx.HarnessMissing()
 						}
 					}
-					method := map[string]string{"managed": tx.HarnessManaged(), "custom": tx.HarnessCustom(), "npm": "npm", "brew": "Homebrew"}[u.Installation.Method]
+					method := map[string]string{"managed": tx.HarnessManaged(), "custom": tx.HarnessCustom(), "npm": "npm", "brew": "Homebrew", "vp": "VP"}[u.Installation.Method]
 					if method != "" {
 						version += " · " + method
 					}
@@ -51,31 +51,35 @@ func (v *View) agentsPane(c *ui.Context) {
 				if u.Checking {
 					label = tx.CheckingForUpdates()
 				}
-				ui.Button(c, label).Height(28).FontSize(12).Radius(6).Padding(0, 10).Disabled(u.Checking || u.Installing).OnClick(v.C.CheckHarness)
+				ui.Button(c, label).Height(28).FontSize(12).Radius(6).Padding(0, 10).Disabled(u.Checking || u.Installing || u.Preparing).OnClick(v.C.CheckHarness)
 				label = tx.Connect()
 				if v.C.Connection == "Connected" {
 					label = tx.Reconnect()
 				}
-				ui.PrimaryButton(c, label).Height(28).FontSize(12).Radius(6).Padding(0, 12).Disabled(v.C.AnyRunning() || u.Installing || v.C.Connection == "Connecting").OnClick(v.C.Connect)
+				ui.PrimaryButton(c, label).Height(28).FontSize(12).Radius(6).Padding(0, 12).Disabled(v.C.AnyRunning() || u.Installing || u.Preparing || v.C.Connection == "Connecting").OnClick(v.C.Connect)
 			})
-			if u.Release.Version != "" || u.Installing || u.Error != "" {
+			if u.Release.Version != "" || u.Missing || u.Installing || u.Error != "" {
 				ui.Column(c).Padding(0, 14, 10).Gap(6).Children(func() {
-					if u.Release.Version != "" {
+					if u.Release.Version != "" || u.Missing {
 						ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-							available := u.Installation.Version == "" || harness.Newer(u.Release.Version, u.Installation.Version)
+							available := u.Missing || harness.Newer(u.Release.Version, u.Installation.Version)
 							label := tx.UpToDate()
-							if available {
+							if u.Missing {
+								label = tx.HarnessMissing()
+							} else if available {
 								label = tx.NewVersion(u.Release.Version)
 							}
 							ui.Text(c, label).FontSize(12).TextColor(c.Theme().TextMuted).Grow(1)
 							if available {
 								label = tx.HarnessUpdate()
-								if u.Installation.Path == "" {
+								if u.Missing {
 									label = tx.HarnessInstall()
-								} else if u.Installation.Method == "custom" {
-									label = tx.HarnessManagedInstall()
 								}
-								ui.Button(c, label).Height(28).FontSize(12).Radius(6).Disabled(u.Checking || u.Installing || v.C.AnyRunning() || v.C.Connection == "Connecting" || u.Binary != v.C.State.Settings.CodexPath || u.Source != v.C.State.Settings.HarnessSource).OnClick(v.C.InstallHarness)
+								if u.Installation.Method == "custom" {
+									ui.Text(c, tx.HarnessUnknownManager()).FontSize(12).TextColor(c.Theme().TextMuted)
+								} else {
+									ui.Button(c, label).Height(28).FontSize(12).Radius(6).Disabled(u.Checking || u.Installing || u.Preparing || v.C.AnyRunning() || v.C.Connection == "Connecting" || u.Binary != v.C.State.Settings.CodexPath).OnClick(v.openHarnessInstall)
+								}
 							}
 						})
 					}
@@ -86,17 +90,13 @@ func (v *View) agentsPane(c *ui.Context) {
 						})
 						ui.Progress(c, -1).Height(3)
 					}
-					if u.Error != "" {
+					if u.Error != "" && !v.harnessDialog {
 						ui.Text(c, u.Error).FontSize(12).TextColor(c.Theme().Danger).Selectable()
 					}
 				})
 			}
 			ui.Divider(c)
 			ui.Row(c).Padding(10, 14).Gap(10).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, tx.HarnessSource()).FontSize(12).TextColor(c.Theme().TextMuted)
-				ui.Box(c).Disabled(u.Checking || u.Installing).Children(func() {
-					settingsSelect(c.Key("harness-source"), &v.C.State.Settings.HarnessSource, tx.HarnessSource(), []settingOption{{"", tx.HarnessOfficial()}, {"cn", tx.HarnessCN()}, {"cn-native", tx.HarnessNativeMirror()}}, func() { v.C.Save(); v.C.CheckHarness() })
-				})
 				ui.Box(c).Grow(1)
 				auto := !v.C.State.Settings.DisableHarnessAutoCheck
 				ui.Checkbox(c, &auto, tx.HarnessAuto()).FontSize(12).OnClick(func() { v.C.State.Settings.DisableHarnessAutoCheck = !auto; v.C.Save() })
@@ -112,7 +112,7 @@ func (v *View) agentsPane(c *ui.Context) {
 					ui.Column(c).Padding(0, 0, 12).Gap(8).Children(func() {
 						ui.Row(c).AlignItems(ui.Center).Gap(12).Children(func() {
 							ui.Text(c, tx.CodexPath()).Width(112).Shrink(0).FontSize(12).TextColor(c.Theme().TextMuted)
-							ui.TextInput(c, &v.C.State.Settings.CodexPath).Height(28).Radius(6).FontSize(12).Grow(1).MinWidth(0).Label(tx.CodexPath()).Disabled(v.C.AnyRunning() || u.Installing || u.Checking || v.C.Connection == "Connecting").OnChange(v.C.Save)
+							ui.TextInput(c, &v.C.State.Settings.CodexPath).Height(28).Radius(6).FontSize(12).Grow(1).MinWidth(0).Label(tx.CodexPath()).Disabled(v.C.AnyRunning() || u.Installing || u.Checking || u.Preparing || v.C.Connection == "Connecting").OnChange(v.C.Save)
 						})
 						if u.Installation.Path != "" && u.Installation.Path != v.C.State.Settings.CodexPath {
 							ui.Text(c, u.Installation.Path).Padding(0, 0, 0, 124).FontSize(11).TextColor(c.Theme().TextMuted).SingleLine().Tooltip(u.Installation.Path)

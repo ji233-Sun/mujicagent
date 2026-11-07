@@ -22,3 +22,4 @@
 ## Harness 扩展
 
 - 修改智能体设置、harness 安装更新、认证或新增 agent 时，读取并遵循 [harness-maintenance](.agents/skills/harness-maintenance/SKILL.md)，特别注意 Windows 原生程序与 npm 启动器、安装来源和非账号认证的区别。
+- 修改或新增任何 Harness 的安装、更新、来源识别和确认 UI 时，必须读取并遵循 [harness-install-update](.agents/skills/harness-install-update/SKILL.md)：沿用本机安装工具，预览指令后确认执行；仅未安装时在安装弹窗三选一，PR 附完整场景截图。
