@@ -27,6 +27,11 @@ type View struct {
 	settledList                ui.ListState
 	settling                   map[string]time.Time
 	projectLists               map[string]*ui.ListState
+	projectPicker              bool
+	projectSearch              string
+	projectList                ui.ListState
+	sidebarHandles             map[string]*ui.Handle
+	projectFlight              *projectFlight
 	modelPicker                bool
 	modelSearch                string
 	modelList                  ui.ListState
@@ -114,6 +119,7 @@ func (v *View) Render(c *ui.Context) {
 			v.conversation(c)
 		})
 	})
+	v.drawProjectFlight(c)
 	v.errorAlert(c)
 	v.settingsDialog(c)
 	v.attachmentDialog(c)
@@ -149,7 +155,7 @@ func (v *View) sidebar(c *ui.Context) {
 }
 func (v *View) group(c *ui.Context, p model.Project) {
 	ui.Column(c.Key("group-" + p.ID)).Shrink(0).Gap(2).Children(func() {
-		header := ui.Row(c.Key("header")).Height(32).Shrink(0).AlignItems(ui.Center).Radius(7).Transition(hoverTransition)
+		header := ui.Row(c.Key("header")).Bind(v.sidebarHandle("project-" + p.ID)).Height(32).Shrink(0).AlignItems(ui.Center).Radius(7).Transition(hoverTransition)
 		hovered := header.Hovered()
 		if hovered {
 			header.Background(c.Theme().SurfaceHover)
@@ -221,6 +227,9 @@ func (v *View) threadRow(c *ui.Context, t *model.Thread, activeList bool) {
 	title := v.threadTitle(t)
 	row := ui.Row(c.Key(t.ID)).Height(34).Shrink(0).Radius(9).Padding(0, 4).Gap(3).AlignItems(ui.Center)
 	row.Transition(hoverTransition)
+	if activeList {
+		row.Bind(v.sidebarHandle("thread-" + t.ID))
+	}
 	if activeList {
 		progress := v.settleProgress(c, t.ID)
 		row.Height(threadHeight*progress).Opacity(progress).Translate(-16*(1-progress), 0).Clip().Disabled(t.Settled)
@@ -425,6 +434,7 @@ func (v *View) composer(c *ui.Context, t *model.Thread) {
 		}
 		busy := t != nil && v.C.Running[t.ID]
 		v.messageQueue(c, t)
+		v.projectSelector(c, t)
 		ui.Column(c).Radius(14).Border(1, c.Theme().Border).Background(c.Theme().Surface).Padding(12, 14, 8).Gap(8).Children(func() {
 			editing := t != nil && v.C.QueueEdit(t.ID) != nil
 			if editing {
@@ -457,20 +467,6 @@ func (v *View) composer(c *ui.Context, t *model.Thread) {
 					})
 				}
 			})
-		})
-		ui.Row(c).Padding(0, 3).AlignItems(ui.Center).Children(func() {
-			label := tx.NoProject()
-			if t != nil && t.ProjectID != "" {
-				for _, p := range v.C.State.Projects {
-					if p.ID == t.ProjectID {
-						label = p.Name
-					}
-				}
-			}
-			ui.Icon(c, folder).Size(14, 14).TextColor(c.Theme().TextMuted)
-			ui.Text(c, label).FontSize(11).TextColor(c.Theme().TextMuted).Margin(0, 0, 0, 5)
-			ui.Box(c).Grow(1)
-			ui.Text(c, tx.NewlineHint()).FontSize(10).TextColor(c.Theme().TextMuted)
 		})
 	})
 }

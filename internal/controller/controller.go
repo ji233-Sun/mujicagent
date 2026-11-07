@@ -245,6 +245,45 @@ func (c *Controller) NewThread(projectID string) {
 	}
 	c.Save()
 }
+
+// SwitchProject transfers the unsent prompt without changing a server thread's workspace.
+func (c *Controller) SwitchProject(projectID string) bool {
+	t := c.State.Thread(c.State.Selected)
+	if t != nil && (t.ProjectID == projectID || c.QueueEdit(t.ID) != nil) {
+		return false
+	}
+	cwd := ""
+	if projectID != "" {
+		for _, p := range c.State.Projects {
+			if p.ID == projectID {
+				cwd = p.Path
+				break
+			}
+		}
+		if cwd == "" {
+			return false
+		}
+	}
+	draft := ""
+	if t != nil {
+		draft = t.Draft
+	}
+	if t == nil || t.ServerID != "" || len(t.Turns) != 0 || len(t.Queue) != 0 || c.Running[t.ID] || t.Settled {
+		if t != nil {
+			t.Draft = ""
+		}
+		t = c.State.AddThread(projectID, cwd)
+	} else {
+		t.ProjectID, t.Cwd = projectID, cwd
+		// Permissions are scoped to the target workspace.
+		t.PermissionProfile = c.State.Settings.DefaultPermissionProfile
+	}
+	t.Draft = draft
+	t.Updated = time.Now()
+	c.Save()
+	return true
+}
+
 func (c *Controller) Select(id string) { c.State.Selected = id; c.Save() }
 
 func (c *Controller) SetProjectExpanded(id string, expanded bool) {

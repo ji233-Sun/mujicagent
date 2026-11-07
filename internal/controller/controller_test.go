@@ -1227,3 +1227,49 @@ func TestNewThreadReusesOnlyEmptyConversationInProject(t *testing.T) {
 		t.Fatal("sent conversation reused as empty")
 	}
 }
+
+func TestSwitchProjectPreservesPromptAndHistory(t *testing.T) {
+	for _, history := range []bool{false, true} {
+		t.Run(fmt.Sprint(history), func(t *testing.T) {
+			c := New(t.TempDir(), model.New(), nil)
+			c.State.Projects = []model.Project{{ID: "target", Name: "Target", Path: t.TempDir()}}
+			old := c.State.AddThread("", "")
+			old.Draft = "prompt\n<mujica://file/?path=%2Ftmp%2Fsample.txt>"
+			prompt := old.Draft
+			if history {
+				old.ServerID = "server"
+				old.Turns = []model.Turn{{Prompt: "sent"}}
+			}
+			other := c.State.AddThread("target", c.State.Projects[0].Path)
+			other.Draft = "existing target draft"
+			c.State.Selected = old.ID
+			if !c.SwitchProject("target") {
+				t.Fatal("switch failed")
+			}
+			next := c.State.Thread(c.State.Selected)
+			if next.Draft != prompt || next.ProjectID != "target" || next.Cwd != c.State.Projects[0].Path {
+				t.Fatalf("wrong destination: %+v", next)
+			}
+			if other.Draft != "existing target draft" || c.State.Projects[0].Expanded {
+				t.Fatal("changed existing draft or expansion")
+			}
+			if history {
+				if old == next || old.ProjectID != "" || old.ServerID != "server" || len(old.Turns) != 1 || old.Draft != "" {
+					t.Fatal("history changed")
+				}
+			} else if old != next {
+				t.Fatal("unsent conversation duplicated")
+			}
+			if c.SwitchProject("missing") || c.SwitchProject("target") {
+				t.Fatal("invalid/no-op switch accepted")
+			}
+			if !c.SwitchProject("") || c.State.Thread(c.State.Selected).Cwd != "" {
+				t.Fatal("no-project workspace not reset")
+			}
+			saved, err := model.Load(filepath.Join(c.Dir, "state.json"))
+			if err != nil || saved.Thread(saved.Selected).Draft != prompt {
+				t.Fatal("draft not persisted", err)
+			}
+		})
+	}
+}
