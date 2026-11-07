@@ -33,7 +33,10 @@ func run(args []string) error {
 	if err := json.Unmarshal(config, &current); err != nil {
 		return err
 	}
-	if len(args) == 2 && args[0] == "next" {
+	if (len(args) == 2 || len(args) == 3) && args[0] == "next" {
+		if len(args) == 3 {
+			current.Version = args[2]
+		}
 		next, err := nextVersion(current.Version, args[1])
 		if err != nil {
 			return err
@@ -42,7 +45,7 @@ func run(args []string) error {
 		return nil
 	}
 	if len(args) != 3 || args[0] != "prepare" {
-		return fmt.Errorf("usage: release next patch|minor|major, release prepare VERSION NOTES_FILE, or release sign-update MANIFEST ARCHIVE")
+		return fmt.Errorf("usage: release next patch|minor|major [BASE_VERSION], release prepare VERSION NOTES_FILE, or release sign-update MANIFEST ARCHIVE")
 	}
 	notes, err := os.ReadFile(args[2])
 	if err != nil {

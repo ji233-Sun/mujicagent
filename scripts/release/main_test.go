@@ -306,6 +306,12 @@ func TestPublishResume(t *testing.T) {
 	git(seed, "commit", "-m", "initial")
 	git(seed, "push", "origin", "main")
 	sha := git(seed, "rev-parse", "HEAD")
+	// A merge during notarization must not invalidate the immutable build.
+	writeTestFile(t, filepath.Join(seed, "new-feature"), "merged during release")
+	git(seed, "add", "new-feature")
+	git(seed, "commit", "-m", "new feature")
+	git(seed, "push", "origin", "main")
+	mainSHA := git(seed, "rev-parse", "HEAD")
 	store := filepath.Join(root, "store")
 	for _, name := range []string{"release-build", "release-final-arm64", "release-final-amd64", "release-final-windows"} {
 		dir := filepath.Join(store, name)
@@ -329,6 +335,9 @@ set -eu
 case "$1" in
 api)
   if [[ "$*" == *"/artifacts?"* ]]; then echo false
+  elif [[ "$*" == *'| .tag_name'* ]]; then
+    [[ "${API_FAIL:-0}" == 0 ]] || exit 42
+    if [[ -f "$STORE/draft" && "$(cat "$STORE/draft")" == false ]]; then echo v1.2.3; fi
   elif [[ -f "$STORE/draft" ]]; then cat "$STORE/draft"; fi;;
 run)
   while (( $# )); do
@@ -366,8 +375,8 @@ esac
 		t.Fatal("expected interrupted upload")
 	}
 	releaseSHA := git(root, "--git-dir="+origin, "rev-parse", "main")
-	if releaseSHA == sha {
-		t.Fatal("release commit not created")
+	if releaseSHA != mainSHA || git(root, "--git-dir="+origin, "rev-parse", "v1.2.3^{commit}") != sha {
+		t.Fatal("publish changed main or tagged the wrong source")
 	}
 	if err := run(); err != nil {
 		t.Fatal(err)
@@ -385,6 +394,39 @@ esac
 	after, _ := os.ReadFile(filepath.Join(store, "actions"))
 	if string(before) != string(after) {
 		t.Fatal("mutated published release")
+	}
+	for _, tc := range []struct {
+		name, source, dryRun, apiFail, want string
+	}{
+		{"same source", sha, "false", "0", "release=false\n"},
+		{"new commits", mainSHA, "false", "0", "release=true\n"},
+		{"dry run", sha, "true", "0", "release=true\n"},
+		{"API failure", sha, "false", "1", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			work := filepath.Join(t.TempDir(), "checkout")
+			git(root, "clone", origin, work)
+			git(work, "checkout", tc.source)
+			output := filepath.Join(work, "output")
+			cmd := exec.Command("bash", "scripts/release/macos.sh", "check")
+			cmd.Dir = work
+			cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"),
+				"STORE="+store, "GITHUB_SHA="+tc.source, "GITHUB_OUTPUT="+output,
+				"GITHUB_REPOSITORY=owner/repo", "DRY_RUN="+tc.dryRun, "API_FAIL="+tc.apiFail)
+			out, err := cmd.CombinedOutput()
+			if (err != nil) != (tc.apiFail == "1") {
+				t.Fatalf("check: %v: %s", err, out)
+			}
+			got, _ := os.ReadFile(output)
+			if string(got) != tc.want {
+				t.Fatalf("output=%q, want %q", got, tc.want)
+			}
+		})
+	}
+	git(seed, "tag", "-a", "v1.2.4", "-m", "newer release")
+	git(seed, "push", "origin", "refs/tags/v1.2.4")
+	if err := run(); err == nil {
+		t.Fatal("accepted stale checkpoint after a newer tag")
 	}
 }
 
