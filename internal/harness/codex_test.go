@@ -14,10 +14,207 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestLocalManagerPreviewAndExecution(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX process fixtures; native Windows routing is checked separately")
+	}
+	for _, method := range []string{"vp", "npm", "brew"} {
+		t.Run(method, func(t *testing.T) {
+			root := filepath.Join(t.TempDir(), "工具 with spaces")
+			bin := filepath.Join(root, "bin")
+			if err := os.MkdirAll(bin, 0700); err != nil {
+				t.Fatal(err)
+			}
+			log := filepath.Join(root, "args")
+			version := filepath.Join(root, "version")
+			t.Setenv("HARNESS_TEST_ARGS", log)
+			t.Setenv("HARNESS_TEST_VERSION", version)
+			if err := os.WriteFile(version, []byte("0.167.0"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			program := "#!/bin/sh\nif [ \"${0##*/}\" = codex ]; then\n if [ \"$1\" = --version ]; then printf 'codex-cli '; cat \"$HARNESS_TEST_VERSION\"; printf '\\n'; fi\n exit 0\nfi\nprintf '%s\\n' \"$@\" > \"$HARNESS_TEST_ARGS\"\nprintf '0.168.0' > \"$HARNESS_TEST_VERSION\"\n"
+			manager := method
+			managerPath := filepath.Join(bin, manager)
+			if err := os.WriteFile(managerPath, []byte(program), 0700); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(bin, "codex")
+			if err := os.Symlink(managerPath, path); err != nil {
+				t.Fatal(err)
+			}
+			current := Installation{Path: path, Version: "0.167.0", Method: method, Prefix: root}
+			if method == "vp" {
+				current.Prefix = managerPath
+				inspected, err := Inspect(context.Background(), path, filepath.Join(root, "managed"))
+				if err != nil || inspected != current {
+					t.Fatalf("VP launcher: %+v %v", inspected, err)
+				}
+			}
+			plan, err := PrepareInstall(context.Background(), filepath.Join(root, "managed"), "", Release{Version: "0.168.0"}, current)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(log); !os.IsNotExist(err) {
+				t.Fatal("preview ran updater")
+			}
+			if plan.Stage != "" || plan.Path != path || !strings.Contains(plan.CommandPreview(), "'"+managerPath+"'") {
+				t.Fatalf("wrong preview: %+v", plan)
+			}
+			want := []string{"update", "--global", "@openai/codex@0.168.0"}
+			if method == "npm" {
+				want = []string{"install", "--global", "--prefix", root, "@openai/codex@0.168.0", "--ignore-scripts", "--no-audit", "--no-fund"}
+			} else if method == "brew" {
+				want = []string{"upgrade", "--cask", "codex"}
+			}
+			if !slices.Equal(plan.Args, want) {
+				t.Fatal(plan.Args)
+			}
+			result, err := plan.Execute(context.Background())
+			if err != nil || result != path {
+				t.Fatal(result, err)
+			}
+			args, err := os.ReadFile(log)
+			if err != nil || string(args) != strings.Join(want, "\n")+"\n" {
+				t.Fatalf("executed another command: %q %v", args, err)
+			}
+		})
+	}
+}
+
+func TestInstallSourcePolicy(t *testing.T) {
+	root := t.TempDir()
+	release := Release{Version: "0.168.0", URL: "https://example.test/codex.tar.gz", Digest: "sha256:" + strings.Repeat("0", 64), Entry: "bin/codex"}
+	for _, source := range []string{"", "native-mirror"} {
+		current := Installation{Path: filepath.Join(root, "old", "bin", "codex"), Method: "managed", Source: source}
+		p, err := PrepareInstall(context.Background(), root, "cn", release, current)
+		if err != nil || p.Source != source || p.Command != "" || p.Stage == "" {
+			t.Fatalf("changed managed source: %+v %v", p, err)
+		}
+		if _, err := os.Stat(p.Stage); !os.IsNotExist(err) {
+			t.Fatal("preview created installation")
+		}
+		// A failed download must leave the old path and remove only its new stage.
+		p.Release.Digest = "missing"
+		if _, err := p.Execute(context.Background()); err == nil {
+			t.Fatal("accepted missing checksum")
+		}
+		if _, err := os.Stat(p.Stage); !os.IsNotExist(err) {
+			t.Fatal("failed stage retained")
+		}
+	}
+	if _, err := PrepareInstall(context.Background(), root, "", release, Installation{Path: "/custom/codex", Method: "custom"}); err == nil {
+		t.Fatal("unknown install silently migrated")
+	}
+	if _, err := PrepareInstall(context.Background(), root, "bad", release, Installation{}); err == nil {
+		t.Fatal("accepted unknown source")
+	}
+}
+
+func TestManagedSourceInspection(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX executable fixture")
+	}
+	root := t.TempDir()
+	stage := filepath.Join(root, "release-old")
+	bin := filepath.Join(stage, "bin")
+	if err := os.MkdirAll(bin, 0700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(bin, "codex")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nprintf 'codex-cli 0.167.0\\n'\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, source := range []string{"", "cn", "native-mirror"} {
+		data, _ := json.Marshal(source)
+		if err := os.WriteFile(filepath.Join(stage, "source.json"), data, 0600); err != nil {
+			t.Fatal(err)
+		}
+		current, err := Inspect(context.Background(), path, root)
+		if err != nil || current.Method != "managed" || current.Source != source {
+			t.Fatal(current, err)
+		}
+	}
+}
+
+func TestManagedNpmExecutionPreservesSource(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX npm fixture")
+	}
+	root := t.TempDir()
+	manager := filepath.Join(root, "npm")
+	stage := filepath.Join(root, "managed", "release-next")
+	script := "#!/bin/sh\nmkdir -p \"$2/node_modules/.bin\"\nprintf '#!/bin/sh\\nif [ \"$1\" = --version ]; then echo codex-cli 0.168.0; fi\\n' > \"$2/node_modules/.bin/codex\"\nchmod 700 \"$2/node_modules/.bin/codex\"\n"
+	if err := os.WriteFile(manager, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	p := &InstallPlan{Release: Release{Version: "0.168.0"}, Source: "cn", Stage: stage,
+		Path: filepath.Join(stage, "node_modules", ".bin", "codex"), Command: manager, Args: []string{"--prefix", stage}}
+	path, err := p.Execute(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := Inspect(context.Background(), path, filepath.Dir(stage))
+	if err != nil || current.Method != "managed" || current.Source != "cn" {
+		t.Fatal(current, err)
+	}
+	if _, err := p.Execute(context.Background()); err == nil {
+		t.Fatal("reused an existing stage")
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatal("removed the existing installation", err)
+	}
+}
+
+func TestWindowsNpmRuntimeOutsideGlobalPrefix(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "工具 Program Files")
+	prefix := filepath.Join(t.TempDir(), "AppData", "npm")
+	cli := filepath.Join(root, "node_modules", "npm", "bin", "npm-cli.js")
+	if err := os.MkdirAll(filepath.Dir(cli), 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{cli, filepath.Join(root, "npm.cmd"), filepath.Join(root, "node.exe")} {
+		if err := os.WriteFile(path, nil, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", root)
+	node, script, err := windowsNpmRuntime(prefix)
+	if err != nil || node != filepath.Join(root, "node.exe") || script != cli {
+		t.Fatal(node, script, err)
+	}
+	if err := os.Remove(cli); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := windowsNpmRuntime(prefix); err == nil {
+		t.Fatal("accepted missing npm runtime")
+	}
+}
+
+func TestInstalledCodexManager(t *testing.T) {
+	if os.Getenv("MUJICAGENT_CODEX_INSPECT_TEST") != "1" {
+		t.Skip("explicit read-only local inspection")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	current, err := Inspect(ctx, "codex", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.Method != "vp" {
+		t.Fatalf("expected local VP installation: %+v", current)
+	}
+	plan, err := PrepareInstall(ctx, t.TempDir(), "", Release{Version: current.Version}, current)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Log(plan.CommandPreview())
+}
 
 func TestReleaseAndInstallationRouting(t *testing.T) {
 	for _, platform := range []string{"darwin", "linux", "windows"} {

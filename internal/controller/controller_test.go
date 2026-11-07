@@ -1281,6 +1281,15 @@ func TestHarnessInstallGuardAndFailure(t *testing.T) {
 	c := New(t.TempDir(), model.New(), nil)
 	original := c.State.Settings.CodexPath
 	*c.HarnessFor("codex") = HarnessState{Binary: original, Release: harness.Release{Version: "1.2.3"}}
+	c.InstallHarness()
+	if c.HarnessFor("codex").Installing {
+		t.Fatal("installed without confirmation preview")
+	}
+	c.HarnessFor("codex").Plan = &harness.InstallPlan{Release: harness.Release{Version: "1.2.3"}}
+	c.CheckHarness()
+	if c.HarnessFor("codex").Checking || c.HarnessFor("codex").Plan == nil {
+		t.Fatal("background check replaced a pending confirmation")
+	}
 	c.Running["busy"] = true
 	c.InstallHarness()
 	if c.HarnessFor("codex").Installing {
@@ -1299,7 +1308,12 @@ func TestHarnessInstallGuardAndFailure(t *testing.T) {
 		t.Fatal("installed while connecting")
 	}
 	c.Connection = "Disconnected"
-	c.InstallHarness() // Missing checksum fails before any download.
+	// Reinspection fails before execution because the installation is different
+	// from the approved empty snapshot (or the explicit path is invalid).
+	c.State.Settings.CodexPath = filepath.Join(t.TempDir(), "missing-codex")
+	c.HarnessFor("codex").Binary = c.State.Settings.CodexPath
+	original = c.State.Settings.CodexPath
+	c.InstallHarness()
 	deadline := time.Now().Add(3 * time.Second)
 	for c.HarnessFor("codex").Installing && time.Now().Before(deadline) {
 		c.Drain()
@@ -1312,8 +1326,44 @@ func TestHarnessInstallGuardAndFailure(t *testing.T) {
 		t.Fatal("failed install changed active path")
 	}
 	entries, err := os.ReadDir(filepath.Join(c.Dir, "tools", "codex"))
-	if err != nil || len(entries) != 0 {
+	if (err != nil && !os.IsNotExist(err)) || len(entries) != 0 {
 		t.Fatalf("staging not cleaned: %v %v", entries, err)
+	}
+	if c.HarnessFor("codex").Plan != nil {
+		t.Fatal("confirmation was reusable")
+	}
+	c.HarnessFor("codex").Plan = &harness.InstallPlan{}
+	c.DismissHarnessPlan()
+	c.InstallHarness()
+	if c.HarnessFor("codex").Installing {
+		t.Fatal("dismissed preview could install")
+	}
+}
+
+func TestHarnessPreviewCancellationAndStaleResult(t *testing.T) {
+	c := New(t.TempDir(), model.New(), nil)
+	c.Connection = "Connected"
+	u := c.HarnessFor("codex")
+	c.State.Settings.CodexPath = filepath.Join(t.TempDir(), "missing-old")
+	c.PrepareHarness("")
+	old := u.planRequest
+	c.DismissHarnessPlan()
+	if u.Preparing || u.Plan != nil || old == u.planRequest || c.Connection != "Connected" {
+		t.Fatal("preview dismissal changed the connection or retained confirmation")
+	}
+	c.State.Settings.CodexPath = filepath.Join(t.TempDir(), "missing-new")
+	c.PrepareHarness("cn")
+	deadline := time.Now().Add(5 * time.Second)
+	for u.Preparing && time.Now().Before(deadline) {
+		c.Drain()
+		time.Sleep(time.Millisecond)
+	}
+	c.Drain()
+	if u.Preparing || u.Plan != nil || u.Error == "" || !strings.Contains(u.Error, "missing-new") || c.Connection != "Connected" {
+		t.Fatalf("stale preview won or probing disconnected: %+v", u)
+	}
+	if entries, err := os.ReadDir(c.Dir); err != nil || len(entries) != 0 {
+		t.Fatalf("preview wrote application data: %v %v", entries, err)
 	}
 }
 

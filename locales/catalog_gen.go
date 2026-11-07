@@ -2188,6 +2188,142 @@ func (msgs Messages) HarnessUpdate() string {
 	return Catalog.Format(msgs.locale, "harnessUpdate", nil)
 }
 
+// HarnessUpdatePreview says "更新 Codex"
+// in the language the app shows.
+func HarnessUpdatePreview() string { return In(i18n.Locale()).HarnessUpdatePreview() }
+
+// HarnessUpdatePreview says "更新 Codex"
+// in the language of msgs.
+func (msgs Messages) HarnessUpdatePreview() string {
+	return Catalog.Format(msgs.locale, "harnessUpdatePreview", nil)
+}
+
+// HarnessInstallPreview says "安装 Codex"
+// in the language the app shows.
+func HarnessInstallPreview() string { return In(i18n.Locale()).HarnessInstallPreview() }
+
+// HarnessInstallPreview says "安装 Codex"
+// in the language of msgs.
+func (msgs Messages) HarnessInstallPreview() string {
+	return Catalog.Format(msgs.locale, "harnessInstallPreview", nil)
+}
+
+// HarnessConfirmUpdate says "确认更新"
+// in the language the app shows.
+func HarnessConfirmUpdate() string { return In(i18n.Locale()).HarnessConfirmUpdate() }
+
+// HarnessConfirmUpdate says "确认更新"
+// in the language of msgs.
+func (msgs Messages) HarnessConfirmUpdate() string {
+	return Catalog.Format(msgs.locale, "harnessConfirmUpdate", nil)
+}
+
+// HarnessConfirmInstall says "确认安装"
+// in the language the app shows.
+func HarnessConfirmInstall() string { return In(i18n.Locale()).HarnessConfirmInstall() }
+
+// HarnessConfirmInstall says "确认安装"
+// in the language of msgs.
+func (msgs Messages) HarnessConfirmInstall() string {
+	return Catalog.Format(msgs.locale, "harnessConfirmInstall", nil)
+}
+
+// HarnessUnknownManager says "无法识别安装来源，暂不支持自动更新。请使用原安装工具更新。"
+// in the language the app shows.
+func HarnessUnknownManager() string { return In(i18n.Locale()).HarnessUnknownManager() }
+
+// HarnessUnknownManager says "无法识别安装来源，暂不支持自动更新。请使用原安装工具更新。"
+// in the language of msgs.
+func (msgs Messages) HarnessUnknownManager() string {
+	return Catalog.Format(msgs.locale, "harnessUnknownManager", nil)
+}
+
+// HarnessUnsupportedManager says "暂不支持通过 {name} 自动更新，请使用原工具更新。"
+// in the language the app shows.
+func HarnessUnsupportedManager(name string) string {
+	return In(i18n.Locale()).HarnessUnsupportedManager(name)
+}
+
+// HarnessUnsupportedManager says "暂不支持通过 {name} 自动更新，请使用原工具更新。"
+// in the language of msgs.
+func (msgs Messages) HarnessUnsupportedManager(name string) string {
+	return Catalog.Format(msgs.locale, "harnessUnsupportedManager", map[string]any{"name": name})
+}
+
+// HarnessManagerUnavailable says "未找到 {name}，请恢复原安装工具后重新检查。"
+// in the language the app shows.
+func HarnessManagerUnavailable(name string) string {
+	return In(i18n.Locale()).HarnessManagerUnavailable(name)
+}
+
+// HarnessManagerUnavailable says "未找到 {name}，请恢复原安装工具后重新检查。"
+// in the language of msgs.
+func (msgs Messages) HarnessManagerUnavailable(name string) string {
+	return Catalog.Format(msgs.locale, "harnessManagerUnavailable", map[string]any{"name": name})
+}
+
+// HarnessManagerUnverified says "无法确认 {name} 管理的是当前安装，请使用原工具更新。"
+// in the language the app shows.
+func HarnessManagerUnverified(name string) string {
+	return In(i18n.Locale()).HarnessManagerUnverified(name)
+}
+
+// HarnessManagerUnverified says "无法确认 {name} 管理的是当前安装，请使用原工具更新。"
+// in the language of msgs.
+func (msgs Messages) HarnessManagerUnverified(name string) string {
+	return Catalog.Format(msgs.locale, "harnessManagerUnverified", map[string]any{"name": name})
+}
+
+// HarnessManagerAmbiguous says "安装来源存在冲突，暂不支持自动更新。请使用原安装工具更新。"
+// in the language the app shows.
+func HarnessManagerAmbiguous() string { return In(i18n.Locale()).HarnessManagerAmbiguous() }
+
+// HarnessManagerAmbiguous says "安装来源存在冲突，暂不支持自动更新。请使用原安装工具更新。"
+// in the language of msgs.
+func (msgs Messages) HarnessManagerAmbiguous() string {
+	return Catalog.Format(msgs.locale, "harnessManagerAmbiguous", nil)
+}
+
+// HarnessPreparing says "正在准备预览…"
+// in the language the app shows.
+func HarnessPreparing() string { return In(i18n.Locale()).HarnessPreparing() }
+
+// HarnessPreparing says "正在准备预览…"
+// in the language of msgs.
+func (msgs Messages) HarnessPreparing() string {
+	return Catalog.Format(msgs.locale, "harnessPreparing", nil)
+}
+
+// HarnessCommandPreview says "执行指令"
+// in the language the app shows.
+func HarnessCommandPreview() string { return In(i18n.Locale()).HarnessCommandPreview() }
+
+// HarnessCommandPreview says "执行指令"
+// in the language of msgs.
+func (msgs Messages) HarnessCommandPreview() string {
+	return Catalog.Format(msgs.locale, "harnessCommandPreview", nil)
+}
+
+// HarnessNativeAction says "应用内下载、校验并解包"
+// in the language the app shows.
+func HarnessNativeAction() string { return In(i18n.Locale()).HarnessNativeAction() }
+
+// HarnessNativeAction says "应用内下载、校验并解包"
+// in the language of msgs.
+func (msgs Messages) HarnessNativeAction() string {
+	return Catalog.Format(msgs.locale, "harnessNativeAction", nil)
+}
+
+// HarnessDestination says "安装路径"
+// in the language the app shows.
+func HarnessDestination() string { return In(i18n.Locale()).HarnessDestination() }
+
+// HarnessDestination says "安装路径"
+// in the language of msgs.
+func (msgs Messages) HarnessDestination() string {
+	return Catalog.Format(msgs.locale, "harnessDestination", nil)
+}
+
 // HarnessManagedInstall says "安装并切换到托管版"
 // in the language the app shows.
 func HarnessManagedInstall() string { return In(i18n.Locale()).HarnessManagedInstall() }

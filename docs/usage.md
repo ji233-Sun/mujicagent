@@ -12,9 +12,9 @@ Windows x64 选择 `mujicagent-setup-<版本>-amd64.exe`，Windows ARM64 选择 
 
 ## 连接 Codex
 
-打开 **设置 → 智能体**，检查版本后即可一键安装 Codex。已有安装会显示版本与来源；npm/Homebrew 安装沿用包管理器更新，未知来源可明确选择安装并切换到托管版，原安装保留。自动检查默认每天一次，可关闭；只有手动点击才安装或更新。
+打开 **设置 → 智能体**，已有安装显示版本与来源。VP/npm/Bun/pnpm/Homebrew 安装沿用原工具更新，托管安装沿用原渠道；点击“更新”先预览指令和安装路径，再点击“确认更新”执行。应用核对包管理器的全局目录及实际安装归属；未适配的工具、未知来源、工具不可用或来源冲突会明确提示，不自动迁移安装。自动检查默认每天一次，可关闭，只查版本、不安装。
 
-下载方式可选官方原生包、大陆 npm 镜像或大陆免 Node 镜像包。新安装写入应用私有目录；大陆 npm 方式在没有 npm 时自动下载原生平台包。Windows 新安装直接使用原生包，不要求 Node/npm，不执行 curl 或 shell 安装脚本。下载先校验摘要、完整解包并验证版本，再切换路径；安装可取消，失败保留旧配置。Windows 更新前关闭 App Server，托管版本写入新目录，避免覆盖占用中的 exe。有对话运行时不能更新。
+未安装时点击“安装”，在弹窗中选择官方原生包、大陆 npm 镜像或大陆免 Node 镜像包，预览后确认安装；设置页不常驻下载方式。新安装写入应用私有目录；无 npm 或 Windows 下的镜像原生包方式会在确认前显示下载动作、地址、摘要和安装路径，不执行 curl 或 shell 安装脚本。下载先校验摘要、完整解包并验证版本，再切换路径；安装可取消，失败保留旧配置。Windows 更新前关闭 App Server，托管版本写入新目录，避免覆盖占用中的 exe。有对话运行时不能更新。
 
 认证沿用 [Codex CLI](https://developers.openai.com/codex/cli) 的登录或配置：支持 ChatGPT、API key，以及 config.toml 中的自定义 base_url/env_key。密钥由 Codex 管理，应用不复制或展示；环境变量需在启动应用的环境中可用。无需 OpenAI 登录的服务商不会显示强制登录提示，配置状态不代表密钥已验证。账户路由发现超时最多重试三次，间隔 500ms、1s；其他认证错误不会重试。
 
@@ -36,7 +36,7 @@ Pi 工具事件中的 MCP `server/tool` 和 Droid 审批详情中的真实 MCP �
 
 两个 Harness 的运行中插入消息通过各自官方协议发送，收到成功确认才移除本地队列；发送失败保留消息。停止会取消进程和待答请求，将未完成过程标为中断；失败/停止不自动发送后续队列。图片使用 MIME 与 base64 传输，普通文件继续使用本地路径。模型与思考强度下一轮生效。
 
-完整能力对齐仍由 [#84](https://github.com/ji233-Sun/mujicagent/issues/84) 跟踪：当前协议回放与界面测试不能代替真实 CLI/模型验收。速度档位没有当前 RPC 的等价配置；通用 MCP elicitation 尚未接通（[Pi 明确未支持](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/test/mcp-conformance/README.md)，已核对的 Droid 协议未公开对应客户端请求）；Droid 无审批详情的工具事件仍可能缺少 MCP 服务名。计划执行模式与三 Harness 真实工作流仍待验收。安装更新另见 [#86](https://github.com/ji233-Sun/mujicagent/pull/86)，该 PR 未合并前不能视为本分支已具备。
+完整能力对齐仍由 [#84](https://github.com/ji233-Sun/mujicagent/issues/84) 跟踪：当前协议回放与界面测试不能代替真实 CLI/模型验收。速度档位没有当前 RPC 的等价配置；通用 MCP elicitation 尚未接通（[Pi 明确未支持](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/test/mcp-conformance/README.md)，已核对的 Droid 协议未公开对应客户端请求）；Droid 无审批详情的工具事件仍可能缺少 MCP 服务名。计划执行模式与三 Harness 真实工作流仍待验收。已合入的 [#86](https://github.com/ji233-Sun/mujicagent/pull/86) 提供 Codex 安装来源和更新预览，尚未实现 Pi/Droid 的应用内安装更新及认证状态对齐；两者仍使用官方 CLI 管理。
 
 模型行右侧的星标用于收藏，按 `(Harness, Model ID)` 精确保存并在所属 Harness 的列表内置顶。同名模型在不同 Harness 中互不影响。左侧最上方的星标入口汇总全部收藏，行首显示所属 Harness 的官方图标；普通列表不显示行首图标。收藏、取消收藏不切换当前模型，重启后保留。
 
