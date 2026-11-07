@@ -84,6 +84,81 @@ func TestHarnessTimelineScreenshots(t *testing.T) {
 	}
 }
 
+func TestHarnessInteractionScreenshots(t *testing.T) {
+	for _, lang := range []string{"en", "zh-Hans"} {
+		for _, scene := range []string{"picker", "picker-empty", "multi-question", "pi-editor", "plan"} {
+			t.Run(lang+"-"+scene, func(t *testing.T) {
+				s := model.New()
+				s.Settings.Language = lang
+				thread := s.AddThread("", "")
+				thread.Harness = "droid"
+				c := controller.New(t.TempDir(), s, nil)
+				defer c.Close()
+				v := New(c)
+				r := &codex.Request{ID: json.RawMessage(`"form"`), ThreadID: thread.ID, Method: "client/form", Mode: "form", Title: "Choose channels", Refreshable: true, FilterOptions: true, RequestedSchema: json.RawMessage(`{"type":"object","properties":{"selection":{"type":"array","title":"Channels","items":{"type":"string","enum":["alpha","beta"],"enumNames":["Alpha · public","Beta · private"]}}},"required":["selection"]}`), InitialValues: map[string]string{"selection": `["beta"]`}}
+				switch scene {
+				case "picker-empty":
+					r.RequestedSchema = json.RawMessage(`{"type":"object","properties":{}}`)
+					r.Message = "No channels. Refresh to try again."
+				case "multi-question":
+					r.Method = "item/tool/requestUserInput"
+					r.Cancellable = true
+					r.Questions = []codex.Question{{ID: "q", Question: "Which platforms?", MultiSelect: true, IsOther: true}}
+					for _, label := range []string{"macOS", "Windows"} {
+						r.Questions[0].Options = append(r.Questions[0].Options, struct {
+							Label       string `json:"label"`
+							Description string `json:"description"`
+						}{Label: label})
+					}
+					r.InitialValues = map[string]string{"q": `["macOS","Windows"]`}
+				case "pi-editor":
+					thread.Harness = "pi"
+					r.Title = "Edit notes"
+					r.Refreshable = false
+					r.FilterOptions = false
+					r.Multiline = true
+					r.RequestedSchema = json.RawMessage(`{"type":"object","properties":{"answer":{"type":"string","title":"Notes"}},"required":["answer"]}`)
+					r.InitialValues = map[string]string{"answer": "First line\nSecond line"}
+				case "plan":
+					thread.Harness = "pi"
+					thread.Turns = []model.Turn{{Status: "completed", Items: []model.Item{{ID: "plan", Kind: "plan", Text: "☑ Read the project\n☐ Verify the change", Status: "completed"}}}}
+					*v.openState("activity-" + thread.ID + "-0-0") = true
+					*v.openState(thread.ID + "-0-0-0") = true
+				}
+				if scene != "plan" {
+					c.Requests = []*codex.Request{r}
+				}
+				tt := ui.NewTester(v.Render, 1100, 800)
+				tt.Frame()
+				tt.Advance(time.Second)
+				tt.Frame()
+				if scene == "picker" && (!tt.HasText("Alpha · public") || !tt.HasText(v.texts().AgentRefreshModels())) {
+					t.Fatal("picker controls missing")
+				}
+				if scene == "multi-question" && !tt.HasText(v.texts().Cancel()) {
+					t.Fatal("question cancellation missing")
+				}
+				if scene == "plan" && !tt.HasText("Verify the change") {
+					t.Fatal("plan missing")
+				}
+				if dir := os.Getenv("MUJICAGENT_AGENTS_SCREENSHOTS"); dir != "" {
+					if err := os.MkdirAll(dir, 0700); err != nil {
+						t.Fatal(err)
+					}
+					f, err := os.Create(filepath.Join(dir, "gap-"+lang+"-"+scene+".png"))
+					if err != nil {
+						t.Fatal(err)
+					}
+					defer f.Close()
+					if err = png.Encode(f, tt.Image()); err != nil {
+						t.Fatal(err)
+					}
+				}
+			})
+		}
+	}
+}
+
 func TestAgentCompactScreenshots(t *testing.T) {
 	for _, lang := range []string{"zh-Hans", "en"} {
 		for _, scene := range []string{"settings-codex", "settings-codex-running", "settings-pi", "settings-droid", "picker-codex", "picker-pi", "picker-droid", "picker-favorites", "picker-loading", "picker-error", "permissions-pi", "permissions-droid"} {

@@ -180,6 +180,8 @@ func Timeout() (context.Context, context.CancelFunc) {
 }
 
 type Question struct {
+	MultiSelect bool `json:"multiSelect,omitempty"`
+
 	ID       string `json:"id"`
 	Header   string `json:"header"`
 	Question string `json:"question"`
@@ -191,6 +193,11 @@ type Question struct {
 	} `json:"options"`
 }
 type Request struct {
+	FilterOptions                       bool              `json:"-"`
+	Search                              string            `json:"-"`
+	InitialValues                       map[string]string `json:"-"`
+	Refreshable, Multiline, Cancellable bool              `json:"-"`
+
 	ServerName                      string          `json:"serverName"`
 	Mode                            string          `json:"mode"`
 	Message                         string          `json:"message"`

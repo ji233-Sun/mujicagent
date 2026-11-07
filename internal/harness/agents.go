@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/ji233-Sun/mujicagent/internal/codex"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,6 +19,7 @@ type AgentEvent struct {
 	Text, Session    string
 	ID, Kind, Status string
 	Interaction      *Interaction
+	Resolved         *codex.Request
 	Tool             *ToolEvent
 	Delta            bool
 	Accepted         bool

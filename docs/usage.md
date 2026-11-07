@@ -30,11 +30,13 @@ Windows x64 选择 `mujicagent-setup-<版本>-amd64.exe`，Windows ARM64 选择 
 
 Pi 使用双向 RPC，Droid 使用官方 `stream-jsonrpc`。回复、思考、工具开始/进度/结果按稳定 ID 保存，复用统一时间线和可展开详情；普通工具不标成 MCP，缺失的服务元数据不猜测。参数和结果在保存前经过现有脱敏处理。Pi 压缩事件、Droid 压缩状态及 TodoWrite 计划归入过程记录；最终消息快照替换对应消息，不覆盖先前工具与回复。
 
-Pi 默认只开放内置读取和搜索工具，并关闭扩展与 MCP；完全访问沿用本机工具配置，没有操作系统沙箱。RPC 扩展的确认、选择和输入在应用内回答；这不代表所有 Pi 工具都有逐次权限拦截。Droid 每轮显式设置 `interactionMode=auto`，四档权限对应 `autonomyLevel=off/low/medium/high`；运行期间修改权限在下一轮生效。权限请求进入确认界面，只发送用户选择的一次允许或取消，不自动永久授权；AskUser 复用问题界面。
+Pi 默认只开放内置读取和搜索工具，并关闭扩展与 MCP；完全访问沿用本机工具配置，没有操作系统沙箱。RPC 扩展的确认、选择和输入在应用内回答，编辑框支持预填与多行，超时会取消请求并清理界面；这不代表所有 Pi 工具都有逐次权限拦截。Droid 每轮显式设置 `interactionMode=auto`，四档权限对应 `autonomyLevel=off/low/medium/high`；运行期间修改权限在下一轮生效。权限请求进入确认界面，仅在上游提供 `proceed_once` 时显示一次允许，不自动永久授权；AskUser 支持多选、补充文字和取消，扩展 picker 支持单选/多选、预选、搜索、刷新和取消，按原始选项 ID 回传。
+
+Pi 工具事件中的 MCP `server/tool` 和 Droid 审批详情中的真实 MCP 元数据会保留，后续进度不会将已识别的 MCP 降回普通工具。Pi 已启用官方 plan-mode 扩展时，其 `plan-todos` 组件可显示为计划；Droid TodoWrite 显示可读待办。计划文本可随会话交接，但这不等于两者具备统一的计划执行模式，也不会自动安装 Pi 扩展。
 
 两个 Harness 的运行中插入消息通过各自官方协议发送，收到成功确认才移除本地队列；发送失败保留消息。停止会取消进程和待答请求，将未完成过程标为中断；失败/停止不自动发送后续队列。图片使用 MIME 与 base64 传输，普通文件继续使用本地路径。模型与思考强度下一轮生效。
 
-完整能力对齐仍由 [#84](https://github.com/ji233-Sun/mujicagent/issues/84) 跟踪：当前协议回放与界面测试不能代替真实 CLI/模型验收；速度档位、通用 MCP elicitation、Pi 结构化计划、完整 MCP 服务元数据和 Droid 扩展 picker 尚未完成对齐。安装更新另见 [#86](https://github.com/ji233-Sun/mujicagent/pull/86)，该 PR 未合并前不能视为本分支已具备。
+完整能力对齐仍由 [#84](https://github.com/ji233-Sun/mujicagent/issues/84) 跟踪：当前协议回放与界面测试不能代替真实 CLI/模型验收。速度档位没有当前 RPC 的等价配置；通用 MCP elicitation 尚未接通（[Pi 明确未支持](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/test/mcp-conformance/README.md)，已核对的 Droid 协议未公开对应客户端请求）；Droid 无审批详情的工具事件仍可能缺少 MCP 服务名。计划执行模式与三 Harness 真实工作流仍待验收。安装更新另见 [#86](https://github.com/ji233-Sun/mujicagent/pull/86)，该 PR 未合并前不能视为本分支已具备。
 
 模型行右侧的星标用于收藏，按 `(Harness, Model ID)` 精确保存并在所属 Harness 的列表内置顶。同名模型在不同 Harness 中互不影响。左侧最上方的星标入口汇总全部收藏，行首显示所属 Harness 的官方图标；普通列表不显示行首图标。收藏、取消收藏不切换当前模型，重启后保留。
 

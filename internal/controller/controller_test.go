@@ -1471,6 +1471,49 @@ func TestAgentEventMergeAndPersistence(t *testing.T) {
 	}
 }
 
+func TestAgentPlanHandoffAndMultiAnswer(t *testing.T) {
+	c := New(t.TempDir(), model.New(), nil)
+	defer c.Close()
+	thread := c.State.AddThread("", t.TempDir())
+	thread.Harness = "droid"
+	turn := model.Turn{Status: "completed"}
+	mergeAgentEvent(&turn, harness.AgentEvent{ID: "todo", Tool: &harness.ToolEvent{Kind: "plan", Arguments: json.RawMessage(`{"todos":"- [x] Read\n- [ ] Verify"}`)}})
+	thread.Turns = []model.Turn{turn}
+	if !c.Handoff("pi", "model") || !strings.Contains(c.State.Thread(c.State.Selected).HandoffContext, "- [ ] Verify") {
+		t.Fatal("readable plan lost during handoff")
+	}
+	r := &codex.Request{ID: json.RawMessage(`"multi"`), Method: "item/tool/requestUserInput", Cancellable: true, Questions: []codex.Question{{ID: "q", MultiSelect: true}}}
+	ch := make(chan any, 1)
+	c.agentReplies = map[*codex.Request]chan any{r: ch}
+	c.Requests = []*codex.Request{r}
+	c.AnswerQuestions(r, map[string]string{"q": `["A","B"]`, "q:other": "C"})
+	select {
+	case reply := <-ch:
+		data, _ := json.Marshal(reply)
+		if !strings.Contains(string(data), `["A","B","C"]`) {
+			t.Fatal(string(data))
+		}
+	default:
+		t.Fatal("multi answer not delivered")
+	}
+	if len(c.Requests) != 0 {
+		t.Fatal("answered request remains visible")
+	}
+	r.Responding = false
+	c.Requests = []*codex.Request{r}
+	c.agentReplies[r] = ch
+	c.CancelQuestions(r)
+	select {
+	case reply := <-ch:
+		data, _ := json.Marshal(reply)
+		if !strings.Contains(string(data), `"cancelled":true`) {
+			t.Fatal(string(data))
+		}
+	default:
+		t.Fatal("cancel not delivered")
+	}
+}
+
 func TestAgentFailedQueueRemainsRetryable(t *testing.T) {
 	dir := t.TempDir()
 	c := New(dir, model.New(), nil)

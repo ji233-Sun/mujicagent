@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"encoding/json"
 	"github.com/ji233-Sun/mujicagent/internal/harness"
 	"github.com/ji233-Sun/mujicagent/internal/model"
 )
@@ -37,6 +38,7 @@ func mergeAgentEvent(turn *model.Turn, e harness.AgentEvent) {
 		}
 		return
 	}
+	wasMCP := item.Kind == "mcpToolCall"
 	t := e.Tool
 	if item.Kind == "" {
 		item.Kind = "toolCall"
@@ -47,6 +49,8 @@ func mergeAgentEvent(turn *model.Turn, e harness.AgentEvent) {
 			item.Kind = "commandExecution"
 		case "edit", "delete", "move":
 			item.Kind = "fileChange"
+		case "mcp":
+			item.Kind = "mcpToolCall"
 		case "plan":
 			item.Kind = "plan"
 		case "search", "fetch":
@@ -55,7 +59,7 @@ func mergeAgentEvent(turn *model.Turn, e harness.AgentEvent) {
 			item.Kind = "toolCall"
 		}
 	}
-	if t.Server != "" {
+	if t.Server != "" || wasMCP {
 		item.Kind = "mcpToolCall"
 	}
 	if item.MCP == nil {
@@ -71,6 +75,12 @@ func mergeAgentEvent(turn *model.Turn, e harness.AgentEvent) {
 		d.Server = redactMCPText(t.Server)
 	}
 	if t.Arguments != nil {
+		if item.Kind == "plan" {
+			var input struct{ Todos string }
+			if json.Unmarshal(t.Arguments, &input) == nil {
+				item.Text = redactMCPText(input.Todos)
+			}
+		}
 		d.Arguments = redactMCPJSON(t.Arguments)
 	}
 	if t.Result != nil {

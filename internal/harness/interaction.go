@@ -19,6 +19,7 @@ type Interaction struct {
 func ask(ctx context.Context, emit func(AgentEvent), r *codex.Request) (json.RawMessage, error) {
 	i := &Interaction{Request: r, Reply: make(chan any, 1)}
 	emit(AgentEvent{Interaction: i})
+	defer emit(AgentEvent{Resolved: r})
 	select {
 	case value := <-i.Reply:
 		return json.Marshal(value)

@@ -258,8 +258,12 @@ func TestDroidRPCNotifications(t *testing.T) {
 
 func TestAgentInteractionReplies(t *testing.T) {
 	for _, decision := range []string{"accept", "cancel"} {
-		a := droidRPC{ctx: context.Background(), emit: func(e AgentEvent) { e.Interaction.Reply <- map[string]any{"decision": decision} }}
-		result, err := a.interaction([]byte(`{"id":"p","method":"droid.request_permission","params":{"toolUses":[{"toolUse":{"name":"Execute","input":{"command":"pwd"}}}]}}`))
+		a := droidRPC{ctx: context.Background(), emit: func(e AgentEvent) {
+			if e.Interaction != nil {
+				e.Interaction.Reply <- map[string]any{"decision": decision}
+			}
+		}}
+		result, err := a.interaction([]byte(`{"id":"p","method":"droid.request_permission","params":{"options":[{"value":"proceed_once"},{"value":"cancel"}],"toolUses":[{"toolUse":{"name":"Execute","input":{"command":"pwd"}}}]}}`))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -274,7 +278,9 @@ func TestAgentInteractionReplies(t *testing.T) {
 	var output bytes.Buffer
 	c := &Control{in: json.NewEncoder(&output)}
 	err := piInteraction(context.Background(), []byte(`{"type":"extension_ui_request","id":"q","method":"input","title":"Name?"}`), c, func(e AgentEvent) {
-		e.Interaction.Reply <- map[string]any{"answers": map[string]any{"answer": map[string]any{"answers": []string{"Ada"}}}}
+		if e.Interaction != nil {
+			e.Interaction.Reply <- map[string]any{"action": "accept", "content": map[string]string{"answer": "Ada"}}
+		}
 	})
 	if err != nil || !strings.Contains(output.String(), `"value":"Ada"`) {
 		t.Fatal(output.String(), err)
@@ -283,6 +289,131 @@ func TestAgentInteractionReplies(t *testing.T) {
 	cancel()
 	if _, err := ask(ctx, func(AgentEvent) {}, nil); err == nil {
 		t.Fatal("cancelled interaction did not stop")
+	}
+}
+
+func TestDroidPickerAndMultiSelect(t *testing.T) {
+	for _, action := range []string{"accept", "cancel", "refresh"} {
+		resolved := false
+		a := droidRPC{ctx: context.Background(), emit: func(e AgentEvent) {
+			if e.Resolved != nil {
+				resolved = true
+				return
+			}
+			if e.Interaction == nil {
+				return
+			}
+			r := e.Interaction.Request
+			if r.Method != "client/form" || !r.Refreshable || !r.FilterOptions || r.Search != "beta" || r.InitialValues["selection"] != `["b"]` {
+				t.Fatalf("picker defaults: %+v", r)
+			}
+			form, err := r.ElicitationForm()
+			if err != nil {
+				t.Fatal(err)
+			}
+			content, err := form.Content(map[string]string{"selection": `["a","b"]`})
+			if err != nil {
+				t.Fatal(err)
+			}
+			e.Interaction.Reply <- map[string]any{"action": action, "content": content}
+		}}
+		result, err := a.interaction([]byte(`{"id":"picker","method":"droid.pick_options","params":{"title":"Choose channels","multi":true,"initialSearch":"beta","preselectedIds":["b","missing"],"rows":[{"id":"a","label":"Alpha"},{"id":"b","label":"Beta"}]}}`))
+		if err != nil || !resolved {
+			t.Fatal(result, err, resolved)
+		}
+		value := result.(map[string]any)
+		if action == "accept" && len(value["selectedIds"].([]string)) != 2 {
+			t.Fatal(result)
+		}
+		if action == "cancel" && value["cancelled"] != true {
+			t.Fatal(result)
+		}
+		if action == "refresh" && value["refresh"] != true {
+			t.Fatal(result)
+		}
+	}
+	a := droidRPC{ctx: context.Background(), emit: func(e AgentEvent) {
+		if e.Interaction == nil {
+			return
+		}
+		if !e.Interaction.Request.Questions[0].MultiSelect {
+			t.Fatal("multiSelect lost")
+		}
+		e.Interaction.Reply <- map[string]any{"answers": map[string]any{"2": map[string]any{"answers": []string{"A", "B"}}}}
+	}}
+	result, err := a.interaction([]byte(`{"id":"q","method":"droid.ask_user","params":{"questions":[{"index":2,"question":"Choose","options":["A","B"],"multiSelect":true}]}}`))
+	data, _ := json.Marshal(result)
+	if err != nil || !strings.Contains(string(data), `"answer":"A, B"`) {
+		t.Fatal(string(data), err)
+	}
+}
+
+func TestPiEditorTimeoutAndPlan(t *testing.T) {
+	var output bytes.Buffer
+	control := &Control{in: json.NewEncoder(&output)}
+	resolved := false
+	err := piInteraction(context.Background(), []byte(`{"id":"editor","method":"editor","title":"Edit","prefill":"first\nsecond"}`), control, func(e AgentEvent) {
+		if e.Resolved != nil {
+			resolved = true
+		}
+		if e.Interaction == nil {
+			return
+		}
+		r := e.Interaction.Request
+		if !r.Multiline || r.InitialValues["answer"] != "first\nsecond" {
+			t.Fatal(r)
+		}
+		e.Interaction.Reply <- map[string]any{"action": "accept", "content": map[string]string{"answer": "first\nchanged"}}
+	})
+	if err != nil || !resolved || !strings.Contains(output.String(), `first\nchanged`) {
+		t.Fatal(output.String(), err)
+	}
+	output.Reset()
+	resolved = false
+	err = piInteraction(context.Background(), []byte(`{"id":"timeout","method":"select","title":"Choose","options":["A"],"timeout":1}`), control, func(e AgentEvent) {
+		if e.Resolved != nil {
+			resolved = true
+		}
+	})
+	if err != nil || !resolved || !strings.Contains(output.String(), `"cancelled":true`) {
+		t.Fatal(output.String(), err)
+	}
+	var events []AgentEvent
+	for _, raw := range []string{`{"method":"setWidget","widgetKey":"plan-todos","widgetLines":["\u001b[32m☑ Read\u001b[0m","☐ Verify"]}`, `{"method":"setWidget","widgetKey":"plan-todos"}`} {
+		if err := piInteraction(context.Background(), []byte(raw), control, func(e AgentEvent) { events = append(events, e) }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(events) != 1 || events[0].Kind != "plan" || events[0].Text != "☑ Read\n☐ Verify" {
+		t.Fatal(events)
+	}
+}
+
+func TestMCPMetadataAndOfferedPermissions(t *testing.T) {
+	p := agentParser{driver: "pi"}
+	var event AgentEvent
+	err := p.line([]byte(`{"type":"tool_execution_end","toolCallId":"m","toolName":"opaque","result":{"details":{"server":"docs","tool":"lookup"},"content":[]}}`), func(e AgentEvent) { event = e })
+	if err != nil || event.Tool.Server != "docs" || event.Tool.Name != "lookup" || event.Tool.Kind != "mcp" {
+		t.Fatal(event, err)
+	}
+	var metadata *ToolEvent
+	a := droidRPC{ctx: context.Background(), emit: func(e AgentEvent) {
+		if e.Tool != nil {
+			metadata = e.Tool
+		}
+		if e.Interaction == nil {
+			return
+		}
+		for _, o := range e.Interaction.Request.ApprovalOptions() {
+			if o.Kind == "accept" {
+				t.Fatal("unoffered permission exposed")
+			}
+		}
+		e.Interaction.Reply <- map[string]string{"decision": "accept"}
+	}}
+	result, err := a.interaction([]byte(`{"id":"p","method":"droid.request_permission","params":{"options":[{"value":"cancel"}],"toolUses":[{"toolUse":{"id":"m","name":"opaque","input":{}},"details":{"type":"mcp_tool","serverName":"docs","actualToolName":"lookup"}}]}}`))
+	if err != nil || result.(map[string]string)["selectedOption"] != "cancel" || metadata == nil || metadata.Server != "docs" {
+		t.Fatal(result, metadata, err)
 	}
 }
 

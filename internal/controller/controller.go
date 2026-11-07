@@ -601,11 +601,26 @@ func (c *Controller) AnswerQuestions(r *codex.Request, answers map[string]string
 	values := map[string]any{}
 	for _, q := range r.Questions {
 		answer := strings.TrimSpace(answers[q.ID])
-		if answer == "" {
+		if answer == "" && (!q.MultiSelect || strings.TrimSpace(answers[q.ID+":other"]) == "") {
 			c.ReportError("Answer each question before continuing.")
 			return
 		}
-		values[q.ID] = map[string]any{"answers": []string{answer}}
+		selected := []string{answer}
+		if q.MultiSelect {
+			selected = []string{}
+			if answer != "" && json.Unmarshal([]byte(answer), &selected) != nil {
+				c.ReportError("Invalid selection")
+				return
+			}
+			if other := strings.TrimSpace(answers[q.ID+":other"]); other != "" {
+				selected = append(selected, other)
+			}
+			if len(selected) == 0 {
+				c.ReportError("Answer each question before continuing.")
+				return
+			}
+		}
+		values[q.ID] = map[string]any{"answers": selected}
 	}
 	c.replyRequest(r, map[string]any{"answers": values})
 }
@@ -895,4 +910,10 @@ func decodeItem(raw json.RawMessage) model.Item {
 		item.Text = ""
 	}
 	return item
+}
+
+func (c *Controller) CancelQuestions(r *codex.Request) {
+	if r.Cancellable && c.agentReplies[r] != nil {
+		c.replyRequest(r, map[string]any{"cancelled": true, "answers": map[string]any{}})
+	}
 }

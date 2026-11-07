@@ -73,6 +73,12 @@ func (p *agentParser) activity(line []byte, emit func(AgentEvent)) error {
 				e.Status = "failed"
 			}
 		}
+		var result struct{ Details struct{ Server, Tool string } }
+		if json.Unmarshal(e.Tool.Result, &result) == nil && result.Details.Server != "" && result.Details.Tool != "" {
+			e.Tool.Server = result.Details.Server
+			e.Tool.Name = result.Details.Tool
+			e.Tool.Kind = "mcp"
+		}
 	}
 	emit(e)
 	return nil
