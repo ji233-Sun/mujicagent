@@ -103,6 +103,13 @@ func (v *View) message(c *ui.Context, text, threadID string) {
 }
 
 func (v *View) openAttachment(a model.Attachment, threadID string) {
+	if a.Kind != "image" {
+		return
+	}
+	p := v.preview(a)
+	if !p.ready || p.err != nil || p.bitmap == nil {
+		return
+	}
 	v.attachment, v.attachmentThread = a, threadID
 	v.annotation = newAnnotationEditor(a.Notes())
 	v.attachmentQueue = v.editorQueue

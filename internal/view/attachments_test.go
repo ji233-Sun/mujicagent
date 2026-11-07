@@ -1,6 +1,7 @@
 package view
 
 import (
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
@@ -137,6 +138,87 @@ func TestAttachmentFallback(t *testing.T) {
 	}
 	if p := readPreview(model.Attachment{Kind: "file", Path: path + "missing"}); p.err == nil {
 		t.Fatal("missing file accepted")
+	}
+}
+
+func TestAttachmentOpening(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"video.mp4", "broken.png", "large.png", "valid.png"} {
+		f, err := os.Create(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		switch name {
+		case "valid.png":
+			err = png.Encode(f, image.NewRGBA(image.Rect(0, 0, 16, 16)))
+		case "large.png":
+			err = f.Truncate((32 << 20) + 1)
+		default:
+			_, err = f.WriteString("not an image")
+		}
+		f.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tc := range []struct {
+		name, kind string
+		loading    bool
+		wantOpen   bool
+	}{
+		{"video.mp4", "file", false, false},
+		{"broken.png", "file", false, false},
+		{"large.png", "file", false, false},
+		{"broken.png", "image", false, false},
+		{"large.png", "image", false, false},
+		{"missing.png", "image", false, false},
+		{"valid.png", "image", true, false},
+		{"valid.png", "image", false, true},
+	} {
+		for _, entry := range []string{"message", "draft"} {
+			t.Run(fmt.Sprintf("%s/%s/%s/loading=%v", entry, tc.kind, tc.name, tc.loading), func(t *testing.T) {
+				state := model.New()
+				ctrl := controller.New(t.TempDir(), state, nil)
+				ctrl.NewThread("")
+				thread := state.Thread(state.Selected)
+				a := model.Attachment{Kind: tc.kind, Path: filepath.Join(dir, tc.name)}
+				thread.Draft = a.Link()
+				v := New(ctrl)
+				p := readPreview(a)
+				if tc.loading {
+					p = &attachmentPreview{}
+				}
+				v.attachments = map[string]*attachmentPreview{a.Kind + ":" + a.Path: p}
+				tt := ui.NewTester(func(c *ui.Context) {
+					if entry == "message" {
+						v.message(c, a.Link(), thread.ID)
+					} else {
+						v.composerInput(c, &thread.Draft)
+					}
+				}, 600, 200)
+				tt.Frame()
+				if entry == "message" {
+					if err := tt.Click(tc.name); err != nil {
+						t.Fatal(err)
+					}
+				} else {
+					r, ok := tt.Find("消息")
+					if !ok {
+						t.Fatal("composer missing")
+					}
+					tt.ClickAt(r.X+8, r.Y+8)
+				}
+				for i := 0; i < 3; i++ {
+					tt.Frame()
+				}
+				if v.attachmentOpen != tc.wantOpen || (v.annotation != nil) != tc.wantOpen {
+					t.Fatalf("opened=%v, editor=%v, want %v", v.attachmentOpen, v.annotation != nil, tc.wantOpen)
+				}
+				if thread.Draft != a.Link() {
+					t.Fatal("click changed draft")
+				}
+			})
+		}
 	}
 }
 
