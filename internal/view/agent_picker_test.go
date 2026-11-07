@@ -100,6 +100,52 @@ func TestNativeToolCards(t *testing.T) {
 	}
 }
 
+func TestAgentRunningPermissionLabel(t *testing.T) {
+	for _, lang := range []string{"zh-Hans", "en"} {
+		for _, driver := range []string{"codex", "pi", "droid"} {
+			t.Run(lang+"-"+driver, func(t *testing.T) {
+				s := model.New()
+				s.Settings.Language = lang
+				s.NoProjectExpanded = true
+				thread := s.AddThread("", "")
+				thread.Harness, thread.AgentAccess = driver, agentFullAccess(driver)
+				thread.PermissionProfile = ":danger-full-access"
+				thread.AgentModel = "example-model"
+				thread.Title = "Permission display"
+				thread.Turns = []model.Turn{{ID: "running-turn", Prompt: "Check the project status.", Status: "inProgress", Started: time.Now(), Items: []model.Item{{ID: "reply", Kind: "agentMessage", Text: "I am checking the project.", Status: "inProgress"}}}}
+				c := controller.New(t.TempDir(), s, nil)
+				defer c.Close()
+				c.Running[thread.ID] = true
+				c.Connection = "Connected"
+				v := New(c)
+				tt := ui.NewTester(v.Render, 840, 560)
+				tt.Frame()
+				tt.Advance(time.Second)
+				tt.Frame()
+				if tt.HasText(v.texts().PermissionNextTurn(v.texts().FullAccess())) {
+					t.Fatal("unchanged permissions are labeled as a next-turn change")
+				}
+				if !tt.HasText(v.texts().FullAccess()) {
+					t.Fatal("current permissions are missing")
+				}
+				if output := os.Getenv("MUJICAGENT_PREFERENCES_SCREENSHOTS"); output != "" {
+					if err := os.MkdirAll(output, 0700); err != nil {
+						t.Fatal(err)
+					}
+					f, err := os.Create(filepath.Join(output, lang+"-"+driver+"-running.png"))
+					if err != nil {
+						t.Fatal(err)
+					}
+					defer f.Close()
+					if err := png.Encode(f, tt.Image()); err != nil {
+						t.Fatal(err)
+					}
+				}
+			})
+		}
+	}
+}
+
 func TestAgentDefaultPermissionConfirmation(t *testing.T) {
 	for _, driver := range []string{"pi", "droid"} {
 		t.Run(driver, func(t *testing.T) {
@@ -146,6 +192,49 @@ func TestAgentDefaultPermissionConfirmation(t *testing.T) {
 			}
 			if *v.agentDefaultAccess(driver) != agentFullAccess(driver) || thread.AgentAccess != "" {
 				t.Fatal("confirmation did not isolate default and existing permissions")
+			}
+		})
+	}
+}
+
+func TestAgentPendingPermissionLabel(t *testing.T) {
+	for _, driver := range []string{"pi", "droid"} {
+		t.Run(driver, func(t *testing.T) {
+			dir := t.TempDir()
+			s := model.New()
+			thread := s.AddThread("", dir)
+			thread.Harness = driver
+			s.Settings.PiPath, s.Settings.DroidPath = filepath.Join(dir, "missing-agent"), filepath.Join(dir, "missing-agent")
+			c := controller.New(dir, s, nil)
+			defer c.Close()
+			// Capture the active permissions through the real send entry point.
+			// The focused renderer does not drain asynchronous process results.
+			if !c.Send("permission snapshot", false) {
+				t.Fatal(c.Error)
+			}
+			thread.AgentAccess = agentFullAccess(driver)
+			v := New(c)
+			v.permissionPicker, v.permissionTarget = true, thread.ID
+			tt := ui.NewTester(func(ctx *ui.Context) {
+				v.theme(ctx)
+				v.agentPermissions(ctx, thread)
+			}, 420, 420)
+			tt.Frame()
+			tt.Advance(time.Second)
+			tt.Frame()
+			if !tt.HasText(v.texts().ReadOnly()+" → "+v.texts().FullAccess()) || !tt.HasText(v.texts().PermissionTiming()) || !tt.HasText(v.texts().PermissionNextTurn(v.texts().FullAccess())) {
+				t.Fatal("pending permissions do not match the Codex presentation")
+			}
+			thread.AgentAccess = ""
+			tt.Frame()
+			if tt.HasText(v.texts().PermissionTiming()) || tt.HasText(v.texts().PermissionNextTurn(v.texts().ReadOnly())) {
+				t.Fatal("restoring permissions retained a pending change")
+			}
+			thread.AgentAccess = agentFullAccess(driver)
+			c.Running[thread.ID] = false
+			tt.Frame()
+			if tt.HasText(v.texts().PermissionTiming()) || !tt.HasText(v.texts().FullAccess()) {
+				t.Fatal("idle conversation still shows a pending change")
 			}
 		})
 	}
@@ -833,6 +922,9 @@ func TestAgentThinkingSelection(t *testing.T) {
 			if thread.AgentEffort != "high" {
 				t.Fatal("lost compatible effort")
 			}
+			if got := s.Settings.LastModelSelection; got != (model.ModelSelection{Harness: driver, Model: "compatible", Effort: "high"}) {
+				t.Fatal("model picker did not remember its final configuration", got)
+			}
 			v.chooseExternalModel(driver, catalog[2])
 			if thread.AgentEffort != "" {
 				t.Fatal("retained unsupported effort")
@@ -854,9 +946,15 @@ func TestAgentThinkingSelection(t *testing.T) {
 			if thread.AgentEffort != "high" {
 				t.Fatal("slider did not send advertised enabled value", thread.AgentEffort)
 			}
+			if s.Settings.LastModelSelection.Effort != "high" {
+				t.Fatal("slider did not remember the selected effort")
+			}
 			tt.Key(0, ui.KeyHome)
 			if thread.AgentEffort != "none" {
 				t.Fatal("slider changed advertised off value", thread.AgentEffort)
+			}
+			if s.Settings.LastModelSelection.Effort != "none" {
+				t.Fatal("slider did not remember explicit off")
 			}
 			c.Running[thread.ID] = true
 			tt.Frame()
@@ -887,6 +985,53 @@ func TestAgentThinkingSelection(t *testing.T) {
 				t.Fatal("cross-harness effort leaked")
 			}
 		})
+	}
+}
+
+func TestCodexPickerRemembersEffortAndSpeed(t *testing.T) {
+	s := model.New()
+	s.Settings.Language = "en"
+	thread := s.AddThread("", "")
+	c := controller.New(t.TempDir(), s, nil)
+	defer c.Close()
+	v := New(c)
+	m := codex.Model{
+		Model: "codex-model", DefaultReasoningEffort: "low",
+		ServiceTiers: []codex.ServiceTier{{ID: "fast", Name: "Fast"}, {ID: "ultrafast", Name: "Ultrafast"}},
+		SupportedReasoningEfforts: []struct {
+			ReasoningEffort string `json:"reasoningEffort"`
+		}{{ReasoningEffort: "low"}, {ReasoningEffort: "high"}},
+	}
+	c.Models = []codex.Model{m}
+	v.chooseModel(m)
+	tt := ui.NewTester(func(ctx *ui.Context) {
+		ui.Column(ctx).Children(func() { v.effortSlider(ctx, m); v.speedOptions(ctx, m) })
+	}, 200, 320)
+	tt.Frame()
+	if err := tt.Click(v.texts().AdjustReasoningEffort()); err != nil {
+		t.Fatal(err)
+	}
+	tt.Key(0, ui.KeyEnd)
+	for _, tier := range []string{"fast", "ultrafast", ""} {
+		label := "Fast"
+		if tier != "fast" {
+			label = "Ultrafast"
+		}
+		if err := tt.Click(label); err != nil {
+			t.Fatal(err)
+		}
+		want := model.ModelSelection{Harness: "codex", Model: m.Model, Effort: "high", ServiceTier: tier}
+		if s.Settings.LastModelSelection != want {
+			t.Fatal("picker did not remember reasoning and speed", s.Settings.LastModelSelection)
+		}
+		thread.Draft = "preserve source"
+		c.NewThread("")
+		next := s.Thread(s.Selected)
+		if next.AgentModel != m.Model || s.Settings.Effort != want.Effort || s.Settings.ServiceTier != tier {
+			t.Fatal("new conversation did not inherit the picker configuration")
+		}
+		// Return to the source without changing the remembered configuration.
+		c.Select(thread.ID)
 	}
 }
 
