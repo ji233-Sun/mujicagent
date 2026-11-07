@@ -70,10 +70,6 @@ func (v *View) modelSelector(c *ui.Context) {
 		v.modelSearch = ""
 		v.pickerHarness = t.Driver()
 		v.C.LoadAgentModels(v.pickerHarness, false)
-		v.agentModelDraft = ""
-		if t != nil {
-			v.agentModelDraft = t.AgentModel
-		}
 	})
 	pickerPopover(c.Key("model-picker"), button, &v.modelPicker, tx.ModelPicker(), 492, func() { v.modelPanel(c) })
 }

@@ -18,46 +18,45 @@ import (
 )
 
 type View struct {
-	C                                            *controller.Controller
-	Window                                       *mygo.Window
-	Settings                                     bool
-	settingsModelPicker                          bool
-	section                                      string
-	agentSection, pickerHarness, agentModelDraft string
-	draft                                        string
-	shelf                                        bool
-	settledList                                  ui.ListState
-	settling                                     map[string]time.Time
-	projectLists                                 map[string]*ui.ListState
-	projectPicker                                bool
-	projectSearch                                string
-	projectList                                  ui.ListState
-	sidebarHandles                               map[string]*ui.Handle
-	projectFlight                                *projectFlight
-	modelPicker                                  bool
-	modelSearch                                  string
-	modelList                                    ui.ListState
-	permissionPicker                             bool
-	permissionTarget                             string
-	confirmFullAccess                            bool
-	deleteID                                     string
-	confirmDelete                                bool
-	expanded                                     map[string]*bool
-	answers                                      map[string]map[string]string
-	scroll                                       map[string]*ui.ScrollState
-	md                                           markdown.Options
-	attachments                                  map[string]*attachmentPreview
-	attachmentOpen                               bool
-	attachment                                   model.Attachment
-	attachmentThread                             string
-	annotation                                   *annotationEditor
-	attachmentQueue                              string
-	editor                                       *richtext.Document
-	editorHandle                                 ui.Handle
-	composerMenu                                 *mygo.Menu
-	composerMenuLanguage                         string
-	editorSource, editorThread                   string
-	editorQueue                                  string
+	C                           *controller.Controller
+	Window                      *mygo.Window
+	Settings                    bool
+	section                     string
+	agentSection, pickerHarness string
+	draft                       string
+	shelf                       bool
+	settledList                 ui.ListState
+	settling                    map[string]time.Time
+	projectLists                map[string]*ui.ListState
+	projectPicker               bool
+	projectSearch               string
+	projectList                 ui.ListState
+	sidebarHandles              map[string]*ui.Handle
+	projectFlight               *projectFlight
+	modelPicker                 bool
+	modelSearch                 string
+	modelList                   ui.ListState
+	permissionPicker            bool
+	permissionTarget            string
+	confirmFullAccess           bool
+	deleteID                    string
+	confirmDelete               bool
+	expanded                    map[string]*bool
+	answers                     map[string]map[string]string
+	scroll                      map[string]*ui.ScrollState
+	md                          markdown.Options
+	attachments                 map[string]*attachmentPreview
+	attachmentOpen              bool
+	attachment                  model.Attachment
+	attachmentThread            string
+	annotation                  *annotationEditor
+	attachmentQueue             string
+	editor                      *richtext.Document
+	editorHandle                ui.Handle
+	composerMenu                *mygo.Menu
+	composerMenuLanguage        string
+	editorSource, editorThread  string
+	editorQueue                 string
 }
 
 func New(c *controller.Controller) *View {
