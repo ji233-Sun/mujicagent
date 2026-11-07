@@ -329,3 +329,79 @@ func TestElicitationForm(t *testing.T) {
 		t.Fatalf("%s: %v", data, err)
 	}
 }
+
+func TestAccountDiscoveryRetry(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		want int
+	}{
+		{"routing", &RPCError{Code: -32603, Message: "workspace routing discovery timed out"}, 3},
+		{"other internal", &RPCError{Code: -32603, Message: "invalid auth"}, 1},
+		{"other code", &RPCError{Code: -32602, Message: "workspace routing discovery timed out"}, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			_, err := readAccount(context.Background(), func(_ context.Context, method string, params, result any) error {
+				calls++
+				if method != "account/read" || params.(map[string]bool)["refreshToken"] {
+					t.Fatal("unexpected request")
+				}
+				return tc.err
+			}, time.Millisecond)
+			if err == nil || calls != tc.want {
+				t.Fatalf("calls=%d err=%v", calls, err)
+			}
+		})
+	}
+	calls := 0
+	account, err := readAccount(context.Background(), func(_ context.Context, _ string, _, result any) error {
+		calls++
+		if calls == 1 {
+			return &RPCError{Code: -32603, Message: "workspace routing discovery timed out"}
+		}
+		return json.Unmarshal([]byte(`{"account":null,"requiresOpenaiAuth":false}`), result)
+	}, time.Millisecond)
+	if err != nil || calls != 2 || account.Label() != "Configured provider (no OpenAI login required)" {
+		t.Fatalf("%+v %v %d", account, err, calls)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = readAccount(ctx, func(context.Context, string, any, any) error {
+		return &RPCError{Code: -32603, Message: "workspace routing discovery timed out"}
+	}, time.Hour)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+	for _, raw := range []string{`{"account":{"type":"apiKey"}}`, `{"account":{"type":"chatgpt","email":"test@example.com"}}`} {
+		var a AccountStatus
+		if err := json.Unmarshal([]byte(raw), &a); err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(a.Label(), "Sign in") {
+			t.Fatal(a.Label())
+		}
+	}
+}
+
+func TestWindowsNPMNativeLayout(t *testing.T) {
+	root := t.TempDir()
+	wrapper := filepath.Join(root, "codex.cmd")
+	for _, arch := range []string{"amd64", "arm64"} {
+		target := map[string]string{"amd64": "x86_64", "arm64": "aarch64"}[arch] + "-pc-windows-msvc"
+		path := filepath.Join(root, "node_modules", "@openai", "codex", "vendor", target, "bin", "codex.exe")
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("fixture"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		got, err := windowsCodexNative(wrapper, arch)
+		if err != nil || got != path {
+			t.Fatalf("%s: %s %v", arch, got, err)
+		}
+	}
+	if _, err := windowsCodexNative(filepath.Join(root, "unrelated.cmd"), "amd64"); err == nil {
+		t.Fatal("accepted arbitrary shell wrapper")
+	}
+}

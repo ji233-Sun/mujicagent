@@ -2167,3 +2167,163 @@ func AnnotationLimit() string { return In(i18n.Locale()).AnnotationLimit() }
 func (msgs Messages) AnnotationLimit() string {
 	return Catalog.Format(msgs.locale, "annotationLimit", nil)
 }
+
+// HarnessInstall says "安装"
+// in the language the app shows.
+func HarnessInstall() string { return In(i18n.Locale()).HarnessInstall() }
+
+// HarnessInstall says "安装"
+// in the language of msgs.
+func (msgs Messages) HarnessInstall() string {
+	return Catalog.Format(msgs.locale, "harnessInstall", nil)
+}
+
+// HarnessUpdate says "更新"
+// in the language the app shows.
+func HarnessUpdate() string { return In(i18n.Locale()).HarnessUpdate() }
+
+// HarnessUpdate says "更新"
+// in the language of msgs.
+func (msgs Messages) HarnessUpdate() string {
+	return Catalog.Format(msgs.locale, "harnessUpdate", nil)
+}
+
+// HarnessManagedInstall says "安装并切换到托管版"
+// in the language the app shows.
+func HarnessManagedInstall() string { return In(i18n.Locale()).HarnessManagedInstall() }
+
+// HarnessManagedInstall says "安装并切换到托管版"
+// in the language of msgs.
+func (msgs Messages) HarnessManagedInstall() string {
+	return Catalog.Format(msgs.locale, "harnessManagedInstall", nil)
+}
+
+// HarnessSource says "下载方式"
+// in the language the app shows.
+func HarnessSource() string { return In(i18n.Locale()).HarnessSource() }
+
+// HarnessSource says "下载方式"
+// in the language of msgs.
+func (msgs Messages) HarnessSource() string {
+	return Catalog.Format(msgs.locale, "harnessSource", nil)
+}
+
+// HarnessOfficial says "官方原生包"
+// in the language the app shows.
+func HarnessOfficial() string { return In(i18n.Locale()).HarnessOfficial() }
+
+// HarnessOfficial says "官方原生包"
+// in the language of msgs.
+func (msgs Messages) HarnessOfficial() string {
+	return Catalog.Format(msgs.locale, "harnessOfficial", nil)
+}
+
+// HarnessCN says "大陆 · npm 镜像"
+// in the language the app shows.
+func HarnessCN() string { return In(i18n.Locale()).HarnessCN() }
+
+// HarnessCN says "大陆 · npm 镜像"
+// in the language of msgs.
+func (msgs Messages) HarnessCN() string {
+	return Catalog.Format(msgs.locale, "harnessCN", nil)
+}
+
+// HarnessNativeMirror says "大陆 · 免 Node 镜像包"
+// in the language the app shows.
+func HarnessNativeMirror() string { return In(i18n.Locale()).HarnessNativeMirror() }
+
+// HarnessNativeMirror says "大陆 · 免 Node 镜像包"
+// in the language of msgs.
+func (msgs Messages) HarnessNativeMirror() string {
+	return Catalog.Format(msgs.locale, "harnessNativeMirror", nil)
+}
+
+// HarnessAuto says "自动检查（每天）"
+// in the language the app shows.
+func HarnessAuto() string { return In(i18n.Locale()).HarnessAuto() }
+
+// HarnessAuto says "自动检查（每天）"
+// in the language of msgs.
+func (msgs Messages) HarnessAuto() string {
+	return Catalog.Format(msgs.locale, "harnessAuto", nil)
+}
+
+// HarnessDetails says "连接与权限"
+// in the language the app shows.
+func HarnessDetails() string { return In(i18n.Locale()).HarnessDetails() }
+
+// HarnessDetails says "连接与权限"
+// in the language of msgs.
+func (msgs Messages) HarnessDetails() string {
+	return Catalog.Format(msgs.locale, "harnessDetails", nil)
+}
+
+// HarnessInstallHint says "安装到应用私有目录；无 npm 时自动使用原生镜像包。沿用 Codex 的登录与 config.toml（含 ba…"
+// in the language the app shows.
+func HarnessInstallHint() string { return In(i18n.Locale()).HarnessInstallHint() }
+
+// HarnessInstallHint says "安装到应用私有目录；无 npm 时自动使用原生镜像包。沿用 Codex 的登录与 config.toml（含 ba…"
+// in the language of msgs.
+func (msgs Messages) HarnessInstallHint() string {
+	return Catalog.Format(msgs.locale, "harnessInstallHint", nil)
+}
+
+// HarnessWorking says "正在安装并验证…"
+// in the language the app shows.
+func HarnessWorking() string { return In(i18n.Locale()).HarnessWorking() }
+
+// HarnessWorking says "正在安装并验证…"
+// in the language of msgs.
+func (msgs Messages) HarnessWorking() string {
+	return Catalog.Format(msgs.locale, "harnessWorking", nil)
+}
+
+// HarnessManaged says "应用托管"
+// in the language the app shows.
+func HarnessManaged() string { return In(i18n.Locale()).HarnessManaged() }
+
+// HarnessManaged says "应用托管"
+// in the language of msgs.
+func (msgs Messages) HarnessManaged() string {
+	return Catalog.Format(msgs.locale, "harnessManaged", nil)
+}
+
+// HarnessCustom says "自定义 / 外部安装"
+// in the language the app shows.
+func HarnessCustom() string { return In(i18n.Locale()).HarnessCustom() }
+
+// HarnessCustom says "自定义 / 外部安装"
+// in the language of msgs.
+func (msgs Messages) HarnessCustom() string {
+	return Catalog.Format(msgs.locale, "harnessCustom", nil)
+}
+
+// HarnessMissing says "未安装"
+// in the language the app shows.
+func HarnessMissing() string { return In(i18n.Locale()).HarnessMissing() }
+
+// HarnessMissing says "未安装"
+// in the language of msgs.
+func (msgs Messages) HarnessMissing() string {
+	return Catalog.Format(msgs.locale, "harnessMissing", nil)
+}
+
+// HarnessUnchecked says "尚未检查"
+// in the language the app shows.
+func HarnessUnchecked() string { return In(i18n.Locale()).HarnessUnchecked() }
+
+// HarnessUnchecked says "尚未检查"
+// in the language of msgs.
+func (msgs Messages) HarnessUnchecked() string {
+	return Catalog.Format(msgs.locale, "harnessUnchecked", nil)
+}
+
+// HarnessProviderAuth says "已配置服务商（无需 OpenAI 登录）"
+// in the language the app shows.
+func HarnessProviderAuth() string { return In(i18n.Locale()).HarnessProviderAuth() }
+
+// HarnessProviderAuth says "已配置服务商（无需 OpenAI 登录）"
+// in the language of msgs.
+func (msgs Messages) HarnessProviderAuth() string {
+	return Catalog.Format(msgs.locale, "harnessProviderAuth", nil)
+}

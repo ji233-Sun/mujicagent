@@ -212,5 +212,21 @@
   "annotationNoComment": "尚未添加说明",
   "markupColor": "标注颜色",
   "markupWidth": "线条粗细",
-  "annotationLimit": "标注过多，请精简后应用"
+  "annotationLimit": "标注过多，请精简后应用",
+  "harnessInstall": "安装",
+  "harnessUpdate": "更新",
+  "harnessManagedInstall": "安装并切换到托管版",
+  "harnessSource": "下载方式",
+  "harnessOfficial": "官方原生包",
+  "harnessCN": "大陆 · npm 镜像",
+  "harnessNativeMirror": "大陆 · 免 Node 镜像包",
+  "harnessAuto": "自动检查（每天）",
+  "harnessDetails": "连接与权限",
+  "harnessInstallHint": "安装到应用私有目录；无 npm 时自动使用原生镜像包。沿用 Codex 的登录与 config.toml（含 base_url 和 API Key 配置）。",
+  "harnessWorking": "正在安装并验证…",
+  "harnessManaged": "应用托管",
+  "harnessCustom": "自定义 / 外部安装",
+  "harnessMissing": "未安装",
+  "harnessUnchecked": "尚未检查",
+  "harnessProviderAuth": "已配置服务商（无需 OpenAI 登录）"
 }

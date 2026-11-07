@@ -3,6 +3,7 @@ package controller
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -17,6 +18,7 @@ import (
 
 type Controller struct {
 	AppUpdates                          AppUpdateState
+	Harness                             HarnessState
 	State                               *model.State
 	Dir                                 string
 	Error, Connection, Version, Account string
@@ -72,6 +74,7 @@ func (c *Controller) Save() {
 func (c *Controller) Close() {
 	c.once.Do(func() {
 		close(c.stop)
+		c.CancelHarness()
 		if c.client != nil {
 			c.client.Close()
 		}
@@ -88,7 +91,7 @@ func (c *Controller) AnyRunning() bool {
 }
 
 func (c *Controller) Connect() {
-	if c.Connection == "Connecting" || c.AnyRunning() {
+	if c.Connection == "Connecting" || c.AnyRunning() || c.Harness.Installing {
 		return
 	}
 	if c.client != nil {
@@ -144,13 +147,9 @@ func (c *Controller) Connect() {
 				break
 			}
 		}
-		var account struct {
-			Account *struct {
-				Type  string `json:"type"`
-				Email string `json:"email"`
-			} `json:"account"`
-		}
-		accountErr := client.Call(ctx, "account/read", map[string]bool{"refreshToken": false}, &account)
+		accountCtx, accountCancel := context.WithTimeout(context.Background(), 50*time.Second)
+		account, accountErr := client.ReadAccount(accountCtx)
+		accountCancel()
 		version := client.Version()
 		c.post(func() {
 			if epoch != c.epoch {
@@ -164,14 +163,9 @@ func (c *Controller) Connect() {
 			if err != nil {
 				c.ReportError(err.Error())
 			}
-			c.Account = "Sign in with codex login"
+			c.Account = account.Label()
 			if accountErr != nil {
 				c.Account = accountErr.Error()
-			} else if account.Account != nil {
-				c.Account = account.Account.Type
-				if account.Account.Email != "" {
-					c.Account += " · " + account.Account.Email
-				}
 			}
 			if c.State.Settings.Model == "" {
 				for _, m := range models {
@@ -399,7 +393,7 @@ func (c *Controller) Send(text string, plan bool) bool {
 }
 
 func (c *Controller) sendThread(t *model.Thread, text string, plan bool, queuedID string) bool {
-	if c.client == nil || c.Connection != "Connected" || c.Running[t.ID] || c.permissionUpdates[t.ID] {
+	if c.Harness.Installing || c.client == nil || c.Connection != "Connected" || c.Running[t.ID] || c.permissionUpdates[t.ID] {
 		return false
 	}
 	if err := c.prepareWorkspace(t, text); err != nil {

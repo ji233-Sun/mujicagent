@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/ji233-Sun/mujicagent/internal/codex"
+	"github.com/ji233-Sun/mujicagent/internal/harness"
 	"github.com/ji233-Sun/mujicagent/internal/model"
 )
 
@@ -1271,5 +1272,45 @@ func TestSwitchProjectPreservesPromptAndHistory(t *testing.T) {
 				t.Fatal("draft not persisted", err)
 			}
 		})
+	}
+}
+
+func TestHarnessInstallGuardAndFailure(t *testing.T) {
+	c := New(t.TempDir(), model.New(), nil)
+	original := c.State.Settings.CodexPath
+	c.Harness = HarnessState{Binary: original, Release: harness.Release{Version: "1.2.3"}}
+	c.Running["busy"] = true
+	c.InstallHarness()
+	if c.Harness.Installing {
+		t.Fatal("installed during a turn")
+	}
+	c.Running["busy"] = false
+	c.Harness.Binary = "stale-path"
+	c.InstallHarness()
+	if c.Harness.Installing {
+		t.Fatal("installed stale selection")
+	}
+	c.Harness.Binary = original
+	c.Connection = "Connecting"
+	c.InstallHarness()
+	if c.Harness.Installing {
+		t.Fatal("installed while connecting")
+	}
+	c.Connection = "Disconnected"
+	c.InstallHarness() // Missing checksum fails before any download.
+	deadline := time.Now().Add(3 * time.Second)
+	for c.Harness.Installing && time.Now().Before(deadline) {
+		c.Drain()
+		time.Sleep(time.Millisecond)
+	}
+	if c.Harness.Installing || c.Harness.Error == "" {
+		t.Fatal("failure was not published")
+	}
+	if c.State.Settings.CodexPath != original {
+		t.Fatal("failed install changed active path")
+	}
+	entries, err := os.ReadDir(filepath.Join(c.Dir, "tools", "codex"))
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("staging not cleaned: %v %v", entries, err)
 	}
 }

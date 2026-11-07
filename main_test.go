@@ -82,11 +82,18 @@ func TestNativeView(t *testing.T) {
 	if err := tt.Click("设置"); err != nil {
 		t.Fatal(err)
 	}
-	if !tt.HasText("Codex 路径") {
+	if !tt.HasText("连接与权限") {
 		t.Fatal("agent settings missing")
 	}
-	if tt.HasText("升级 Codex") || tt.HasText("检查更新") || !tt.HasText(ctrl.Version) {
-		t.Fatal("settings should display the current version without update controls")
+	if err := tt.Click("连接与权限"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Advance(250 * time.Millisecond)
+	if !tt.HasText("Codex 路径") {
+		t.Fatal("agent details missing")
+	}
+	if !tt.HasText("检查更新") || !tt.HasText(ctrl.Version) {
+		t.Fatal("settings should display the current version and update controls")
 	}
 	tt.Advance(220 * time.Millisecond)
 	panel, ok := tt.Find("设置面板")
@@ -372,7 +379,7 @@ func TestDefaultPermissionsSettings(t *testing.T) {
 	s.Thread("old").PermissionProfile = ":read-only"
 	v := view.New(c)
 	tt := ui.NewTester(v.Render, 1140, 780)
-	for _, label := range []string{"设置", "自动审批", "完全访问"} {
+	for _, label := range []string{"设置", "连接与权限", "自动审批", "完全访问"} {
 		if err := tt.Click(label); err != nil {
 			t.Fatal(err)
 		}

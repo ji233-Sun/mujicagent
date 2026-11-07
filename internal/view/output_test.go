@@ -136,3 +136,33 @@ func BenchmarkActivityOutputFrame(b *testing.B) {
 		}
 	}
 }
+
+func TestCompactAgentSettings(t *testing.T) {
+	v := New(controller.New(t.TempDir(), model.New(), nil))
+	v.Settings = true
+	tt := ui.NewTester(func(c *ui.Context) { v.settingsDialog(c) }, 1000, 700)
+	tt.Frame()
+	if _, ok := tt.Find(v.texts().HarnessDetails()); !ok {
+		t.Fatal("missing agent disclosure")
+	}
+	if err := tt.Click(v.texts().HarnessDetails()); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	tt.Frame()
+	if !*v.openState("harness-codex") {
+		t.Fatal("details not expanded")
+	}
+	if err := tt.Click(v.texts().HarnessAuto()); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if !v.C.State.Settings.DisableHarnessAutoCheck {
+		t.Fatal("automatic update preference not saved")
+	}
+	for _, section := range []string{"Appearance", "Updates", "Logs", "Agents"} {
+		v.section = section
+		tt.Frame()
+		tt.Frame()
+	}
+}
