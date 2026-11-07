@@ -184,7 +184,7 @@ func (a *droidRPC) update(raw json.RawMessage) error {
 	var v struct {
 		Type, MessageID, TextDelta, ToolUseID, ToolName, NewState, Reason string
 		BlockIndex                                                        int
-		Content, Update                                                   json.RawMessage
+		Content, Update, Message                                          json.RawMessage
 		IsError                                                           bool
 		ToolUse                                                           struct {
 			ID, Name, Namespace string
@@ -197,6 +197,43 @@ func (a *droidRPC) update(raw json.RawMessage) error {
 	}
 	e := AgentEvent{Status: "inProgress"}
 	switch v.Type {
+	case "create_message":
+		// Script children are published as real assistant message blocks, without
+		// tool_call notifications. Text/thinking already have their own deltas.
+		var message struct {
+			Role, Visibility    string
+			HiddenFromUserViews bool
+			Content             []json.RawMessage
+		}
+		if err := json.Unmarshal(v.Message, &message); err != nil {
+			return err
+		}
+		if message.HiddenFromUserViews || message.Visibility == "llm_only" {
+			return nil
+		}
+		for _, block := range message.Content {
+			var content struct{ Type string }
+			if err := json.Unmarshal(block, &content); err != nil {
+				return err
+			}
+			var notification any
+			switch {
+			case message.Role == "assistant" && content.Type == "tool_use":
+				notification = map[string]any{"type": "tool_call", "toolUse": block}
+			case message.Role == "tool" && content.Type == "tool_result":
+				notification = block
+			default:
+				continue
+			}
+			data, err := json.Marshal(notification)
+			if err != nil {
+				return err
+			}
+			if err := a.update(data); err != nil {
+				return err
+			}
+		}
+		return nil
 	case "assistant_text_delta", "thinking_text_delta", "assistant_text_complete", "thinking_text_complete":
 		e.ID = fmt.Sprintf("%s-%d", v.MessageID, v.BlockIndex)
 		e.Kind = "agentMessage"
@@ -230,6 +267,8 @@ func (a *droidRPC) update(raw json.RawMessage) error {
 		if a.progress == nil {
 			a.progress = map[string]string{}
 		}
+		var parameters map[string]json.RawMessage
+		_ = json.Unmarshal(v.Update, &parameters)
 		if progress.FullOutput != nil {
 			a.progress[v.ToolUseID] = *progress.FullOutput
 		} else if progress.Text != nil {
@@ -245,8 +284,28 @@ func (a *droidRPC) update(raw json.RawMessage) error {
 		if progress.FullOutput != nil || progress.Text != nil || progress.Error != "" {
 			result, _ = json.Marshal(a.progress[v.ToolUseID])
 		}
-		e.Tool = &ToolEvent{Name: v.ToolName, Result: result}
+		e.Tool = &ToolEvent{Name: v.ToolName, Arguments: parameters["parameters"], Result: result}
+		if v.ToolName != "" {
+			e.Tool.Kind = NativeToolKind(v.ToolName)
+		}
+	case "tool_execution_phase_changed", "tool_execution_heartbeat":
+		e.ID = v.ToolUseID
+		e.Tool = &ToolEvent{Name: v.ToolName}
+		if v.ToolName != "" {
+			e.Tool.Kind = NativeToolKind(v.ToolName)
+		}
 	case "session_compacted":
+		var summary struct{ SummaryID string }
+		_ = json.Unmarshal(raw, &summary)
+		if summary.SummaryID != "" {
+			if a.summaries == nil {
+				a.summaries = map[string]bool{}
+			}
+			if a.summaries[summary.SummaryID] {
+				return nil
+			}
+			a.summaries[summary.SummaryID] = true
+		}
 		if !a.compacting {
 			a.compactions++
 		}
@@ -256,6 +315,11 @@ func (a *droidRPC) update(raw json.RawMessage) error {
 		e.Status = "completed"
 	case "droid_working_state_changed":
 		if v.NewState != "compacting_conversation" {
+			// The CLI returns to streaming on successful compaction even when
+			// no summary was saved. Idle alone does not prove success.
+			if a.compacting && v.NewState == "streaming_assistant_message" {
+				a.finishCompaction("completed")
+			}
 			return nil
 		}
 		if !a.compacting {
@@ -266,15 +330,30 @@ func (a *droidRPC) update(raw json.RawMessage) error {
 		e.Kind = "contextCompaction"
 	case "agent_turn_completed":
 		if v.Reason != "completed" {
+			status := "failed"
+			if v.Reason == "cancelled" {
+				status = "interrupted"
+			}
+			a.finishCompaction(status)
 			return fmt.Errorf("Droid stopped: %s", v.Reason)
 		}
+		a.finishCompaction("completed")
 		a.done = true
 		return nil
 	case "error":
+		a.finishCompaction("failed")
 		return fmt.Errorf("Droid reported a session error; check CLI configuration")
 	default:
 		return nil
 	}
 	a.emit(e)
 	return nil
+}
+
+func (a *droidRPC) finishCompaction(status string) {
+	if !a.compacting {
+		return
+	}
+	a.compacting = false
+	a.emit(AgentEvent{ID: fmt.Sprintf("compaction-%d", a.compactions), Kind: "contextCompaction", Status: status})
 }

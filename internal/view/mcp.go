@@ -10,7 +10,7 @@ import (
 )
 
 func nativeTool(item *model.Item) bool {
-	return item.MCP != nil && harness.NativeToolKind(item.MCP.Tool) != "other"
+	return item.MCP != nil && item.MCP.Tool != "" && item.Kind != "mcpToolCall"
 }
 
 // Native tools use the same compact disclosure and output viewer as Codex.
@@ -75,6 +75,9 @@ func toolActivityText(item *model.Item, expanded bool) string {
 			}
 		}
 	default:
+		if expanded && harness.NativeToolKind(d.Tool) == "other" {
+			body = d.Arguments
+		}
 		if questions := get("questionnaire", "question"); questions != "" {
 			title += " · " + strings.SplitN(questions, "\n", 2)[0]
 		}

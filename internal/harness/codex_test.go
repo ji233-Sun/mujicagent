@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
@@ -544,6 +545,112 @@ func TestCompactionLifecycle(t *testing.T) {
 						t.Fatal("compaction failure/cancel lost", err)
 					}
 				}
+			}
+		})
+	}
+}
+
+func TestDroidScriptMessageTools(t *testing.T) {
+	var events []AgentEvent
+	a := droidRPC{streaming: true, session: "s", emit: func(e AgentEvent) { events = append(events, e) }}
+	consume := func(notification string) {
+		t.Helper()
+		if err := a.consume([]byte(`{"method":"droid.session_notification","params":{"sessionId":"s","notification":` + notification + `}}`)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The actual 1.6.0 Script path publishes children in create_message.
+	// Include text and thinking to ensure their deltas are not duplicated.
+	consume(`{"type":"tool_call","toolUse":{"id":"script","name":"Script","input":{"script":"const r = await Promise.allSettled([tools.Read({file_path:'a.go'}), tools.Read({file_path:'b.go'})]); text(r);"}}}`)
+	cases := []struct{ name, kind, input string }{
+		{"Read", "read", `{"file_path":"a.go"}`},
+		{"Read", "read", `{"file_path":"b.go"}`},
+		{"Execute", "execute", `{"command":"pwd"}`},
+		{"Edit", "edit", `{"file_path":"a.go","old_str":"old","new_str":"new"}`},
+		{"Create", "edit", `{"file_path":"new.go","content":"package main"}`},
+		{"ApplyPatch", "edit", `{"input":"*** Begin Patch\n*** End Patch"}`},
+		{"TodoWrite", "plan", `{"todos":"1. [in_progress] Verify"}`},
+		{"AskUser", "ask", `{"questionnaire":"Choose a platform"}`},
+		{"Compact", "compaction", `{}`},
+		{"Skill", "other", `{"skill":"review"}`},
+		{"ToolSearch", "other", `{"query":"docs"}`},
+		{"Task", "other", `{"description":"Inspect","prompt":"Read code"}`},
+		{"WaitForScript", "execute", `{"toolCallId":"script","action":"status"}`},
+		{"custom.namespace.lookup", "other", `{"query":"proof"}`},
+	}
+	for i, tc := range cases {
+		id := fmt.Sprintf("child-%d", i)
+		consume(fmt.Sprintf(`{"type":"create_message","message":{"role":"assistant","visibility":"user_only","content":[{"type":"text","text":"already streamed"},{"type":"thinking","thinking":"private"},{"type":"tool_use","id":%q,"name":%q,"input":%s,"scriptExecution":{"runId":"run","outerToolUseId":"script","seen":%d}}]}}`, id, tc.name, tc.input, i))
+		start := events[len(events)-1]
+		if start.ID != id || start.Tool == nil || start.Tool.ParentID != "script" || start.Tool.Name != tc.name || start.Tool.Kind != tc.kind || string(start.Tool.Arguments) != tc.input {
+			t.Fatalf("missing actual Script child: %+v", start)
+		}
+		consume(fmt.Sprintf(`{"type":"tool_result","toolUseId":%q,"content":[{"type":"text","text":"done"}],"isError":%t}`, id, i == 1))
+		if events[len(events)-1].Status != map[bool]string{true: "failed", false: "completed"}[i == 1] {
+			t.Fatal("child failure lost")
+		}
+	}
+	if len(events) != 1+len(cases)*2 {
+		t.Fatalf("message text duplicated or children invented: %d", len(events))
+	}
+	before := len(events)
+	for _, metadata := range []string{`"visibility":"llm_only"`, `"hiddenFromUserViews":true`} {
+		consume(`{"type":"create_message","message":{"role":"assistant",` + metadata + `,"content":[{"type":"tool_use","id":"hidden","name":"Read","input":{}}]}}`)
+	}
+	a.streaming = false
+	consume(`{"type":"create_message","message":{"role":"assistant","content":[{"type":"tool_use","id":"history","name":"Read","input":{}}]}}`)
+	a.streaming = true
+	if len(events) != before {
+		t.Fatal("private or restored history leaked into active turn")
+	}
+	consume(`{"type":"tool_execution_phase_changed","toolUseId":"late","toolName":"Execute","phase":"executing"}`)
+	consume(`{"type":"tool_progress_update","toolUseId":"late","toolName":"Execute","update":{"type":"message","parameters":{"command":"pwd"},"text":"output"}}`)
+	if e := events[len(events)-1]; e.Tool.Kind != "execute" || string(e.Tool.Arguments) != `{"command":"pwd"}` {
+		t.Fatal("sparse tool metadata lost", e)
+	}
+	consume(`{"type":"create_message","message":{"role":"tool","content":[{"type":"tool_result","toolUseId":"late","isError":true,"content":{"error":"failed"}}]}}`)
+	if e := events[len(events)-1]; e.ID != "late" || e.Status != "failed" || string(e.Tool.Result) != `{"error":"failed"}` {
+		t.Fatal("message result lost", e)
+	}
+}
+
+func TestDroidCompactionTerminalEvents(t *testing.T) {
+	for _, tc := range []struct {
+		name, end, status string
+		wantError         bool
+	}{
+		{"summary", `{"type":"session_compacted","summaryId":"summary-1","removedCount":5,"visibleBoundaryMessageId":null}`, "completed", false},
+		{"no-summary", `{"type":"droid_working_state_changed","newState":"streaming_assistant_message"}`, "completed", false},
+		{"error", `{"type":"error","message":"Compaction failed"}`, "failed", true},
+		{"cancelled", `{"type":"agent_turn_completed","reason":"cancelled"}`, "interrupted", true},
+		{"failed-turn", `{"type":"agent_turn_completed","reason":"error"}`, "failed", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var events []AgentEvent
+			a := droidRPC{emit: func(e AgentEvent) { events = append(events, e) }}
+			for range 2 {
+				if err := a.update([]byte(`{"type":"droid_working_state_changed","newState":"compacting_conversation"}`)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			err := a.update([]byte(tc.end))
+			if (err != nil) != tc.wantError || len(events) != 3 || events[0].ID != events[2].ID || events[2].Status != tc.status || a.compacting {
+				t.Fatalf("Compact lifecycle: %+v, %v", events, err)
+			}
+			a.finishCompaction("failed")
+			if len(events) != 3 {
+				t.Fatal("terminal compaction emitted twice")
+			}
+			if tc.name == "summary" {
+				_ = a.update([]byte(tc.end))
+				if len(events) != 3 {
+					t.Fatal("duplicate summary created a new compaction")
+				}
+			}
+			_ = a.update([]byte(`{"type":"droid_working_state_changed","newState":"compacting_conversation"}`))
+			a.finishCompaction("interrupted")
+			if len(events) != 5 || events[3].ID == events[0].ID || events[4].Status != "interrupted" {
+				t.Fatal("later compaction overwrote history", events)
 			}
 		})
 	}
