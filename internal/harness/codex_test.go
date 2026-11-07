@@ -7,6 +7,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -141,5 +142,86 @@ func TestAgentProtocol(t *testing.T) {
 		if !found {
 			t.Fatal("model omitted")
 		}
+	}
+}
+
+func TestModelCatalogParsing(t *testing.T) {
+	pi, err := parseModelCatalog("pi", []byte(`{"models":[{"provider":"a","id":"shared","name":"A","reasoning":true,"thinkingLevelMap":{"low":"x","high":"y"},"headers":{"Authorization":"secret"}},{"provider":"b","id":"shared","name":"B"}]}`))
+	if err != nil || len(pi) != 2 || pi[0].ID != "a/shared" || pi[1].ID != "b/shared" || len(pi[0].Efforts) != 3 {
+		t.Fatalf("Pi catalog: %+v %v", pi, err)
+	}
+	droid, err := parseModelCatalog("droid", []byte(`{"models":[{"id":"custom:Mine-0","displayName":"Mine","supportedReasoningEfforts":["low","high"],"defaultReasoningEffort":"high"},{"id":"blocked","disabled":true}]}`))
+	if err != nil || len(droid) != 1 || droid[0].ID != "custom:Mine-0" || droid[0].DefaultEffort != "high" {
+		t.Fatalf("Droid catalog: %+v %v", droid, err)
+	}
+	for _, driver := range []string{"pi", "droid"} {
+		args, err := agentArgs(RunOptions{Driver: driver, Effort: "high"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		flag := "--thinking"
+		if driver == "droid" {
+			flag = "--reasoning-effort"
+		}
+		found := false
+		for i, arg := range args {
+			if arg == flag && i+1 < len(args) && args[i+1] == "high" {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("missing effort: %v", args)
+		}
+	}
+}
+
+func TestModelDiscoveryProcess(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX process fixture")
+	}
+	for _, driver := range []string{"pi", "droid"} {
+		t.Run(driver, func(t *testing.T) {
+			dir := t.TempDir()
+			binary := filepath.Join(dir, "agent")
+			request := "get_available_models"
+			response := `{"id":"models","success":true,"data":{"models":[{"provider":"test","id":"model"}]}}`
+			if driver == "droid" {
+				request = "droid.list_models"
+				response = `{"id":"models","result":{"models":[{"id":"model"}]}}`
+			}
+			script := "#!/bin/sh\nread request\ncase \"$request\" in\n*" + request + "*) printf '%s\\n' '" + response + "';;\n*) exit 2;;\nesac\nsleep 20\n"
+			if err := os.WriteFile(binary, []byte(script), 0700); err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			models, err := DiscoverModels(ctx, driver, binary, dir)
+			if err != nil || len(models) != 1 {
+				t.Fatalf("discovery: %+v %v", models, err)
+			}
+			if err := os.WriteFile(binary, []byte("#!/bin/sh\nsleep 20\n"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			timeout, stop := context.WithTimeout(context.Background(), 100*time.Millisecond)
+			defer stop()
+			if _, err := DiscoverModels(timeout, driver, binary, dir); err == nil {
+				t.Fatal("timeout ignored")
+			}
+		})
+	}
+}
+
+func TestInstalledModelCatalog(t *testing.T) {
+	if os.Getenv("MUJICAGENT_MODEL_DISCOVERY_TEST") != "1" {
+		t.Skip("explicit read-only local CLI discovery")
+	}
+	for _, driver := range []string{"pi", "droid"} {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		models, err := DiscoverModels(ctx, driver, driver, t.TempDir())
+		cancel()
+		if err != nil {
+			t.Fatal(driver, err)
+		}
+		t.Logf("%s: %d models", driver, len(models))
 	}
 }

@@ -13,8 +13,8 @@ import (
 )
 
 type RunOptions struct {
-	Driver, Binary, Cwd, Session, Model, Access, Prompt string
-	Images                                              []string
+	Driver, Binary, Cwd, Session, Model, Access, Prompt, Effort string
+	Images                                                      []string
 }
 type AgentEvent struct {
 	Text, Session string
@@ -33,6 +33,9 @@ func agentArgs(o RunOptions) ([]string, error) {
 		if o.Model != "" {
 			args = append(args, "--model", o.Model)
 		}
+		if o.Effort != "" {
+			args = append(args, "--thinking", o.Effort)
+		}
 		for _, path := range o.Images {
 			args = append(args, "@"+path)
 		}
@@ -46,6 +49,9 @@ func agentArgs(o RunOptions) ([]string, error) {
 		}
 		if o.Model != "" {
 			args = append(args, "--model", o.Model)
+		}
+		if o.Effort != "" {
+			args = append(args, "--reasoning-effort", o.Effort)
 		}
 		switch o.Access {
 		case "":

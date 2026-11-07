@@ -152,7 +152,7 @@ func (c *Controller) sendAgent(t *model.Thread, text, queuedID string) bool {
 	if t.Driver() == "pi" {
 		session = filepath.Join(c.Dir, "sessions", "pi", t.ID+".jsonl")
 	}
-	o := harness.RunOptions{Driver: t.Driver(), Binary: c.State.Settings.AgentPath(t.Driver()), Cwd: t.Cwd, Session: session, Model: t.AgentModel, Access: t.AgentAccess, Prompt: plain.String(), Images: images}
+	o := harness.RunOptions{Driver: t.Driver(), Binary: c.State.Settings.AgentPath(t.Driver()), Cwd: t.Cwd, Session: session, Model: t.AgentModel, Effort: t.AgentEffort, Access: t.AgentAccess, Prompt: plain.String(), Images: images}
 	if len(t.Turns) == 0 && t.HandoffFrom == "" {
 		t.Title = model.MessageTitle(text)
 	}
@@ -219,4 +219,54 @@ func (c *Controller) sendAgent(t *model.Thread, text, queuedID string) bool {
 		})
 	}()
 	return true
+}
+
+// LoadAgentModels runs only from actions. Cache identity includes the workspace and executable.
+func (c *Controller) LoadAgentModels(id string, force bool) {
+	if id != "pi" && id != "droid" {
+		return
+	}
+	h := c.HarnessFor(id)
+	cwd := c.Dir
+	if t := c.State.Thread(c.State.Selected); t != nil && t.Cwd != "" {
+		cwd = t.Cwd
+	}
+	binary := c.State.Settings.AgentPath(id)
+	key := binary + "\x00" + cwd
+	if !force && h.ModelsKey == key && (h.ModelsLoading || h.ModelsChecked) {
+		return
+	}
+	if h.modelsCancel != nil {
+		h.modelsCancel()
+	}
+	h.modelsRequest++
+	request := h.modelsRequest
+	h.ModelsKey = key
+	h.ModelsLoading = true
+	h.ModelsChecked = false
+	h.ModelsError = ""
+	h.Models = nil
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	h.modelsCancel = cancel
+	go func() {
+		defer cancel()
+		models, err := harness.DiscoverModels(ctx, id, binary, cwd)
+		c.post(func() {
+			if request != h.modelsRequest {
+				return
+			}
+			h.ModelsLoading = false
+			h.modelsCancel = nil
+			if binary != c.State.Settings.AgentPath(id) {
+				h.ModelsChecked = false
+				return
+			}
+			h.ModelsChecked = true
+			if err != nil {
+				h.ModelsError = err.Error()
+				return
+			}
+			h.Models = models
+		})
+	}()
 }

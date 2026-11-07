@@ -21,6 +21,7 @@ type View struct {
 	C                                            *controller.Controller
 	Window                                       *mygo.Window
 	Settings                                     bool
+	settingsModelPicker                          bool
 	section                                      string
 	agentSection, pickerHarness, agentModelDraft string
 	draft                                        string

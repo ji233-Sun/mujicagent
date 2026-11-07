@@ -80,6 +80,9 @@ func (c *Controller) Close() {
 			cancel()
 		}
 		for _, h := range c.Harnesses {
+			if h.modelsCancel != nil {
+				h.modelsCancel()
+			}
 			if h.cancel != nil {
 				h.cancel()
 			}
@@ -268,9 +271,9 @@ func (c *Controller) SwitchProject(projectID string) bool {
 		}
 	}
 	draft := ""
-	driver, agentModel, access := "", "", ""
+	driver, agentModel, access, effort := "", "", "", ""
 	if t != nil {
-		driver, agentModel, access = t.Harness, t.AgentModel, t.AgentAccess
+		driver, agentModel, access, effort = t.Harness, t.AgentModel, t.AgentAccess, t.AgentEffort
 		draft = t.Draft
 	}
 	if t == nil || t.ServerID != "" || len(t.Turns) != 0 || len(t.Queue) != 0 || c.Running[t.ID] || t.Settled {
@@ -283,7 +286,7 @@ func (c *Controller) SwitchProject(projectID string) bool {
 		// Permissions are scoped to the target workspace.
 		t.PermissionProfile = c.State.Settings.DefaultPermissionProfile
 	}
-	t.Harness, t.AgentModel, t.AgentAccess = driver, agentModel, access
+	t.Harness, t.AgentModel, t.AgentAccess, t.AgentEffort = driver, agentModel, access, effort
 	t.Draft = draft
 	t.Updated = time.Now()
 	c.Save()

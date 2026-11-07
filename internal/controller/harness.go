@@ -12,13 +12,18 @@ import (
 )
 
 type HarnessState struct {
-	Checking, Installing bool
-	CheckedAt            time.Time
-	Installation         harness.Installation
-	Release              harness.Release
-	Error                string
-	Source, Binary       string
-	cancel               context.CancelFunc
+	Models                       []harness.AgentModel
+	ModelsLoading, ModelsChecked bool
+	ModelsError, ModelsKey       string
+	modelsRequest                uint64
+	modelsCancel                 context.CancelFunc
+	Checking, Installing         bool
+	CheckedAt                    time.Time
+	Installation                 harness.Installation
+	Release                      harness.Release
+	Error                        string
+	Source, Binary               string
+	cancel                       context.CancelFunc
 }
 
 func (c *Controller) StartHarnessUpdates() {

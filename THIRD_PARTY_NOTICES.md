@@ -30,6 +30,14 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
+## Pi and Factory brand marks
+
+`internal/view/assets/pi.svg` comes from the [official Pi press kit](https://pi.dev/press-kit), downloaded from [logo-auto.svg](https://pi.dev/logo-auto.svg) on 2026-11-07. Its paths and original colors are unchanged; the viewBox trims unused outer whitespace for an 18px icon. Pi and its logo belong to Earendil Inc. and contributors.
+
+`internal/view/assets/factory.svg` is the Factory mark embedded as `mobile-nav-logo` on [Factory's official website](https://factory.com/), retrieved on 2026-11-07. The original paths and viewBox are preserved; page-specific HTML ID and CSS class attributes were removed. It identifies Factory Droid. Factory and its logo belong to Factory AI, Inc.
+
+These marks identify the supported external products and do not imply endorsement. They are not Lucide substitutes or newly drawn logos.
+
 ## Lucide
 
 The SVGs in `internal/view/assets/lucide/` are unmodified assets from [Lucide](https://lucide.dev/), pinned to [commit 1a49fd88d85202bad69f39462241b309a484bba0](https://github.com/lucide-icons/lucide/tree/1a49fd88d85202bad69f39462241b309a484bba0/icons). They use the original 24 × 24 viewBox, 2-unit strokes, and rounded caps and joins, scaled by the native renderer.

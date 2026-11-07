@@ -229,11 +229,8 @@
   "harnessProviderAuth": "已配置服务商（无需 OpenAI 登录）",
   "agentPath": "可执行路径",
   "agentModel": "模型 ID",
-  "agentModelHint": "留空沿用 CLI 默认模型；Pi 支持 provider/model。",
   "agentSetup": "安装与登录",
   "agentProbe": "检测",
-  "agentAuthHint": "沿用本机 CLI 的认证与配置；检测版本不代表认证成功。",
-  "agentExternalInstall": "使用官方 CLI 安装和更新，再填写路径。",
   "agentSwitch": "使用此模型",
   "agentHandoff": "交接到此模型",
   "agentHandoffHint": "保留原会话，以可见对话创建新会话；发送下一条消息时交接。",
@@ -242,5 +239,14 @@
   "agentNoTools": "禁用工具",
   "agentNativeTools": "Pi 原生工具",
   "agentPiToolsHint": "Pi 原生工具可读写文件和执行命令，无 Codex 沙箱或审批。",
-  "agentDroidAccess": "Droid 自主等级"
+  "agentDroidAccess": "Droid 自主等级",
+  "agentDefaultModel": "默认模型",
+  "agentRefreshModels": "刷新",
+  "agentLoadingModels": "读取中…",
+  "agentModelsFailed": "读取失败",
+  "agentCustomModel": "自定义",
+  "favoriteModels": "收藏模型",
+  "favoriteModel": "收藏",
+  "unfavoriteModel": "取消收藏",
+  "agentDefaultEffort": "默认"
 }

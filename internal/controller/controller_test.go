@@ -1437,3 +1437,68 @@ func TestAgentFailedQueueRemainsRetryable(t *testing.T) {
 		t.Fatalf("lost failed queue: %+v", thread)
 	}
 }
+
+func TestModelFavoritesPersistExactPairs(t *testing.T) {
+	c := New(t.TempDir(), model.New(), nil)
+	a, b := model.ModelFavorite{Harness: "codex", ModelID: "same"}, model.ModelFavorite{Harness: "droid", ModelID: "same"}
+	c.State.ToggleModelFavorite(a)
+	if c.State.IsModelFavorite(b) {
+		t.Fatal("favorite leaked across harnesses")
+	}
+	c.State.ToggleModelFavorite(b)
+	c.Save()
+	restored, err := model.Load(filepath.Join(c.Dir, "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !restored.IsModelFavorite(a) || !restored.IsModelFavorite(b) {
+		t.Fatal("favorites not persisted")
+	}
+	restored.ToggleModelFavorite(a)
+	if restored.IsModelFavorite(a) || !restored.IsModelFavorite(b) {
+		t.Fatal("unfavorite removed wrong tuple")
+	}
+	restored.ToggleModelFavorite(model.ModelFavorite{Harness: "droid"})
+	if len(restored.Settings.ModelFavorites) != 1 {
+		t.Fatal("default model is not a stable model ID")
+	}
+}
+
+func TestModelDiscoveryReplacesStaleRequest(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX process fixture")
+	}
+	dir := t.TempDir()
+	c := New(dir, model.New(), nil)
+	defer c.Close()
+	first, second := filepath.Join(dir, "first"), filepath.Join(dir, "second")
+	for _, p := range []string{first, second} {
+		script := "#!/bin/sh\nread request\n"
+		if p == first {
+			script += "sleep 1\n"
+		}
+		script += "printf '%s\\n' '{\"id\":\"models\",\"result\":{\"models\":[{\"id\":\"" + filepath.Base(p) + "\"}]}}'\nsleep 20\n"
+		if err := os.WriteFile(p, []byte(script), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	c.State.Settings.DroidPath = first
+	c.LoadAgentModels("droid", false)
+	c.State.Settings.DroidPath = second
+	c.LoadAgentModels("droid", false)
+	deadline := time.Now().Add(4 * time.Second)
+	h := c.HarnessFor("droid")
+	for h.ModelsLoading && time.Now().Before(deadline) {
+		c.Drain()
+		time.Sleep(time.Millisecond)
+	}
+	c.Drain()
+	if h.ModelsLoading || h.ModelsError != "" || len(h.Models) != 1 || h.Models[0].ID != "second" {
+		t.Fatalf("stale catalog: %+v", h)
+	}
+	request := h.modelsRequest
+	c.LoadAgentModels("droid", false)
+	if request != h.modelsRequest {
+		t.Fatal("cache ignored")
+	}
+}

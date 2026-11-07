@@ -20,6 +20,7 @@ func lucideIcon(name string) *ui.SVG {
 }
 
 var (
+	starIcon        = lucideIcon("star")
 	plus            = lucideIcon("plus")
 	chat            = lucideIcon("message-square")
 	settle          = lucideIcon("archive-arrow-down")

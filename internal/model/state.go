@@ -36,22 +36,25 @@ type QueuedMessage struct {
 }
 
 type Thread struct {
-	HandoffSent                         bool            `json:",omitempty"`
-	Harness, AgentModel, AgentAccess    string          `json:",omitempty"`
-	HandoffFrom, HandoffContext         string          `json:",omitempty"`
-	Queue                               []QueuedMessage `json:",omitempty"`
-	ID, ServerID, ProjectID, Title, Cwd string
-	Settled                             bool
-	Updated                             time.Time
-	Created                             time.Time
-	Turns                               []Turn
-	Draft                               string
-	PermissionProfile                   string
+	HandoffSent                                   bool            `json:",omitempty"`
+	Harness, AgentModel, AgentAccess, AgentEffort string          `json:",omitempty"`
+	HandoffFrom, HandoffContext                   string          `json:",omitempty"`
+	Queue                                         []QueuedMessage `json:",omitempty"`
+	ID, ServerID, ProjectID, Title, Cwd           string
+	Settled                                       bool
+	Updated                                       time.Time
+	Created                                       time.Time
+	Turns                                         []Turn
+	Draft                                         string
+	PermissionProfile                             string
 }
+type ModelFavorite struct{ Harness, ModelID string }
+
 type Settings struct {
-	PiPath, DroidPath, PiModel, DroidModel                                                string `json:",omitempty"`
-	HarnessSource                                                                         string `json:",omitempty"`
-	DisableHarnessAutoCheck                                                               bool   `json:",omitempty"`
+	ModelFavorites                                                                        []ModelFavorite `json:",omitempty"`
+	PiPath, DroidPath, PiModel, DroidModel                                                string          `json:",omitempty"`
+	HarnessSource                                                                         string          `json:",omitempty"`
+	DisableHarnessAutoCheck                                                               bool            `json:",omitempty"`
 	CodexPath, Model, Effort, ServiceTier, Appearance, Language, DefaultPermissionProfile string
 	DeveloperMode                                                                         bool
 }
@@ -202,4 +205,25 @@ func (s Settings) AgentPath(id string) string {
 		return "droid"
 	}
 	return s.CodexPath
+}
+
+func (s *State) IsModelFavorite(key ModelFavorite) bool {
+	for _, favorite := range s.Settings.ModelFavorites {
+		if favorite == key {
+			return true
+		}
+	}
+	return false
+}
+func (s *State) ToggleModelFavorite(key ModelFavorite) {
+	if key.ModelID == "" || key.Harness != "codex" && key.Harness != "pi" && key.Harness != "droid" {
+		return
+	}
+	for i, favorite := range s.Settings.ModelFavorites {
+		if favorite == key {
+			s.Settings.ModelFavorites = append(s.Settings.ModelFavorites[:i], s.Settings.ModelFavorites[i+1:]...)
+			return
+		}
+	}
+	s.Settings.ModelFavorites = append(s.Settings.ModelFavorites, key)
 }
