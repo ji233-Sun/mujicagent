@@ -98,8 +98,10 @@ func Run(ctx context.Context, o RunOptions, emit func(AgentEvent)) error {
 }
 
 type agentParser struct {
-	driver  string
-	message int
+	driver      string
+	message     int
+	compactions int
+	compacting  bool
 }
 
 func (p *agentParser) line(line []byte, emit func(AgentEvent)) error {

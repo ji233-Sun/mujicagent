@@ -1,11 +1,142 @@
 package view
 
 import (
+	"encoding/json"
 	"strings"
 
 	"github.com/egoist/mygo/ui"
+	"github.com/ji233-Sun/mujicagent/internal/harness"
 	"github.com/ji233-Sun/mujicagent/internal/model"
 )
+
+func nativeTool(item *model.Item) bool {
+	return item.MCP != nil && harness.NativeToolKind(item.MCP.Tool) != "other"
+}
+
+// Native tools use the same compact disclosure and output viewer as Codex.
+// Keep protocol envelopes in persisted details, not in the timeline preview.
+func toolActivityText(item *model.Item, expanded bool) string {
+	d := item.MCP
+	title := d.Tool
+	body := ""
+	var args map[string]json.RawMessage
+	if json.Unmarshal([]byte(d.Arguments), &args) != nil {
+		var patch string
+		if item.Kind == "fileChange" && json.Unmarshal([]byte(d.Arguments), &patch) == nil {
+			args = map[string]json.RawMessage{"input": json.RawMessage(d.Arguments)}
+		}
+	}
+	get := func(keys ...string) string {
+		for _, key := range keys {
+			var value string
+			if json.Unmarshal(args[key], &value) == nil && value != "" {
+				return value
+			}
+		}
+		return ""
+	}
+	switch item.Kind {
+	case "commandExecution":
+		if script := get("script", "code"); script != "" {
+			title = "Script"
+			if expanded {
+				body = script
+			}
+		} else if command := get("command", "commandLine", "cmd"); command != "" {
+			title = "$ " + command
+		}
+	case "fileChange":
+		if path := get("file_path", "path", "file"); path != "" {
+			title = path
+		}
+		if expanded {
+			if patch := get("patch", "diff", "input"); patch != "" {
+				body = patch
+			} else {
+				var diff strings.Builder
+				add := func(prefix, text string) {
+					if text == "" {
+						return
+					}
+					for _, line := range strings.Split(strings.TrimSuffix(text, "\n"), "\n") {
+						diff.WriteString(prefix)
+						diff.WriteString(line)
+						diff.WriteByte('\n')
+					}
+				}
+				old, next := get("old_str", "oldText", "old_string"), get("new_str", "newText", "new_string")
+				if old != "" || next != "" {
+					add("-", old)
+					add("+", next)
+				} else {
+					add("+", get("content", "file_text", "text"))
+				}
+				body = diff.String()
+			}
+		}
+	default:
+		if questions := get("questionnaire", "question"); questions != "" {
+			title += " · " + strings.SplitN(questions, "\n", 2)[0]
+		}
+		if target := get("file_path", "path", "pattern", "query", "url", "command", "folder", "directory_path"); target != "" {
+			title += " · " + target
+		}
+	}
+	if !expanded {
+		return strings.SplitN(title, "\n", 2)[0]
+	}
+	if body != "" {
+		title += "\n" + body
+	}
+	output := toolResultText(d.Result)
+	if item.Status == "failed" && d.Error != "" && d.Error != d.Result {
+		output += "\n" + toolResultText(d.Error)
+	}
+	if output != "" {
+		return title + "\n" + output
+	}
+	return title
+}
+
+func toolResultText(raw string) string {
+	var value any
+	if json.Unmarshal([]byte(raw), &value) != nil {
+		return raw
+	}
+	var extract func(any) string
+	extract = func(value any) string {
+		switch v := value.(type) {
+		case string:
+			return v
+		case []any:
+			var parts []string
+			for _, part := range v {
+				if text := extract(part); text != "" {
+					parts = append(parts, text)
+				}
+			}
+			return strings.Join(parts, "\n")
+		case map[string]any:
+			// Images and private thinking are not textual tool output.
+			if kind, _ := v["type"].(string); kind == "image" || kind == "thinking" {
+				return ""
+			}
+			var parts []string
+			for _, key := range []string{"text", "content", "output", "stdout", "stderr", "error", "message"} {
+				if text := extract(v[key]); text != "" {
+					parts = append(parts, text)
+				}
+			}
+			if len(parts) == 0 {
+				data, _ := json.MarshalIndent(v, "", "  ")
+				return string(data)
+			}
+			return strings.Join(parts, "\n")
+		}
+		return ""
+	}
+	return extract(value)
+}
 
 func (v *View) mcpItem(c *ui.Context, item *model.Item, key string, running bool) {
 	tx := v.texts()

@@ -190,6 +190,8 @@ func (v *View) agentsPane(c *ui.Context) {
 								ui.Text(c, tx.CodexDefaultPermissions()).Width(112).Shrink(0).FontSize(12).TextColor(c.Theme().TextMuted)
 								settingsSelect(c.Key("default-permissions"), &v.C.State.Settings.DefaultPermissionProfile, tx.CodexDefaultPermissions(), []settingOption{{":read-only", tx.ReadOnly()}, {":workspace", tx.DefaultPermissions()}, {":approve-for-me", tx.ApproveForMe()}, {":danger-full-access", tx.FullAccess()}}, v.C.Save)
 							})
+						} else {
+							v.agentDefaultPermissions(c, id)
 						}
 					})
 				})

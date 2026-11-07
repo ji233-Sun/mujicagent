@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -173,7 +172,7 @@ func (c *Controller) RestartForUpdate() {
 	if !c.AppUpdates.Ready || c.AnyRunning() {
 		return
 	}
-	if err := model.Save(filepath.Join(c.Dir, "state.json"), c.State); err != nil {
+	if err := c.saveState(); err != nil {
 		c.AppUpdates.Error = err.Error()
 		return
 	}

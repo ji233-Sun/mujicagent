@@ -26,6 +26,184 @@ type updateTransport func(*http.Request) (*http.Response, error)
 
 func (f updateTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
+func TestDrainYieldsToRendering(t *testing.T) {
+	c := New(t.TempDir(), model.New(), nil)
+	defer c.Close()
+	processed := 0
+	var next func()
+	next = func() {
+		processed++
+		if processed < 4096 {
+			c.post(next)
+		}
+	}
+	c.post(next)
+	c.Drain()
+	if processed > 128 || len(c.events) == 0 {
+		t.Fatalf("continuous output monopolized a frame: processed=%d pending=%d", processed, len(c.events))
+	}
+}
+
+func TestAgentStreamBurst(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX fake process")
+	}
+	for _, driver := range []string{"pi", "droid"} {
+		t.Run(driver, func(t *testing.T) {
+			dir := t.TempDir()
+			s := model.New()
+			old := s.AddThread("", dir)
+			old.Turns = []model.Turn{{Status: "completed", Items: []model.Item{{Kind: "agentMessage", Text: strings.Repeat("history ", 3<<20)}}}}
+			thread := s.AddThread("", dir)
+			thread.Harness = driver
+			binary := filepath.Join(dir, "fake-agent")
+			script := "#!/bin/sh\nread request\n"
+			delta := `{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"x"}}`
+			finish := `{"type":"agent_settled"}`
+			if driver == "droid" {
+				script += `printf '%s\n' '{"id":"request-1","result":{"sessionId":"burst"}}'
+read request
+printf '%s\n' '{"id":"request-2","result":{}}'
+read request
+printf '%s\n' '{"id":"request-3","result":{}}'
+`
+				delta = `{"method":"droid.session_notification","params":{"sessionId":"burst","notification":{"type":"assistant_text_delta","messageId":"m","textDelta":"x"}}}`
+				finish = `{"method":"droid.session_notification","params":{"sessionId":"burst","notification":{"type":"agent_turn_completed","reason":"completed"}}}`
+			}
+			script += "i=0\nwhile [ \"$i\" -lt 2048 ]; do\nprintf '%s\\n' '" + delta + "'\ni=$((i+1))\ndone\nprintf '%s\\n' '" + finish + "'\nsleep 20\n"
+			if err := os.WriteFile(binary, []byte(script), 0700); err != nil {
+				t.Fatal(err)
+			}
+			s.Settings.PiPath, s.Settings.DroidPath = binary, binary
+			c := New(dir, s, nil)
+			defer c.Close()
+			start := time.Now()
+			if !c.Send("stream", false) {
+				t.Fatal(c.Error)
+			}
+			sendDuration := time.Since(start)
+			start = time.Now()
+			var worst time.Duration
+			frames := 0
+			for c.Running[thread.ID] && time.Since(start) < 10*time.Second {
+				frame := time.Now()
+				c.Drain()
+				worst = max(worst, time.Since(frame))
+				frames++
+				time.Sleep(time.Millisecond)
+			}
+			elapsed := time.Since(start)
+			if c.Running[thread.ID] || thread.Turns[0].Status != "completed" || len(thread.Turns[0].Items) != 1 || thread.Turns[0].Items[0].Text != strings.Repeat("x", 2048) {
+				t.Fatal("stream was lost or never completed", c.Error)
+			}
+			if worst > 100*time.Millisecond {
+				t.Fatalf("UI blocked during streaming: %s", worst)
+			}
+			deadline := time.Now().Add(3 * time.Second)
+			for {
+				saved, err := model.Load(filepath.Join(dir, "state.json"))
+				if err == nil && len(saved.Thread(thread.ID).Turns[0].Items) == 1 && saved.Thread(thread.ID).Turns[0].Status == "completed" {
+					break
+				}
+				if time.Now().After(deadline) {
+					t.Fatal("final background save never completed", err)
+				}
+				time.Sleep(20 * time.Millisecond)
+			}
+			// A newer settings save must supersede any queued stream snapshot.
+			s.Settings.PiDefaultAccess = "native"
+			c.Save()
+			c.Close()
+			restored, err := model.Load(filepath.Join(dir, "state.json"))
+			if err != nil || restored.Settings.PiDefaultAccess != "native" || restored.Thread(thread.ID).Turns[0].Items[0].Text != strings.Repeat("x", 2048) {
+				t.Fatal("stale stream snapshot overwrote final state", err)
+			}
+			t.Logf("24 MiB history, 2048 deltas: send=%s stream=%s frames=%d worst Drain=%s", sendDuration, elapsed, frames, worst)
+		})
+	}
+}
+
+func TestAgentDefaultPermissions(t *testing.T) {
+	s := model.New()
+	s.Settings.PiDefaultAccess, s.Settings.DroidDefaultAccess = "native", "medium"
+	c := New(t.TempDir(), s, nil)
+	defer c.Close()
+	s.AddThread("", t.TempDir())
+	for _, driver := range []string{"pi", "droid", "pi"} {
+		if !c.Handoff(driver, "model") {
+			t.Fatal("handoff failed")
+		}
+		thread := s.Thread(s.Selected)
+		want := s.Settings.AgentDefaultAccess(driver)
+		if thread.AgentAccess != want {
+			t.Fatal("default permissions did not apply", driver, thread.AgentAccess)
+		}
+		thread.Turns = []model.Turn{{Status: "completed"}}
+	}
+	existing := s.Thread(s.Selected)
+	s.Settings.PiDefaultAccess = ""
+	if existing.AgentAccess != "native" {
+		t.Fatal("settings rewrote an existing conversation")
+	}
+	c.Save()
+	loaded, err := model.Load(filepath.Join(c.Dir, "state.json"))
+	if err != nil || loaded.Settings.AgentDefaultAccess("droid") != "medium" || loaded.Thread(existing.ID).AgentAccess != "native" {
+		t.Fatal("permissions did not persist", err)
+	}
+	s.Settings.PiDefaultAccess, s.Settings.DroidDefaultAccess = "unknown", "native"
+	if s.Settings.AgentDefaultAccess("pi") != "" || s.Settings.AgentDefaultAccess("droid") != "" {
+		t.Fatal("unknown default increased access")
+	}
+}
+
+func TestStreamSnapshotIsolation(t *testing.T) {
+	s := model.New()
+	s.Projects = []model.Project{{Name: "before"}}
+	s.Settings.ModelFavorites = []model.ModelFavorite{{Harness: "pi", ModelID: "before"}}
+	thread := s.AddThread("", "")
+	thread.Queue = []model.QueuedMessage{{Text: "before"}}
+	thread.Turns = []model.Turn{{Items: []model.Item{{Text: "before", MCP: &model.MCPCall{Result: "before"}}}}}
+	copy := cloneState(s)
+	s.Projects[0].Name = "after"
+	s.Settings.ModelFavorites[0].ModelID = "after"
+	thread.Queue[0].Text = "after"
+	thread.Turns[0].Items[0].Text = "after"
+	thread.Turns[0].Items[0].MCP.Result = "after"
+	got := copy.Thread(thread.ID)
+	if copy.Projects[0].Name != "before" || copy.Settings.ModelFavorites[0].ModelID != "before" || got.Queue[0].Text != "before" || got.Turns[0].Items[0].Text != "before" || got.Turns[0].Items[0].MCP.Result != "before" {
+		t.Fatal("background snapshot shares mutable UI state")
+	}
+}
+
+func TestNativeToolMergeDetails(t *testing.T) {
+	turn := model.Turn{}
+	mergeAgentEvent(&turn, harness.AgentEvent{ID: "script", Tool: &harness.ToolEvent{Name: "Script", Kind: "execute", Arguments: json.RawMessage(`{"script":"text('ok')"}`)}})
+	mergeAgentEvent(&turn, harness.AgentEvent{ID: "child", Tool: &harness.ToolEvent{Name: "Read", Kind: "read", ParentID: "script", Arguments: json.RawMessage(`{"file_path":"a.go"}`)}})
+	mergeAgentEvent(&turn, harness.AgentEvent{ID: "child", Status: "completed", Tool: &harness.ToolEvent{Result: json.RawMessage(`"package main"`)}})
+	mergeAgentEvent(&turn, harness.AgentEvent{ID: "todo", Tool: &harness.ToolEvent{Name: "TodoWrite", Kind: "plan", Arguments: json.RawMessage(`{"todos":"1. [in_progress] Verify"}`)}})
+	mergeAgentEvent(&turn, harness.AgentEvent{ID: "todo", Tool: &harness.ToolEvent{Arguments: json.RawMessage(`{"todos":"1. [completed] Verify"}`)}})
+	mergeAgentEvent(&turn, harness.AgentEvent{ID: "compact-1", Kind: "contextCompaction", Status: "completed"})
+	mergeAgentEvent(&turn, harness.AgentEvent{ID: "compact-2", Kind: "contextCompaction", Status: "inProgress"})
+	mergeAgentEvent(&turn, harness.AgentEvent{ID: "compact-2", Kind: "contextCompaction", Status: "interrupted"})
+	if len(turn.Items) != 5 || turn.Items[1].ParentID != "script" || turn.Items[1].Kind != "toolCall" || turn.Items[2].Text != "1. [completed] Verify" || turn.Items[4].Status != "interrupted" {
+		t.Fatal("native details lost", turn.Items)
+	}
+	s := model.New()
+	thread := s.AddThread("", "")
+	thread.Turns = []model.Turn{turn}
+	path := filepath.Join(t.TempDir(), "state.json")
+	if err := model.Save(path, s); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := model.Load(path)
+	if err != nil || restored.Thread(thread.ID).Turns[0].Items[1].ParentID != "script" || len(restored.Thread(thread.ID).Turns[0].Items) != 5 {
+		t.Fatal("restart lost Script children or repeated compactions", err)
+	}
+	if got := agentPlanText(json.RawMessage(`{"plan":[{"step":"Verify","status":"completed"}]}`)); got != "1. [completed] Verify" {
+		t.Fatal("structured plan lost", got)
+	}
+}
+
 func TestReleaseUpdateManifest(t *testing.T) {
 	for _, tc := range []struct {
 		name      string

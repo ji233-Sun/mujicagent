@@ -82,6 +82,8 @@ func (v *View) activityOutput(c *ui.Context, item *model.Item, key string) {
 		language := commandOutputLanguage
 		if item.Kind == "fileChange" {
 			language = editor.LanguageNamed("diff")
+		} else if item.MCP != nil && (item.MCP.Tool == "Script" || strings.HasSuffix(item.MCP.Tool, ".Script")) {
+			language = editor.LanguageNamed("javascript")
 		}
 		buf.SetLanguage(language)
 		return outputState{text: text, editor: editor.State{

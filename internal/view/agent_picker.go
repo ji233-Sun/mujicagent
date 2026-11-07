@@ -6,7 +6,6 @@ import (
 	"github.com/ji233-Sun/mujicagent/internal/codex"
 	"github.com/ji233-Sun/mujicagent/internal/harness"
 	"github.com/ji233-Sun/mujicagent/internal/model"
-	"slices"
 )
 
 func agentName(id string) string {
@@ -107,11 +106,7 @@ func (v *View) agentModelPanel(c *ui.Context) {
 }
 func (v *View) agentPermissions(c *ui.Context, t *model.Thread) {
 	tx := v.texts()
-	type profile struct{ id, name, icon, detail string }
-	options := []profile{{"", tx.ReadOnly(), ":read-only", tx.AgentReadOnlyHint()}, {"native", tx.FullAccess(), ":danger-full-access", tx.AgentPiToolsHint()}}
-	if t.Driver() == "droid" {
-		options = []profile{{"", tx.ReadOnly(), ":read-only", tx.AgentReadOnlyHint()}, {"low", tx.AgentFileEdits(), ":workspace", tx.AgentFileEditsHint()}, {"medium", tx.AgentDevelopment(), ":workspace", tx.AgentDevelopmentHint()}, {"high", tx.FullAccess(), ":danger-full-access", tx.AgentFullAccessHint()}}
-	}
+	options := v.agentPermissionOptions(t.Driver())
 	if v.permissionTarget != t.ID {
 		v.permissionPicker = false
 	}
@@ -147,6 +142,7 @@ func (v *View) agentPermissions(c *ui.Context, t *model.Thread) {
 				b.OnClick(func() {
 					v.permissionPicker = false
 					if p.icon == ":danger-full-access" && !selected {
+						v.defaultPermissionHarness = ""
 						v.confirmFullAccess = true
 						return
 					}
@@ -228,100 +224,71 @@ func thinkingModel(m codex.Model) harness.AgentModel {
 	return result
 }
 
-func thinkingOff(value string) bool { return value == "off" || value == "none" }
+type agentPermission struct{ id, name, icon, detail string }
+
+func (v *View) agentPermissionOptions(driver string) []agentPermission {
+	tx := v.texts()
+	if driver == "droid" {
+		return []agentPermission{{"", tx.ReadOnly(), ":read-only", tx.AgentReadOnlyHint()}, {"low", tx.AgentFileEdits(), ":workspace", tx.AgentFileEditsHint()}, {"medium", tx.AgentDevelopment(), ":workspace", tx.AgentDevelopmentHint()}, {"high", tx.FullAccess(), ":danger-full-access", tx.AgentFullAccessHint()}}
+	}
+	return []agentPermission{{"", tx.ReadOnly(), ":read-only", tx.AgentReadOnlyHint()}, {"native", tx.FullAccess(), ":danger-full-access", tx.AgentPiToolsHint()}}
+}
+
+func agentFullAccess(driver string) string {
+	if driver == "droid" {
+		return "high"
+	}
+	return "native"
+}
+
+func (v *View) agentDefaultAccess(driver string) *string {
+	if driver == "droid" {
+		return &v.C.State.Settings.DroidDefaultAccess
+	}
+	return &v.C.State.Settings.PiDefaultAccess
+}
+
+func (v *View) agentDefaultPermissions(c *ui.Context, driver string) {
+	tx := v.texts()
+	label := agentName(driver) + " " + tx.DefaultPermissions()
+	if v.defaultPermissionChoices == nil {
+		v.defaultPermissionChoices = map[string]*string{}
+	}
+	choice := v.defaultPermissionChoices[driver]
+	if choice == nil {
+		value := *v.agentDefaultAccess(driver)
+		choice = &value
+		v.defaultPermissionChoices[driver] = choice
+	}
+	var options []settingOption
+	for _, p := range v.agentPermissionOptions(driver) {
+		options = append(options, settingOption{p.id, p.name})
+	}
+	ui.Row(c).AlignItems(ui.Center).Gap(12).Children(func() {
+		ui.Text(c, label).Width(112).Shrink(0).FontSize(12).TextColor(c.Theme().TextMuted)
+		settingsSelect(c.Key("default-permissions"), choice, label, options, func() {
+			if *choice == agentFullAccess(driver) && *v.agentDefaultAccess(driver) != agentFullAccess(driver) {
+				*choice = *v.agentDefaultAccess(driver)
+				v.defaultPermissionHarness = driver
+				v.confirmFullAccess = true
+				return
+			}
+			*v.agentDefaultAccess(driver) = *choice
+			v.C.Save()
+		})
+	})
+}
 
 func (v *View) agentThinkingOptions(c *ui.Context, current codex.Model, t *model.Thread) {
 	tx := v.texts()
-	ui.Row(c).Gap(5).AlignItems(ui.Center).Padding(6, 6).Children(func() {
-		ui.Icon(c, thinkingIcon).Size(13, 13).TextColor(c.Theme().TextMuted)
-		ui.Text(c, tx.ReasoningEffort()).FontSize(11).TextColor(c.Theme().TextMuted)
-	})
+	ui.Text(c, tx.ReasoningEffort()).FontSize(11).TextColor(c.Theme().TextMuted).Padding(6, 8).Margin(0, 0, 3)
 	if current.Model == "" {
 		ui.Text(c, tx.ChooseModel()).FontSize(11).TextColor(c.Theme().TextMuted).Padding(8, 6)
 		return
 	}
-	m := thinkingModel(current)
-	value := m.ResolveEffort(t.AgentEffort)
-	choose := func(level string) {
-		if !v.C.Running[t.ID] && slices.Contains(m.Efforts, level) {
-			t.AgentEffort = level
-			v.C.Save()
-		}
+	if len(current.SupportedReasoningEfforts) == 0 {
+		ui.Text(c, tx.ThinkingUnavailable()).FontSize(12).TextColor(c.Theme().TextMuted).Padding(0, 8, 6)
+		return
 	}
-	label := func(level string) string {
-		if thinkingOff(level) && !(slices.Contains(m.Efforts, "off") && slices.Contains(m.Efforts, "none")) {
-			return tx.ThinkingOff()
-		}
-		return level
-	}
-	ui.Column(c.Key(current.Model)).Margin(0, 2).Padding(8).Gap(7).Radius(9).
-		Background(c.Theme().Surface).Label(tx.AdjustReasoningEffort()).Children(func() {
-		enabledLevels := 0
-		for _, effort := range m.Efforts {
-			if !thinkingOff(effort) {
-				enabledLevels++
-			}
-		}
-		if enabledLevels == 0 {
-			ui.Text(c, tx.ThinkingUnavailable()).FontSize(12).TextColor(c.Theme().TextMuted)
-			return
-		}
-		if len(m.Efforts) == 1 {
-			ui.Text(c, label(m.Efforts[0])).FontSize(14).Bold().TextColor(c.Theme().Accent)
-			ui.Text(c, tx.ThinkingFixed()).FontSize(10).TextColor(c.Theme().TextMuted)
-			return
-		}
-		if len(m.Efforts) == 2 && enabledLevels == 1 {
-			off, on := m.Efforts[0], m.Efforts[1]
-			if !thinkingOff(off) {
-				off, on = on, off
-			}
-			enabled := value == on
-			state := tx.ThinkingOff()
-			if enabled {
-				state = tx.ThinkingOn()
-			}
-			if value == "" {
-				state = tx.AgentDefaultEffort()
-			}
-			ui.Text(c, state).FontSize(13).Bold()
-			if value == "" {
-				// An unreported CLI default is not an off switch. Let the user
-				// explicitly choose either state without implying an active value.
-				ui.Row(c).Gap(4).Label(tx.ThinkingToggle()).Children(func() {
-					ui.Button(c, tx.ThinkingOff()).Grow(1).Height(25).Padding(0, 5).FontSize(11).OnClick(func() { choose(off) })
-					ui.Button(c, tx.ThinkingOn()).Grow(1).Height(25).Padding(0, 5).FontSize(11).OnClick(func() { choose(on) })
-				})
-				ui.Text(c, tx.ThinkingCLIDefault()).FontSize(10).TextColor(c.Theme().TextMuted)
-				return
-			}
-			ui.Switch(c, &enabled).Label(tx.ThinkingToggle()).OnClick(func() {
-				if enabled {
-					choose(on)
-				} else {
-					choose(off)
-				}
-			})
-			return
-		}
-		if value == "" {
-			ui.Text(c, tx.AgentDefaultEffort()).FontSize(11).TextColor(c.Theme().TextMuted)
-		}
-		ui.Scroll(c.Key("thinking-levels")).MaxHeight(236).Gap(4).Children(func() {
-			for _, effort := range m.Efforts {
-				selected := effort == value
-				b := ui.ButtonBase(c.Key(effort)).Height(27).FillWidth().Radius(6).Padding(0, 7).Gap(4).AlignItems(ui.Center).Label(label(effort))
-				if selected {
-					b.Background(c.Theme().Background).TextColor(c.Theme().Accent)
-				}
-				b.Children(func() {
-					ui.Text(c, label(effort)).FontSize(12).Grow(1).SingleLine()
-					if selected {
-						ui.Icon(c, checkIcon).Size(12, 12)
-					}
-				})
-				b.OnClick(func() { choose(effort) })
-			}
-		})
-	})
+	v.modelEffortSlider(c, current, &t.AgentEffort)
 }

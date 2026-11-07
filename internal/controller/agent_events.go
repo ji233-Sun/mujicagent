@@ -2,8 +2,10 @@ package controller
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/ji233-Sun/mujicagent/internal/harness"
 	"github.com/ji233-Sun/mujicagent/internal/model"
+	"strings"
 )
 
 // mergeAgentEvent is shared by all external adapters. Stable IDs preserve
@@ -40,6 +42,9 @@ func mergeAgentEvent(turn *model.Turn, e harness.AgentEvent) {
 	}
 	wasMCP := item.Kind == "mcpToolCall"
 	t := e.Tool
+	if t.ParentID != "" {
+		item.ParentID = t.ParentID
+	}
 	if item.Kind == "" {
 		item.Kind = "toolCall"
 	}
@@ -53,6 +58,8 @@ func mergeAgentEvent(turn *model.Turn, e harness.AgentEvent) {
 			item.Kind = "mcpToolCall"
 		case "plan":
 			item.Kind = "plan"
+		case "compaction":
+			item.Kind = "contextCompaction"
 		case "search", "fetch":
 			item.Kind = "webSearch"
 		default:
@@ -78,9 +85,8 @@ func mergeAgentEvent(turn *model.Turn, e harness.AgentEvent) {
 	}
 	if t.Arguments != nil {
 		if item.Kind == "plan" {
-			var input struct{ Todos string }
-			if json.Unmarshal(t.Arguments, &input) == nil {
-				item.Text = redactMCPText(input.Todos)
+			if text := agentPlanText(t.Arguments); text != "" {
+				item.Text = redactMCPText(text)
 			}
 		}
 		d.Arguments = redactMCPJSON(t.Arguments)
@@ -91,4 +97,34 @@ func mergeAgentEvent(turn *model.Turn, e harness.AgentEvent) {
 	if e.Status == "failed" {
 		d.Error = d.Result
 	}
+}
+
+func agentPlanText(raw json.RawMessage) string {
+	var input struct {
+		Todos json.RawMessage
+		Plan  json.RawMessage
+	}
+	if json.Unmarshal(raw, &input) != nil {
+		return ""
+	}
+	var text string
+	if json.Unmarshal(input.Todos, &text) == nil {
+		return text
+	}
+	var entries []struct{ Content, Text, Step, Status string }
+	if json.Unmarshal(input.Todos, &entries) != nil && json.Unmarshal(input.Plan, &entries) != nil {
+		return ""
+	}
+	var lines []string
+	for i, entry := range entries {
+		text := entry.Content
+		if text == "" {
+			text = entry.Text
+		}
+		if text == "" {
+			text = entry.Step
+		}
+		lines = append(lines, fmt.Sprintf("%d. [%s] %s", i+1, entry.Status, text))
+	}
+	return strings.Join(lines, "\n")
 }

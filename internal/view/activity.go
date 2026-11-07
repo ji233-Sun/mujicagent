@@ -92,7 +92,23 @@ func (v *View) activityGroup(c *ui.Context, items []model.Item, key string, runn
 		p.Panel(func() {
 			ui.Divider(c).Margin(0, 8, 4)
 			for i := range items {
-				v.item(c, &items[i], fmt.Sprintf("%s-%d", key, i), running)
+				item := &items[i]
+				nested := false
+				if item.ParentID != "" && item.ParentID != item.ID {
+					for _, parent := range items {
+						if parent.ID == item.ParentID {
+							nested = true
+							break
+						}
+					}
+				}
+				if nested {
+					ui.Column(c.Key(item.ID)).Padding(0, 0, 0, 18).Children(func() {
+						v.item(c, item, fmt.Sprintf("%s-%d", key, i), running)
+					})
+				} else {
+					v.item(c, item, fmt.Sprintf("%s-%d", key, i), running)
+				}
 			}
 		}).Padding(0, 4, 4)
 	})

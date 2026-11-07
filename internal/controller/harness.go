@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/ji233-Sun/mujicagent/internal/harness"
-	"github.com/ji233-Sun/mujicagent/internal/model"
 )
 
 type HarnessState struct {
@@ -224,7 +223,7 @@ func (c *Controller) InstallHarness(driver string) {
 			}
 			previous := c.State.Settings.AgentPath(driver)
 			c.setHarnessPath(driver, path)
-			if err := model.Save(filepath.Join(c.Dir, "state.json"), c.State); err != nil {
+			if err := c.saveState(); err != nil {
 				c.setHarnessPath(driver, previous)
 				u.Error = err.Error()
 				return

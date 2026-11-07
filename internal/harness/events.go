@@ -11,6 +11,7 @@ import (
 // Protocol adapters own classification; consumers never inspect wire records.
 type ToolEvent struct {
 	Name, Kind, Title, Server string
+	ParentID                  string
 	Arguments, Result         json.RawMessage
 }
 
@@ -37,8 +38,13 @@ func (p *agentParser) activity(line []byte, emit func(AgentEvent)) error {
 			e.Text, e.Delta, e.Status = a.Content, false, "completed"
 		}
 	case "compaction_start", "auto_compaction_start", "compaction_end", "auto_compaction_end":
-		e.ID, e.Kind = fmt.Sprintf("compaction-%d", p.message), "contextCompaction"
+		if !p.compacting {
+			p.compactions++
+		}
+		p.compacting = true
+		e.ID, e.Kind = fmt.Sprintf("compaction-%d", p.compactions), "contextCompaction"
 		if strings.HasSuffix(v.Type, "_end") {
+			p.compacting = false
 			e.Status = "completed"
 			if v.Aborted {
 				e.Status = "interrupted"
@@ -52,17 +58,8 @@ func (p *agentParser) activity(line []byte, emit func(AgentEvent)) error {
 			return nil
 		}
 		e.Tool = &ToolEvent{Name: v.ToolName, Arguments: v.Args}
-		switch v.ToolName {
-		case "bash":
-			e.Tool.Kind = "execute"
-		case "edit", "write":
-			e.Tool.Kind = "edit"
-		case "grep", "find":
-			e.Tool.Kind = "search"
-		case "read", "ls":
-			e.Tool.Kind = "read"
-		default:
-			e.Tool.Kind = "other"
+		if v.ToolName != "" {
+			e.Tool.Kind = NativeToolKind(v.ToolName)
 		}
 		if v.Type == "tool_execution_update" {
 			e.Tool.Result = v.PartialResult
@@ -82,4 +79,32 @@ func (p *agentParser) activity(line []byte, emit func(AgentEvent)) error {
 	}
 	emit(e)
 	return nil
+}
+
+// NativeToolKind maps native aliases, never inferring an MCP server identity.
+func NativeToolKind(name string) string {
+	name = strings.ToLower(name)
+	if i := strings.LastIndex(name, "."); i >= 0 {
+		name = name[i+1:]
+	}
+	switch name {
+	case "bash", "execute", "script", "shell", "shell_command", "run_command":
+		return "execute"
+	case "edit", "write", "create", "applypatch", "apply_patch", "edit_file", "write_file", "create_file", "str_replace_editor":
+		return "edit"
+	case "read", "ls", "read_file", "list_directory":
+		return "read"
+	case "grep", "glob", "find", "websearch", "web_search":
+		return "search"
+	case "fetchurl", "webfetch":
+		return "fetch"
+	case "todowrite", "todo", "update_plan":
+		return "plan"
+	case "askuser", "userask", "ask_user", "request_user_input":
+		return "ask"
+	case "compact", "compactcontext", "compact_context":
+		return "compaction"
+	default:
+		return "other"
+	}
 }

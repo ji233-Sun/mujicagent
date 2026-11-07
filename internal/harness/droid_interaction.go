@@ -189,6 +189,7 @@ func (a *droidRPC) update(raw json.RawMessage) error {
 		ToolUse                                                           struct {
 			ID, Name, Namespace string
 			Input               json.RawMessage
+			ScriptExecution     struct{ RunID, OuterToolUseID string }
 		}
 	}
 	if err := json.Unmarshal(raw, &v); err != nil {
@@ -208,19 +209,8 @@ func (a *droidRPC) update(raw json.RawMessage) error {
 		}
 	case "tool_call":
 		e.ID = v.ToolUse.ID
-		e.Tool = &ToolEvent{Name: v.ToolUse.Name, Arguments: v.ToolUse.Input}
-		switch v.ToolUse.Name {
-		case "TodoWrite":
-			e.Tool.Kind = "plan"
-		case "Execute":
-			e.Tool.Kind = "execute"
-		case "Edit", "Create", "ApplyPatch":
-			e.Tool.Kind = "edit"
-		case "Grep", "Glob", "WebSearch":
-			e.Tool.Kind = "search"
-		default:
-			e.Tool.Kind = "other"
-		}
+		e.Tool = &ToolEvent{Name: v.ToolUse.Name, Arguments: v.ToolUse.Input, ParentID: v.ToolUse.ScriptExecution.OuterToolUseID}
+		e.Tool.Kind = NativeToolKind(v.ToolUse.Name)
 	case "tool_result":
 		e.ID = v.ToolUseID
 		e.Status = "completed"
@@ -230,7 +220,10 @@ func (a *droidRPC) update(raw json.RawMessage) error {
 		e.Tool = &ToolEvent{Result: v.Content}
 	case "tool_progress_update":
 		e.ID = v.ToolUseID
-		var progress struct{ Text, FullOutput *string }
+		var progress struct {
+			Text, FullOutput *string
+			Type, Error      string
+		}
 		if err := json.Unmarshal(v.Update, &progress); err != nil {
 			return err
 		}
@@ -242,20 +235,34 @@ func (a *droidRPC) update(raw json.RawMessage) error {
 		} else if progress.Text != nil {
 			a.progress[v.ToolUseID] += *progress.Text
 		}
+		if progress.Type == "error" {
+			e.Status = "failed"
+			if progress.Error != "" {
+				a.progress[v.ToolUseID] = progress.Error
+			}
+		}
 		result := v.Update
-		if progress.FullOutput != nil || progress.Text != nil {
+		if progress.FullOutput != nil || progress.Text != nil || progress.Error != "" {
 			result, _ = json.Marshal(a.progress[v.ToolUseID])
 		}
 		e.Tool = &ToolEvent{Name: v.ToolName, Result: result}
 	case "session_compacted":
-		e.ID = "compaction"
+		if !a.compacting {
+			a.compactions++
+		}
+		a.compacting = false
+		e.ID = fmt.Sprintf("compaction-%d", a.compactions)
 		e.Kind = "contextCompaction"
 		e.Status = "completed"
 	case "droid_working_state_changed":
 		if v.NewState != "compacting_conversation" {
 			return nil
 		}
-		e.ID = "compaction"
+		if !a.compacting {
+			a.compactions++
+		}
+		a.compacting = true
+		e.ID = fmt.Sprintf("compaction-%d", a.compactions)
 		e.Kind = "contextCompaction"
 	case "agent_turn_completed":
 		if v.Reason != "completed" {

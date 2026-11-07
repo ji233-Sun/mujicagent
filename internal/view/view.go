@@ -41,6 +41,8 @@ type View struct {
 	permissionPicker            bool
 	permissionTarget            string
 	confirmFullAccess           bool
+	defaultPermissionHarness    string
+	defaultPermissionChoices    map[string]*string
 	deleteID                    string
 	confirmDelete               bool
 	harnessDialog               bool
@@ -130,18 +132,27 @@ func (v *View) Render(c *ui.Context) {
 	v.settingsDialog(c)
 	v.harnessInstallDialog(c)
 	v.attachmentDialog(c)
-	if ui.AlertDialog(c, &v.confirmFullAccess, tx.FullAccessQuestion(), tx.FullAccessWarning(), tx.Cancel(), tx.EnableFullAccess()) == 1 && v.permissionTarget == v.C.State.Selected {
+	warning := tx.FullAccessWarning()
+	if v.defaultPermissionHarness != "" {
+		warning = tx.FullAccessDefaultWarning()
+	}
+	fullAccessResult := ui.AlertDialog(c, &v.confirmFullAccess, tx.FullAccessQuestion(), warning, tx.Cancel(), tx.EnableFullAccess())
+	if fullAccessResult == 1 && v.defaultPermissionHarness != "" {
+		*v.agentDefaultAccess(v.defaultPermissionHarness) = agentFullAccess(v.defaultPermissionHarness)
+		if choice := v.defaultPermissionChoices[v.defaultPermissionHarness]; choice != nil {
+			*choice = agentFullAccess(v.defaultPermissionHarness)
+		}
+		v.C.Save()
+	} else if fullAccessResult == 1 && v.permissionTarget == v.C.State.Selected {
 		if t := v.C.State.Thread(v.permissionTarget); t != nil && t.Driver() != "codex" {
-			if !v.C.Running[t.ID] {
-				t.AgentAccess = "native"
-				if t.Driver() == "droid" {
-					t.AgentAccess = "high"
-				}
-				v.C.Save()
-			}
+			t.AgentAccess = agentFullAccess(t.Driver())
+			v.C.Save()
 		} else {
 			v.C.SetPermission(":danger-full-access")
 		}
+	}
+	if fullAccessResult != -1 {
+		v.defaultPermissionHarness = ""
 	}
 	if t := v.C.State.Thread(v.deleteID); t != nil {
 		if ui.AlertDialog(c, &v.confirmDelete, tx.DeleteConversation(), tx.DeleteDescription(v.threadTitle(t)), tx.Cancel(), tx.Delete()) == 1 {
@@ -388,9 +399,14 @@ func (v *View) timeline(c *ui.Context, t *model.Thread) {
 }
 func (v *View) item(c *ui.Context, item *model.Item, key string, running bool) {
 	tx := v.texts()
-	if (item.MCP != nil && !(item.Kind == "plan" && item.Text != "")) || item.Kind == "mcpToolCall" {
+	if item.Kind == "mcpToolCall" || item.Kind == "toolCall" && item.MCP != nil && !nativeTool(item) {
 		v.mcpItem(c, item, key, running)
 		return
+	}
+	if item.MCP != nil && item.Kind != "plan" {
+		display := *item
+		display.Text = toolActivityText(item, *v.openState(key))
+		item = &display
 	}
 	if item.Kind == "steerMessage" {
 		ui.Column(c.Key(key)).AlignSelf(ui.End).MaxWidth(740).Radius(12).Background(c.Theme().Surface).Padding(10, 14).Children(func() {
@@ -407,7 +423,7 @@ func (v *View) item(c *ui.Context, item *model.Item, key string, running bool) {
 		return
 	}
 	label, icon := v.activityKind(item.Kind)
-	if (item.Kind == "commandExecution" || item.Kind == "fileChange") && item.Text != "" {
+	if (item.Kind == "commandExecution" || item.Kind == "fileChange" || item.MCP != nil) && item.Text != "" {
 		label = strings.SplitN(item.Text, "\n", 2)[0]
 	}
 	ui.Column(c.Key(key)).Children(func() {
@@ -434,7 +450,7 @@ func (v *View) item(c *ui.Context, item *model.Item, key string, running bool) {
 					label = tx.WaitingForReasoning()
 				}
 				ui.Text(c, label).FontSize(12).TextColor(c.Theme().TextMuted)
-			} else if item.Kind == "commandExecution" || item.Kind == "fileChange" {
+			} else if item.Kind == "commandExecution" || item.Kind == "fileChange" || item.MCP != nil && item.Kind != "plan" {
 				v.activityOutput(c, item, key)
 			} else if item.Kind == "plan" {
 				markdown.View(c, strings.ReplaceAll(item.Text, "\n", "  \n"), &v.md)

@@ -18,6 +18,7 @@ type Project struct {
 }
 type Item struct {
 	ID, Kind, Text, Status string
+	ParentID               string   `json:",omitempty"`
 	MCP                    *MCPCall `json:",omitempty"`
 }
 
@@ -51,6 +52,7 @@ type Thread struct {
 type ModelFavorite struct{ Harness, ModelID string }
 
 type Settings struct {
+	PiDefaultAccess, DroidDefaultAccess                                                   string          `json:",omitempty"`
 	ModelFavorites                                                                        []ModelFavorite `json:",omitempty"`
 	PiPath, DroidPath                                                                     string          `json:",omitempty"`
 	HarnessSource                                                                         string          `json:",omitempty"`
@@ -205,6 +207,21 @@ func (s Settings) AgentPath(id string) string {
 		return "droid"
 	}
 	return s.CodexPath
+}
+
+func (s Settings) AgentDefaultAccess(id string) string {
+	switch id {
+	case "pi":
+		if s.PiDefaultAccess == "native" {
+			return s.PiDefaultAccess
+		}
+	case "droid":
+		switch s.DroidDefaultAccess {
+		case "low", "medium", "high":
+			return s.DroidDefaultAccess
+		}
+	}
+	return ""
 }
 
 func (s *State) IsModelFavorite(key ModelFavorite) bool {
