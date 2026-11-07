@@ -1519,6 +1519,12 @@ func TestAgentEventMergeAndPersistence(t *testing.T) {
 	if len(items) != 4 || items[1].MCP.Result != a.MCP.Result || items[2].Status != "failed" {
 		t.Fatal("tool details lost on restart")
 	}
+	mergeAgentEvent(&turn, harness.AgentEvent{ID: "mcp", Tool: &harness.ToolEvent{Kind: "mcp", Name: "lookup", Server: "docs"}})
+	mergeAgentEvent(&turn, harness.AgentEvent{ID: "mcp", Status: "completed", Tool: &harness.ToolEvent{Kind: "other", Name: "opaque_wire_name", Result: json.RawMessage(`"done"`)}})
+	call := turn.Items[len(turn.Items)-1]
+	if call.Kind != "mcpToolCall" || call.MCP.Server != "docs" || call.MCP.Tool != "lookup" || call.MCP.Result != `"done"` {
+		t.Fatalf("sparse update replaced MCP identity: %+v", call)
+	}
 }
 
 func TestAgentPlanHandoffAndMultiAnswer(t *testing.T) {

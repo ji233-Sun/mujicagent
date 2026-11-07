@@ -66,10 +66,12 @@ func mergeAgentEvent(turn *model.Turn, e harness.AgentEvent) {
 		item.MCP = &model.MCPCall{}
 	}
 	d := item.MCP
-	if t.Name != "" {
-		d.Tool = redactMCPText(t.Name)
-	} else if t.Title != "" {
-		d.Tool = redactMCPText(t.Title)
+	if !wasMCP || t.Kind == "mcp" || t.Server != "" || d.Tool == "" {
+		if t.Name != "" {
+			d.Tool = redactMCPText(t.Name)
+		} else if t.Title != "" {
+			d.Tool = redactMCPText(t.Title)
+		}
 	}
 	if t.Server != "" {
 		d.Server = redactMCPText(t.Server)
