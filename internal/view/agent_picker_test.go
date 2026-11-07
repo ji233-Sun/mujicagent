@@ -844,7 +844,7 @@ func TestAgentThinkingSelection(t *testing.T) {
 			thread.AgentEffort = "none"
 			v.chooseExternalModel(driver, catalog[3])
 			tt := ui.NewTester(func(ctx *ui.Context) {
-				ui.Box(ctx).Disabled(c.Running[thread.ID]).Children(func() { v.agentThinkingOptions(ctx, catalog[3], thread) })
+				ui.Box(ctx).Disabled(c.Running[thread.ID]).Children(func() { v.modelTuningOptions(ctx, driver, catalog[3], thread) })
 			}, 160, 320)
 			tt.Frame()
 			if err := tt.Click(v.texts().AdjustReasoningEffort()); err != nil {
@@ -975,4 +975,98 @@ func TestModelPickerWithoutCodexCatalog(t *testing.T) {
 		}
 	}
 
+}
+
+func codexEfforts(values ...string) []struct {
+	ReasoningEffort string `json:"reasoningEffort"`
+} {
+	result := make([]struct {
+		ReasoningEffort string `json:"reasoningEffort"`
+	}, 0, len(values))
+	for _, value := range values {
+		result = append(result, struct {
+			ReasoningEffort string `json:"reasoningEffort"`
+		}{ReasoningEffort: value})
+	}
+	return result
+}
+
+func TestFavoritePickerTuning(t *testing.T) {
+	for _, lang := range []string{"zh-Hans", "en"} {
+		for _, driver := range []string{"codex", "pi", "droid"} {
+			t.Run(lang+"-"+driver, func(t *testing.T) {
+				s := model.New()
+				s.Settings.Language = lang
+				thread := s.AddThread("", "")
+				c := controller.New(t.TempDir(), s, nil)
+				c.Models = []codex.Model{{Model: "gpt-6.1-sol", DefaultReasoningEffort: "medium", SupportedReasoningEfforts: codexEfforts("low", "medium", "high"), ServiceTiers: []codex.ServiceTier{{ID: "fast", Name: "Fast", Description: "1.5x speed"}, {ID: "ultrafast", Name: "Ultra fast"}}}}
+				for _, id := range []string{"pi", "droid"} {
+					h := c.HarnessFor(id)
+					h.ModelsChecked = true
+					h.Models = []harness.AgentModel{{ID: "workbuddy/hy4std", Name: "WorkBuddy", Efforts: []string{"off", "low", "medium", "high"}, DefaultEffort: "medium"}}
+				}
+				s.Settings.ModelFavorites = []model.ModelFavorite{{Harness: "codex", ModelID: "gpt-6.1-sol"}, {Harness: "pi", ModelID: "workbuddy/hy4std"}, {Harness: "droid", ModelID: "workbuddy/hy4std"}}
+				if driver == "codex" {
+					s.Settings.Model, s.Settings.Effort = "gpt-6.1-sol", "medium"
+				} else {
+					thread.Harness, thread.AgentModel, thread.AgentEffort = driver, "workbuddy/hy4std", "medium"
+				}
+				v := New(c)
+				v.modelPicker, v.pickerHarness = true, "favorites"
+				tt := ui.NewTester(v.Render, 840, 560)
+				tt.Frame()
+				tt.Advance(time.Second)
+				tt.Frame()
+				tx := v.texts()
+				panel, ok := tt.Find(tx.ModelPicker())
+				if !ok || panel.H != 360 || panel.Y < 0 || panel.Y+panel.H > 560 {
+					t.Fatalf("favorites tuning changed picker bounds: %+v", panel)
+				}
+				list, ok := tt.Find(tx.ModelList())
+				if !ok || list.H < 280 || list.W > 280 {
+					t.Fatalf("favorites list did not shrink for the tuning pane: %+v", list)
+				}
+				slider, ok := tt.Find(tx.AdjustReasoningEffort())
+				if !ok || slider.X <= list.X+list.W || slider.X+slider.W > panel.X+panel.W || slider.Y+slider.H > panel.Y+panel.H {
+					t.Fatalf("favorites tuning slider missing or clipped: %+v", slider)
+				}
+				if !tt.HasText("medium") {
+					t.Fatal("favorites tuning lost the active effort")
+				}
+				_, fast := tt.Find("Fast")
+				_, ultra := tt.Find("Ultra fast")
+				if driver == "codex" && (!fast || !ultra) {
+					t.Fatal("Codex favorites lost the speed options")
+				}
+				if driver != "codex" && (fast || ultra) {
+					t.Fatal("harness favorites exposed Codex speed options")
+				}
+				if output := os.Getenv("MUJICAGENT_AGENTS_SCREENSHOTS"); output != "" {
+					if err := os.MkdirAll(output, 0700); err != nil {
+						t.Fatal(err)
+					}
+					f, err := os.Create(filepath.Join(output, "favorites-tuning-"+lang+"-"+driver+".png"))
+					if err != nil {
+						t.Fatal(err)
+					}
+					defer f.Close()
+					if err := png.Encode(f, tt.Image()); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if err := tt.Click(tx.AdjustReasoningEffort()); err != nil {
+					t.Fatal(err)
+				}
+				tt.Key(0, ui.KeyEnd)
+				tt.Frame()
+				if driver == "codex" {
+					if s.Settings.Effort != "high" {
+						t.Fatalf("favorites slider did not update Codex effort: %q", s.Settings.Effort)
+					}
+				} else if thread.AgentEffort != "high" {
+					t.Fatalf("favorites slider did not update %s effort: %q", driver, thread.AgentEffort)
+				}
+			})
+		}
+	}
 }
