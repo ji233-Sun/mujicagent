@@ -336,12 +336,15 @@ func TestAttachmentDeletionPreview(t *testing.T) {
 	c := controller.New(t.TempDir(), state, nil)
 	c.NewThread("")
 	thread := state.Thread(state.Selected)
-	thread.Draft = (model.Attachment{Kind: "file", Path: "/tmp/example.txt"}).Link()
+	thread.Draft = (model.Attachment{Kind: "file", Path: filepath.Join(t.TempDir(), "example.txt")}).Link()
 	v := New(c)
 	tt := ui.NewTester(v.Render, 1140, 780)
 	tt.Frame()
 	// Set the state left by richtext deletion directly, without UI input.
 	attrs := v.editor.Text().AttributesAt(0)
+	if v.editor.Text().Len() != 1 || attrs.Attachment == nil {
+		t.Fatal("preview fixture must parse as a single attachment")
+	}
 	v.editor.Edit(func(e *richtext.Edit) {
 		e.Replace(0, 1, richtext.Text{})
 		e.Select(0, 0)
@@ -391,10 +394,13 @@ func TestComposerClipsOverflow(t *testing.T) {
 			t.Fatal("composer missing")
 		}
 		baseline := tt.Image()
-		attachment := model.Attachment{Kind: "file", Path: "/tmp/" + strings.Repeat("long-filename", 30) + ".txt"}
+		attachment := model.Attachment{Kind: "file", Path: filepath.Join(t.TempDir(), strings.Repeat("long-filename", 30)+".txt")}
 		for _, draft := range []string{strings.Repeat("中文长段落 mixed text ", 100), attachment.Link()} {
 			thread.Draft = draft
 			tt.Frame()
+			if draft == attachment.Link() && (v.editor.Text().Len() != 1 || v.editor.Text().AttributesAt(0).Attachment == nil) {
+				t.Fatal("overflow fixture must parse as a single attachment")
+			}
 			for _, end := range []bool{false, true} {
 				caret := 0
 				if end {
