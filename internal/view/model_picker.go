@@ -50,7 +50,7 @@ func (v *View) modelSelector(c *ui.Context) {
 	}
 	button := ui.ButtonBase(c.Key("model-selector")).Height(30).MaxWidth(380).Shrink(1).
 		Padding(0, 8).Gap(7).Radius(8).AlignItems(ui.Center).Label(tx.ModelAndEffort()).
-		Tooltip(label).Disabled(len(v.C.Models) == 0).Transition(hoverTransition)
+		Tooltip(label).Transition(hoverTransition)
 	if button.Hovered() || v.modelPicker {
 		button.Background(c.Theme().SurfaceHover).TextColor(c.Theme().Accent)
 	}
@@ -312,10 +312,11 @@ func (v *View) chooseModel(m codex.Model) {
 	}
 	t := v.C.State.Thread(v.C.State.Selected)
 	if t != nil && t.Driver() != "codex" {
-		if v.C.Handoff("codex", m.Model) {
-			v.modelPicker = false
+		if !v.C.Handoff("codex", m.Model) {
+			return
 		}
-		return
+		v.modelPicker = false
+		t = v.C.State.Thread(v.C.State.Selected)
 	}
 	if t != nil {
 		t.AgentModel = m.Model

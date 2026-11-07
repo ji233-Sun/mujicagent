@@ -89,6 +89,6 @@ Pi 使用 JSON 事件流，支持文本流式回复、图片与标注输入、�
 
 当前验证环境是 macOS arm64、MyGo 0.7.4、Codex CLI 0.167.0。Windows、Linux 尚未做运行验证；毛玻璃使用系统提供的材质，不支持材质的平台使用实色侧栏。
 
-此版本不包含 MCP 管理、remote、worktree、多个 Codex 实例或其他 Agent 接入。现有 Codex 用户配置仍由 Codex 自身加载。Ask 等协议仍在演进，需要支持对应 App Server API 的 CLI。
+此版本不包含 MCP 管理、remote、worktree 或多个 Codex 实例。现有 Codex 用户配置仍由 Codex 自身加载。Ask 等协议仍在演进，需要支持对应 App Server API 的 CLI。
 
 应用非正常关闭时，未完成回复可能只保留最近保存的本地快照，重启后标为中断；已保存会话可重连继续。尚未实现从 Codex 的全局历史导入或同步其他客户端的修改。

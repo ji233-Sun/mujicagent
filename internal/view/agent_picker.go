@@ -234,6 +234,9 @@ func (v *View) favoriteModelPanel(c *ui.Context) {
 	if t := v.C.State.Thread(v.C.State.Selected); t != nil {
 		selected = model.ModelFavorite{Harness: t.Driver(), ModelID: t.AgentModel}
 	}
+	if selected.Harness == "codex" && selected.ModelID == "" {
+		selected.ModelID = v.C.State.Settings.Model
+	}
 	v.modelChoicesPanel(c, choices, selected, func(m modelChoice) {
 		if m.Driver == "codex" {
 			v.chooseModel(m.Model)

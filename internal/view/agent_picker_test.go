@@ -145,4 +145,37 @@ func TestModelFavoriteOrderingAndHarnessIdentity(t *testing.T) {
 		t.Fatal("favorite selected the wrong harness/model")
 	}
 
+	s.Settings.Effort, s.Settings.ServiceTier = "ultra", "fast"
+	v.chooseModel(codex.Model{Model: "codex-favorite", DefaultReasoningEffort: "medium", SupportedReasoningEfforts: []struct {
+		ReasoningEffort string `json:"reasoningEffort"`
+	}{{ReasoningEffort: "medium"}}})
+	if s.Thread(s.Selected).Driver() != "codex" || s.Settings.Model != "codex-favorite" || s.Settings.Effort != "medium" || s.Settings.ServiceTier != "" {
+		t.Fatal("Codex favorite did not apply compatible model options after handoff")
+	}
+
+}
+
+func TestModelPickerWithoutCodexCatalog(t *testing.T) {
+	s := model.New()
+	s.Settings.Language = "en"
+	s.AddThread("", "")
+	c := controller.New(t.TempDir(), s, nil)
+	v := New(c)
+	tt := ui.NewTester(func(ctx *ui.Context) { v.modelSelector(ctx) }, 600, 400)
+	tt.Frame()
+	button, ok := tt.Find(v.texts().ModelAndEffort())
+	if !ok {
+		t.Fatal("missing model selector")
+	}
+	tt.ClickAt(button.X+button.W/2, button.Y+button.H/2)
+	tt.Frame()
+	if !v.modelPicker {
+		t.Fatal("empty Codex catalog blocked the model picker")
+	}
+	for _, name := range []string{"Pi", "Droid"} {
+		if _, ok := tt.Find(name); !ok {
+			t.Fatalf("%s is unavailable without Codex models", name)
+		}
+	}
+
 }
