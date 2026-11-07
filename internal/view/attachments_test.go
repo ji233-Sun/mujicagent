@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 	"github.com/ji233-Sun/mujicagent/internal/controller"
@@ -197,25 +198,28 @@ func TestAttachmentOpening(t *testing.T) {
 					}
 				}, 600, 200)
 				tt.Frame()
-				if entry == "message" {
-					if err := tt.Click(tc.name); err != nil {
-						t.Fatal(err)
+				label := tc.name
+				if entry == "draft" {
+					label = "消息"
+				}
+				r, ok := tt.Find(label)
+				if !ok {
+					t.Fatal("attachment container missing")
+				}
+				// Cover the thumbnail, gap, and both ends of the filename.
+				for _, x := range []float32{8, 20, 24, v.attachmentObject(a).Width - 2} {
+					tt.Advance(time.Second)
+					v.attachmentOpen, v.annotation = false, nil
+					tt.ClickAt(r.X+x, r.Y+8)
+					for i := 0; i < 3; i++ {
+						tt.Frame()
 					}
-				} else {
-					r, ok := tt.Find("消息")
-					if !ok {
-						t.Fatal("composer missing")
+					if v.attachmentOpen != tc.wantOpen || (v.annotation != nil) != tc.wantOpen {
+						t.Fatalf("x=%v: opened=%v, editor=%v, want %v", x, v.attachmentOpen, v.annotation != nil, tc.wantOpen)
 					}
-					tt.ClickAt(r.X+8, r.Y+8)
-				}
-				for i := 0; i < 3; i++ {
-					tt.Frame()
-				}
-				if v.attachmentOpen != tc.wantOpen || (v.annotation != nil) != tc.wantOpen {
-					t.Fatalf("opened=%v, editor=%v, want %v", v.attachmentOpen, v.annotation != nil, tc.wantOpen)
-				}
-				if thread.Draft != a.Link() {
-					t.Fatal("click changed draft")
+					if thread.Draft != a.Link() {
+						t.Fatal("click changed draft")
+					}
 				}
 			})
 		}
