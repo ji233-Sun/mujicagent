@@ -1,12 +1,9 @@
 package harness
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/ji233-Sun/mujicagent/internal/codex"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,18 +11,37 @@ import (
 
 type RunOptions struct {
 	Driver, Binary, Cwd, Session, Model, Access, Prompt, Effort string
+	Control                                                     *Control
 	Images                                                      []string
 }
 type AgentEvent struct {
-	Text, Session string
-	Delta         bool
+	Text, Session    string
+	ID, Kind, Status string
+	Interaction      *Interaction
+	Tool             *ToolEvent
+	Delta            bool
+	Accepted         bool
 }
+
+// Each external driver registers its complete session transport here. New
+// adapters must emit the shared event contract, not a final-text-only result.
+type agentAdapter struct {
+	run   func(context.Context, RunOptions, []string, func(AgentEvent)) error
+	steer func(string, string, []any) map[string]any
+}
+
+var agentAdapters = map[string]agentAdapter{
+	"pi":    {runPi, piSteer},
+	"droid": {runDroid, droidSteer},
+}
+
+func CanSteer(driver string) bool { return agentAdapters[driver].steer != nil }
 
 func agentArgs(o RunOptions) ([]string, error) {
 	var args []string
 	switch o.Driver {
 	case "pi":
-		args = []string{"--mode", "json", "--print", "--session", o.Session}
+		args = []string{"--mode", "rpc", "--session", o.Session}
 		// Restricted runs expose only built-in read tools; extensions and MCP can
 		// otherwise add execution paths outside this permission profile.
 		switch o.Access {
@@ -41,11 +57,9 @@ func agentArgs(o RunOptions) ([]string, error) {
 		if o.Effort != "" {
 			args = append(args, "--thinking", o.Effort)
 		}
-		for _, path := range o.Images {
-			args = append(args, "@"+path)
-		}
+
 	case "droid":
-		args = []string{"exec", "--output-format", "acp"}
+		args = []string{"exec", "--input-format", "stream-jsonrpc", "--output-format", "stream-jsonrpc"}
 		if o.Model != "" {
 			args = append(args, "--model", o.Model)
 		}
@@ -74,62 +88,16 @@ func Run(ctx context.Context, o RunOptions, emit func(AgentEvent)) error {
 			return err
 		}
 	}
-	if o.Driver == "droid" {
-		return runDroid(ctx, o, args, emit)
+	run := agentAdapters[o.Driver].run
+	if run == nil {
+		return fmt.Errorf("unsupported agent: %s", o.Driver)
 	}
-
-	cmd, err := codex.Command(ctx, o.Binary, args...)
-	if err != nil {
-		return err
-	}
-	cmd.Dir = o.Cwd
-	if o.Driver == "pi" {
-		cmd.Stdin = strings.NewReader(o.Prompt)
-	}
-	// Arbitrary diagnostics can contain credentials; do not persist stderr.
-	cmd.Stderr = io.Discard
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return err
-	}
-	prepareProcess(cmd)
-	if err = cmd.Start(); err != nil {
-		return err
-	}
-	parser := agentParser{driver: o.Driver}
-	scanner := bufio.NewScanner(stdout)
-	scanner.Buffer(make([]byte, 4096), 8<<20)
-	for scanner.Scan() {
-		if err = parser.line(scanner.Bytes(), emit); err != nil {
-			break
-		}
-	}
-	if err == nil {
-		err = scanner.Err()
-	}
-	if err != nil {
-		_ = cmd.Cancel()
-	}
-	waitErr := cmd.Wait()
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-	if err != nil {
-		return err
-	}
-	if waitErr != nil {
-		return fmt.Errorf("%s failed: %w; check CLI login and configuration", o.Driver, waitErr)
-	}
-	if !parser.complete {
-		return fmt.Errorf("%s exited without a completed response", o.Driver)
-	}
-	return nil
+	return run(ctx, o, args, emit)
 }
 
 type agentParser struct {
-	driver   string
-	complete bool
-	text     string
+	driver  string
+	message int
 }
 
 func (p *agentParser) line(line []byte, emit func(AgentEvent)) error {
@@ -139,16 +107,26 @@ func (p *agentParser) line(line []byte, emit func(AgentEvent)) error {
 			Role, StopReason, ErrorMessage string
 			Content                        json.RawMessage
 		}
-		AssistantMessageEvent struct{ Type, Delta string }
+		AssistantMessageEvent struct {
+			Type, Delta, Content string
+			ContentIndex         int
+		}
 	}
 	if err := json.Unmarshal(line, &e); err != nil {
 		return fmt.Errorf("invalid %s protocol output: %w", p.driver, err)
 	}
 
 	switch e.Type {
+	case "message_start":
+		if e.Message.Role == "assistant" {
+			p.message++
+		}
 	case "message_update":
+		if strings.HasPrefix(e.AssistantMessageEvent.Type, "thinking_") {
+			return p.activity(line, emit)
+		}
 		if e.AssistantMessageEvent.Type == "text_delta" {
-			emit(AgentEvent{Text: e.AssistantMessageEvent.Delta, Delta: true})
+			emit(AgentEvent{ID: fmt.Sprintf("message-%d-%d", p.message, e.AssistantMessageEvent.ContentIndex), Kind: "agentMessage", Text: e.AssistantMessageEvent.Delta, Delta: true})
 		}
 	case "message_end":
 		if e.Message.Role != "assistant" {
@@ -157,20 +135,21 @@ func (p *agentParser) line(line []byte, emit func(AgentEvent)) error {
 		if e.Message.StopReason == "error" || e.Message.StopReason == "aborted" {
 			return fmt.Errorf("Pi: %s %s", e.Message.StopReason, e.Message.ErrorMessage)
 		}
-		var content []struct{ Type, Text string }
+		var content []struct{ Type, Text, Thinking string }
 		if err := json.Unmarshal(e.Message.Content, &content); err != nil {
 			return err
 		}
-		var text strings.Builder
-		for _, part := range content {
-			if part.Type == "text" {
-				text.WriteString(part.Text)
+		for i, part := range content {
+			switch part.Type {
+			case "text":
+				emit(AgentEvent{ID: fmt.Sprintf("message-%d-%d", p.message, i), Kind: "agentMessage", Text: part.Text, Status: "completed"})
+			case "thinking":
+				emit(AgentEvent{ID: fmt.Sprintf("thinking-%d-%d", p.message, i), Kind: "reasoning", Text: part.Thinking, Status: "completed"})
 			}
 		}
-		p.text += text.String() + "\n"
-		emit(AgentEvent{Text: strings.TrimSpace(p.text)})
-	case "agent_end", "agent_settled":
-		p.complete = true
+
+	case "tool_execution_start", "tool_execution_update", "tool_execution_end", "compaction_start", "compaction_end", "auto_compaction_start", "auto_compaction_end":
+		return p.activity(line, emit)
 	}
 	return nil
 }

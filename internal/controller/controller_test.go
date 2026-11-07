@@ -1373,23 +1373,20 @@ func TestAgentProcessLifecycle(t *testing.T) {
 			binary := filepath.Join(dir, "fake agent")
 			output := `{"type":"result","session_id":"owned-droid","result":"done"}`
 			if driver == "pi" {
-				output = "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"done\"}]}}\n{\"type\":\"agent_end\"}"
+				output = "{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"done\"}]}}\n{\"type\":\"agent_settled\"}"
 			}
-			script := "#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' '" + output + "'\n"
+			script := "#!/bin/sh\nread request\nprintf '%s\\n' '" + output + "'\n"
 			if driver == "droid" {
 				script = `#!/bin/sh
 read request
-printf '%s\n' '{"id":1,"result":{"agentCapabilities":{"loadSession":true,"promptCapabilities":{"image":true}}}}'
+printf '%s\n' '{"id":"request-1","result":{"sessionId":"owned-droid"}}'
 read request
-printf '%s\n' '{"id":2,"result":{"sessionId":"owned-droid"}}'
+case "$request" in *'"autonomyLevel":"off"'*) ;; *) exit 2;; esac
+printf '%s\n' '{"id":"request-2","result":{}}'
 read request
-case "$request" in *'"modeId":"normal"'*) ;; *) exit 2;; esac
-printf '%s\n' '{"id":3,"result":{}}'
-read request
-printf '%s\n' '{"id":4,"result":{}}'
-read request
-printf '%s\n' '{"method":"session/update","params":{"sessionId":"owned-droid","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"done"}}}}'
-printf '%s\n' '{"id":5,"result":{"stopReason":"end_turn"}}'
+printf '%s\n' '{"id":"request-3","result":{}}'
+printf '%s\n' '{"method":"droid.session_notification","params":{"sessionId":"owned-droid","notification":{"type":"assistant_text_delta","messageId":"m","blockIndex":0,"textDelta":"done"}}}'
+printf '%s\n' '{"method":"droid.session_notification","params":{"sessionId":"owned-droid","notification":{"type":"agent_turn_completed","reason":"completed"}}}'
 sleep 20
 `
 			}
@@ -1432,6 +1429,45 @@ sleep 20
 				t.Fatalf("not cancelled: %+v", thread.Turns[1])
 			}
 		})
+	}
+}
+
+func TestAgentEventMergeAndPersistence(t *testing.T) {
+	turn := model.Turn{Status: "inProgress"}
+	for _, e := range []harness.AgentEvent{
+		{ID: "m1", Kind: "agentMessage", Text: "Before", Delta: true},
+		{ID: "a", Tool: &harness.ToolEvent{Name: "Read", Kind: "read", Arguments: json.RawMessage(`{"path":"a","api_key":"secret"}`)}},
+		{ID: "b", Tool: &harness.ToolEvent{Name: "Read", Kind: "read", Arguments: json.RawMessage(`{"path":"b"}`)}},
+		{ID: "a", Tool: &harness.ToolEvent{Result: json.RawMessage(`"partial"`)}},
+		{ID: "m2", Kind: "agentMessage", Text: "After", Delta: true},
+		{ID: "a", Status: "completed", Tool: &harness.ToolEvent{Result: json.RawMessage(`["complete"]`)}},
+		{ID: "b", Status: "failed", Tool: &harness.ToolEvent{Result: json.RawMessage(`{"error":"denied"}`)}},
+		{ID: "m1", Kind: "agentMessage", Text: "Before", Status: "completed"},
+	} {
+		mergeAgentEvent(&turn, e)
+	}
+	if len(turn.Items) != 4 || turn.Items[0].Text != "Before" || turn.Items[3].Text != "After" {
+		t.Fatalf("order/snapshot: %+v", turn.Items)
+	}
+	a, b := turn.Items[1], turn.Items[2]
+	if a.Kind != "toolCall" || a.Status != "completed" || strings.Contains(a.MCP.Arguments, "secret") || strings.Contains(a.MCP.Result, "partial") || b.Status != "failed" || b.MCP.Error == "" {
+		t.Fatalf("tool merge: %+v %+v", a, b)
+	}
+	s := model.New()
+	thread := s.AddThread("", t.TempDir())
+	thread.Harness = "pi"
+	thread.Turns = []model.Turn{turn}
+	path := filepath.Join(t.TempDir(), "state.json")
+	if err := model.Save(path, s); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := model.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := restored.Thread(thread.ID).Turns[0].Items
+	if len(items) != 4 || items[1].MCP.Result != a.MCP.Result || items[2].Status != "failed" {
+		t.Fatal("tool details lost on restart")
 	}
 }
 

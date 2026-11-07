@@ -28,8 +28,10 @@ description: 为 MujicAgent 添加或维护 harness、模型发现与收藏、�
 
 - 权限入口复用 Codex 的 `pickerOption`、`pickerPopover`、权限图标、选中标记和高权限确认，不向用户展示工具开关或无解释的 low/medium/high。名称按真实能力映射，不能把不同 Harness 的执行权限说成同一种 OS 沙箱。
 - Pi 当前「只读」只启用内置 read/grep/find/ls，并关闭扩展和 MCP；「完全访问」沿用本机工具配置。没有原生沙箱时不添加假工作区权限。参考 Pi 官方 permission-gate 扩展和其他客户端实现时，先验证当前安装版本的实际能力；不要仅注入 prompt 声称权限已受限。
-- Droid 当前使用 `exec --output-format acp`。先 initialize 检查 promptCapabilities.image/loadSession，再 session/new 或 session/load；每轮显式 session/set_mode、set_model 和 reasoning_effort，不能继承全局配置或恢复会话的高权限。normal/auto-low/auto-medium/auto-high 对应只读/文件编辑/开发权限/完全访问；超出自动授权范围的请求返回 cancelled，不静默批准。
-- ACP 图片通过 MIME + base64 content block 发送，普通文件复用已有本地路径输入，标注发送原图与导出图。先实测原生能力；确实不支持时才考虑托管文件及 URI 映射，并定义模型可访问的解析规则、生命周期和错误反馈，不能只生成模型无法读取的自定义 URL。
+- Droid 使用 `exec --input-format stream-jsonrpc --output-format stream-jsonrpc`。initialize/load 后，每轮显式 update_session_settings：interactionMode=auto、autonomyLevel=off/low/medium/high，以及所选模型与思考强度；权限请求必须经用户选择，仅回传 proceed_once/cancel，AskUser 复用共享请求界面。消息、工具、压缩、失败和完成通过 session_notification 处理；恢复历史不得追加到当前轮。
+- Pi 使用 `--mode rpc`，通过 prompt/steer 与 extension_ui_request/response 双向交互，等待 agent_settled，不能将 agent_end 当作整个任务结束。
+- 新 Harness 在 `internal/harness/agents.go` 注册运行与 Steer 适配器，使用 AgentEvent/ToolEvent/Interaction 契约；缺少 Steer 实现时不启用入口。复用 `mergeAgentEvent`、model.Item、现有请求 UI 与脱敏详情，不写只消费最终文本的旁路。必须扩展现有协议、状态和视图测试，覆盖事件边界、同名并行工具、增量与快照、审批回传、停止、持久化和历史过滤。登记能力未验证项，不以编译通过宣称完整对齐。
+- Pi/Droid 图片通过各自 RPC 的 MIME + base64 image payload 发送，普通文件复用已有本地路径输入，标注发送原图与导出图。先实测原生能力；确实不支持时才考虑托管文件及 URI 映射，并定义模型可访问的解析规则、生命周期和错误反馈，不能只生成模型无法读取的自定义 URL。
 - 事件负载按事件类型解析：工具结果可能为对象或数组，不得强制解码为文本。恢复会话的历史通知不能重复追加到当前回复；停止、错误、缺失能力和未知客户端请求必须有明确结果，子进程必须回收。
 - 在既有测试补权限默认值、未知值拒绝、图片内容、通知类型、恢复和取消回归。获得实际 token 授权后，用用户指定的精确模型验证读取普通文件、图片识别和第二轮续聊；只读目录探测不能替代这些证据。`MUJICAGENT_AGENT_LIVE_TEST=1 go test ./internal/harness -run TestInstalledAgentTurns -v -count=1` 会调用 Pi 的 magpie/workbuddy/deepseek-v4.1-flash 和 Droid 的 custom:magpie/codex-fast/gpt-6.1-sol，产生用量。
 

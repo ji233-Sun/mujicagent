@@ -161,10 +161,14 @@ func (v *View) agentPermissions(c *ui.Context, t *model.Thread) {
 			current = p
 		}
 	}
-	button := pickerOption(c.Key("agent-permission-selector"), tx.Permissions(), v.permissionPicker).Height(30).MaxWidth(170).Shrink(1).Tooltip(current.detail).Disabled(v.C.Running[t.ID])
+	button := pickerOption(c.Key("agent-permission-selector"), tx.Permissions(), v.permissionPicker).Height(30).MaxWidth(170).Shrink(1).Tooltip(current.detail)
 	button.Children(func() {
 		ui.Icon(c, permissionIcon(current.icon)).Size(15, 15).Shrink(0)
-		ui.Text(c, current.name).FontSize(12).SingleLine().Shrink(1).MinWidth(0)
+		name := current.name
+		if v.C.Running[t.ID] {
+			name = tx.PermissionNextTurn(name)
+		}
+		ui.Text(c, name).FontSize(12).SingleLine().Shrink(1).MinWidth(0)
 	})
 	button.OnClick(func() { v.permissionPicker = !v.permissionPicker; v.modelPicker = false; v.permissionTarget = t.ID })
 	pickerPopover(c.Key("agent-permission-picker"), button, &v.permissionPicker, tx.PermissionPicker(), 290, func() {

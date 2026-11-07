@@ -27,6 +27,8 @@ func (v *View) mcpItem(c *ui.Context, item *model.Item, key string, running bool
 		if running {
 			status = tx.McpRunning()
 		}
+	case "interrupted":
+		status = tx.Stopped()
 	case "completed":
 		status = tx.McpCompleted()
 	case "failed":
@@ -55,7 +57,8 @@ func (v *View) mcpItem(c *ui.Context, item *model.Item, key string, running bool
 		}
 		p.Trigger.Children(func() {
 			ui.Icon(c, chevron).Size(12, 12).Rotate(90 * p.Progress()).Shrink(0)
-			ui.Icon(c, activityIcon).Size(15, 15).Shrink(0)
+			_, icon := v.activityKind(item.Kind)
+			ui.Icon(c, icon).Size(15, 15).Shrink(0)
 			ui.Column(c).Grow(1).MinWidth(0).Gap(3).Children(func() {
 				ui.Text(c, title).FontSize(12).SingleLine()
 				ui.Text(c, summary).FontSize(11).SingleLine().TextColor(c.Theme().TextMuted)
@@ -71,7 +74,7 @@ func (v *View) mcpItem(c *ui.Context, item *model.Item, key string, running bool
 			ui.Text(c, status).FontSize(11).Shrink(0).TextColor(color)
 		})
 		p.Panel(func() {
-			if detail.Tool == "" || detail.Server == "" {
+			if item.Kind == "mcpToolCall" && (detail.Tool == "" || detail.Server == "") {
 				ui.Text(c, tx.McpMissingMetadata()).FontSize(11).TextColor(c.Theme().TextMuted)
 			}
 			v.mcpDetail(c, tx.McpArguments(), detail.Arguments, tx.McpNoArguments())

@@ -554,14 +554,14 @@ func (msgs Messages) Message() string {
 	return Catalog.Format(msgs.locale, "message", nil)
 }
 
-// MessagePlaceholder says "让 Codex 做些什么…"
+// MessagePlaceholder says "让 {name} 做些什么…"
 // in the language the app shows.
-func MessagePlaceholder() string { return In(i18n.Locale()).MessagePlaceholder() }
+func MessagePlaceholder(name string) string { return In(i18n.Locale()).MessagePlaceholder(name) }
 
-// MessagePlaceholder says "让 Codex 做些什么…"
+// MessagePlaceholder says "让 {name} 做些什么…"
 // in the language of msgs.
-func (msgs Messages) MessagePlaceholder() string {
-	return Catalog.Format(msgs.locale, "messagePlaceholder", nil)
+func (msgs Messages) MessagePlaceholder(name string) string {
+	return Catalog.Format(msgs.locale, "messagePlaceholder", map[string]any{"name": name})
 }
 
 // Stop says "停止"
@@ -1498,6 +1498,16 @@ func (msgs Messages) McpRequest() string {
 	return Catalog.Format(msgs.locale, "mcpRequest", nil)
 }
 
+// AgentToolCall says "工具调用"
+// in the language the app shows.
+func AgentToolCall() string { return In(i18n.Locale()).AgentToolCall() }
+
+// AgentToolCall says "工具调用"
+// in the language of msgs.
+func (msgs Messages) AgentToolCall() string {
+	return Catalog.Format(msgs.locale, "agentToolCall", nil)
+}
+
 // McpToolCall says "MCP 工具"
 // in the language the app shows.
 func McpToolCall() string { return In(i18n.Locale()).McpToolCall() }
@@ -1528,11 +1538,11 @@ func (msgs Messages) McpUnknownStatus() string {
 	return Catalog.Format(msgs.locale, "mcpUnknownStatus", nil)
 }
 
-// McpMissingMetadata says "Codex 未提供工具名称或 MCP 服务名称。"
+// McpMissingMetadata says "智能体未提供工具名称或 MCP 服务名称。"
 // in the language the app shows.
 func McpMissingMetadata() string { return In(i18n.Locale()).McpMissingMetadata() }
 
-// McpMissingMetadata says "Codex 未提供工具名称或 MCP 服务名称。"
+// McpMissingMetadata says "智能体未提供工具名称或 MCP 服务名称。"
 // in the language of msgs.
 func (msgs Messages) McpMissingMetadata() string {
 	return Catalog.Format(msgs.locale, "mcpMissingMetadata", nil)
@@ -1588,21 +1598,21 @@ func (msgs Messages) McpError() string {
 	return Catalog.Format(msgs.locale, "mcpError", nil)
 }
 
-// McpNoArguments says "Codex 未提供调用参数。"
+// McpNoArguments says "智能体未提供调用参数。"
 // in the language the app shows.
 func McpNoArguments() string { return In(i18n.Locale()).McpNoArguments() }
 
-// McpNoArguments says "Codex 未提供调用参数。"
+// McpNoArguments says "智能体未提供调用参数。"
 // in the language of msgs.
 func (msgs Messages) McpNoArguments() string {
 	return Catalog.Format(msgs.locale, "mcpNoArguments", nil)
 }
 
-// McpNoResult says "Codex 未提供返回结果。"
+// McpNoResult says "智能体未提供返回结果。"
 // in the language the app shows.
 func McpNoResult() string { return In(i18n.Locale()).McpNoResult() }
 
-// McpNoResult says "Codex 未提供返回结果。"
+// McpNoResult says "智能体未提供返回结果。"
 // in the language of msgs.
 func (msgs Messages) McpNoResult() string {
 	return Catalog.Format(msgs.locale, "mcpNoResult", nil)
@@ -1618,11 +1628,11 @@ func (msgs Messages) McpWaitingResult() string {
 	return Catalog.Format(msgs.locale, "mcpWaitingResult", nil)
 }
 
-// McpNoError says "调用失败，但 Codex 未提供错误详情。"
+// McpNoError says "调用失败，但智能体未提供错误详情。"
 // in the language the app shows.
 func McpNoError() string { return In(i18n.Locale()).McpNoError() }
 
-// McpNoError says "调用失败，但 Codex 未提供错误详情。"
+// McpNoError says "调用失败，但智能体未提供错误详情。"
 // in the language of msgs.
 func (msgs Messages) McpNoError() string {
 	return Catalog.Format(msgs.locale, "mcpNoError", nil)

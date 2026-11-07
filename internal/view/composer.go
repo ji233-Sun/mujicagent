@@ -96,13 +96,17 @@ func (v *View) composerInput(c *ui.Context, draft *string) {
 	v.editor.SetTypingAttributes(richtext.Attributes{})
 	services := c.Services()
 	tx := v.texts()
+	driver := "codex"
+	if t := v.C.State.Thread(id); t != nil {
+		driver = t.Driver()
+	}
 	input := richtext.EditorBase(c.Key("draft-"+id+"-"+queueID), v.editor, richtext.EditorOptions{
 		TagStyle: func(tag string, span *ui.Span) {
 			if tag == "attachment" {
 				span.Underline = false
 			}
 		},
-		Label: tx.Message(), Placeholder: tx.MessagePlaceholder(), NoMarkdown: true, Font: ui.Font{Size: 14},
+		Label: tx.Message(), Placeholder: tx.MessagePlaceholder(agentName(driver)), NoMarkdown: true, Font: ui.Font{Size: 14},
 		OnLink: func(link string) {
 			for _, part := range model.MessageParts(link) {
 				if part.Attachment != nil {

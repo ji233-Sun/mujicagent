@@ -30,6 +30,8 @@ func (v *View) activityKind(kind string) (string, *ui.SVG) {
 		return tx.Plan(), planIcon
 	case "contextCompaction":
 		return tx.Compaction(), activityIcon
+	case "toolCall":
+		return tx.AgentToolCall(), activityIcon
 	case "mcpToolCall":
 		return tx.McpToolCall(), activityIcon
 	default:

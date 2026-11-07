@@ -364,7 +364,10 @@ func (v *View) timeline(c *ui.Context, t *model.Thread) {
 						v.activityGroup(c, turn.Items[start:j], key, turn.Status == "inProgress")
 					}
 					if turn.Status == "inProgress" {
-						ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() { ui.Spinner(c).Size(13, 13); ui.Text(c, "Codex").FontSize(12).TextColor(c.Theme().TextMuted) })
+						ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+							ui.Spinner(c).Size(13, 13)
+							ui.Text(c, agentName(t.Driver())).FontSize(12).TextColor(c.Theme().TextMuted)
+						})
 					}
 					if turn.Error != "" {
 						ui.Text(c, v.statusText(turn.Error)).FontSize(12).TextColor(c.Theme().Danger).Selectable()
@@ -379,7 +382,7 @@ func (v *View) timeline(c *ui.Context, t *model.Thread) {
 }
 func (v *View) item(c *ui.Context, item *model.Item, key string, running bool) {
 	tx := v.texts()
-	if item.Kind == "mcpToolCall" {
+	if item.MCP != nil || item.Kind == "mcpToolCall" {
 		v.mcpItem(c, item, key, running)
 		return
 	}
@@ -438,7 +441,7 @@ func (v *View) composer(c *ui.Context, t *model.Thread) {
 	tx := v.texts()
 	ui.Column(c).Shrink(0).Padding(8, 24, 16).Gap(8).Children(func() {
 		for _, r := range v.C.Requests {
-			if t != nil && r.ThreadID == t.ServerID {
+			if t != nil && (r.ThreadID == t.ServerID || r.ThreadID == t.ID) {
 				v.request(c, r)
 			}
 		}

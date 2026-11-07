@@ -1,6 +1,8 @@
 package view
 
 import (
+	"encoding/json"
+	"fmt"
 	"github.com/egoist/mygo/ui"
 	"github.com/ji233-Sun/mujicagent/internal/codex"
 	"github.com/ji233-Sun/mujicagent/internal/controller"
@@ -14,6 +16,73 @@ import (
 	"testing"
 	"time"
 )
+
+func TestHarnessTimelineScreenshots(t *testing.T) {
+	for _, lang := range []string{"zh-Hans", "en"} {
+		for _, driver := range []string{"codex", "pi", "droid"} {
+			for _, scene := range []string{"collapsed", "expanded", "long-output", "failed", "approval", "running", "stopped"} {
+				t.Run(lang+"-"+driver+"-"+scene, func(t *testing.T) {
+					s := model.New()
+					s.Settings.Language = lang
+					thread := s.AddThread("", "")
+					thread.Harness = driver
+					thread.ServerID = "session"
+					status := "completed"
+					if scene == "running" || scene == "approval" {
+						status = "inProgress"
+					}
+					if scene == "stopped" {
+						status = "interrupted"
+					}
+					output := "proof.txt: verified"
+					if scene == "long-output" {
+						output = strings.Repeat("proof.txt: verified output with a long line to check wrapping and scrolling\n", 40)
+					}
+					tool := model.Item{ID: "read-1", Kind: "toolCall", Status: status, MCP: &model.MCPCall{Tool: "Read", Arguments: `{"path":"proof.txt"}`, Result: output}}
+					if scene == "failed" {
+						tool.Status = "failed"
+						tool.MCP.Error = "File not found: proof.txt"
+					}
+					thread.Turns = []model.Turn{{ID: "turn", Prompt: "Read proof.txt and report its contents", Status: status, Items: []model.Item{{ID: "m", Kind: "agentMessage", Text: "I will read the file.", Status: "completed"}, tool}}}
+					c := controller.New(t.TempDir(), s, nil)
+					defer c.Close()
+					c.Running[thread.ID] = status == "inProgress"
+					v := New(c)
+					if scene != "collapsed" {
+						*v.openState("activity-" + thread.ID + "-0-1") = true
+						*v.openState(thread.ID + "-0-1-0") = true
+					}
+					if scene == "approval" {
+						c.Requests = []*codex.Request{{ID: json.RawMessage(`"approval"`), ThreadID: thread.ID, Method: "item/commandExecution/requestApproval", Reason: "Run pwd in this project", Command: "pwd", AvailableDecisions: []json.RawMessage{json.RawMessage(`"accept"`), json.RawMessage(`"cancel"`)}}}
+					}
+					tt := ui.NewTester(v.Render, 1100, 800)
+					tt.Frame()
+					tt.Advance(time.Second)
+					tt.Frame()
+					if !tt.HasText(v.texts().AgentToolCall()) {
+						t.Fatal("tool category missing")
+					}
+					if scene == "running" && !tt.HasText(agentName(driver)) {
+						t.Fatal("wrong running harness")
+					}
+					if dir := os.Getenv("MUJICAGENT_AGENTS_SCREENSHOTS"); dir != "" {
+						if err := os.MkdirAll(dir, 0700); err != nil {
+							t.Fatal(err)
+						}
+						f, err := os.Create(filepath.Join(dir, fmt.Sprintf("%s-%s-%s.png", lang, driver, scene)))
+						if err != nil {
+							t.Fatal(err)
+						}
+						defer f.Close()
+						if err = png.Encode(f, tt.Image()); err != nil {
+							t.Fatal(err)
+						}
+					}
+				})
+			}
+		}
+	}
+}
 
 func TestAgentCompactScreenshots(t *testing.T) {
 	for _, lang := range []string{"zh-Hans", "en"} {

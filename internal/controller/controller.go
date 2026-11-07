@@ -13,10 +13,13 @@ import (
 	"time"
 
 	"github.com/ji233-Sun/mujicagent/internal/codex"
+	"github.com/ji233-Sun/mujicagent/internal/harness"
 	"github.com/ji233-Sun/mujicagent/internal/model"
 )
 
 type Controller struct {
+	agentControls                       map[string]*harness.Control
+	agentReplies                        map[*codex.Request]chan any
 	AppUpdates                          AppUpdateState
 	Harnesses                           map[string]*HarnessState
 	agentRuns                           map[string]context.CancelFunc
@@ -617,6 +620,18 @@ func (c *Controller) Approve(r *codex.Request, decision json.RawMessage) {
 }
 
 func (c *Controller) replyRequest(r *codex.Request, result any) {
+	if reply := c.agentReplies[r]; reply != nil && !r.Responding {
+		r.Responding = true
+		reply <- result
+		delete(c.agentReplies, r)
+		for i, request := range c.Requests {
+			if request == r {
+				c.Requests = append(c.Requests[:i], c.Requests[i+1:]...)
+				break
+			}
+		}
+		return
+	}
 	if c.client == nil || r.Responding {
 		return
 	}
