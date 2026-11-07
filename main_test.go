@@ -862,7 +862,8 @@ func TestModelEffortPopover(t *testing.T) {
 		t.Fatal("server-advertised speeds must appear below the effort slider")
 	}
 	list, ok := tt.Find("模型列表")
-	if !ok || list.H > 180 || fast.Y-(right.Y+right.H) > 65 {
+	// The two text rows between the slider and speed options use platform fonts.
+	if !ok || list.H > 180 || fast.Y-(right.Y+right.H) > 72 {
 		t.Fatalf("model picker left excessive empty space: list=%+v, slider=%+v, speed=%+v", list, right, fast)
 	}
 	for _, choice := range []struct{ label, tier string }{{"Fast", "priority"}, {"Ultrafast", "ultrafast"}, {"Ultrafast", ""}, {"Ultrafast", "ultrafast"}} {

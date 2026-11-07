@@ -447,7 +447,7 @@ func TestDraftTitleAndSidebarOrder(t *testing.T) {
 	if v.threadTitle(draft) != "新对话" || v.threadTitle(blank) != "新对话" {
 		t.Fatal("cleared draft did not restore placeholder")
 	}
-	draft.Draft = "前文" + (model.Attachment{Kind: "file", Path: "/tmp/example.txt"}).Link() + "后文"
+	draft.Draft = "前文" + (model.Attachment{Kind: "file", Path: filepath.Join(t.TempDir(), "example.txt")}).Link() + "后文"
 	if v.threadTitle(draft) != "前文example.txt后文" {
 		t.Fatal("attachment title exposed its internal link")
 	}
