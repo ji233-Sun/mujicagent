@@ -2897,3 +2897,553 @@ func AgentFullAccessHint() string { return In(i18n.Locale()).AgentFullAccessHint
 func (msgs Messages) AgentFullAccessHint() string {
 	return Catalog.Format(msgs.locale, "agentFullAccessHint", nil)
 }
+
+// Browser says "浏览器"
+// in the language the app shows.
+func Browser() string { return In(i18n.Locale()).Browser() }
+
+// Browser says "浏览器"
+// in the language of msgs.
+func (msgs Messages) Browser() string {
+	return Catalog.Format(msgs.locale, "browser", nil)
+}
+
+// BrowserPanel says "浏览器面板"
+// in the language the app shows.
+func BrowserPanel() string { return In(i18n.Locale()).BrowserPanel() }
+
+// BrowserPanel says "浏览器面板"
+// in the language of msgs.
+func (msgs Messages) BrowserPanel() string {
+	return Catalog.Format(msgs.locale, "browserPanel", nil)
+}
+
+// BrowserShow says "显示浏览器"
+// in the language the app shows.
+func BrowserShow() string { return In(i18n.Locale()).BrowserShow() }
+
+// BrowserShow says "显示浏览器"
+// in the language of msgs.
+func (msgs Messages) BrowserShow() string {
+	return Catalog.Format(msgs.locale, "browserShow", nil)
+}
+
+// BrowserHide says "收起浏览器（保留页面并继续自动操作）"
+// in the language the app shows.
+func BrowserHide() string { return In(i18n.Locale()).BrowserHide() }
+
+// BrowserHide says "收起浏览器（保留页面并继续自动操作）"
+// in the language of msgs.
+func (msgs Messages) BrowserHide() string {
+	return Catalog.Format(msgs.locale, "browserHide", nil)
+}
+
+// BrowserHiddenActive says "已收起 · Agent 控制已启用"
+// in the language the app shows.
+func BrowserHiddenActive() string { return In(i18n.Locale()).BrowserHiddenActive() }
+
+// BrowserHiddenActive says "已收起 · Agent 控制已启用"
+// in the language of msgs.
+func (msgs Messages) BrowserHiddenActive() string {
+	return Catalog.Format(msgs.locale, "browserHiddenActive", nil)
+}
+
+// BrowserOpen says "打开浏览器"
+// in the language the app shows.
+func BrowserOpen() string { return In(i18n.Locale()).BrowserOpen() }
+
+// BrowserOpen says "打开浏览器"
+// in the language of msgs.
+func (msgs Messages) BrowserOpen() string {
+	return Catalog.Format(msgs.locale, "browserOpen", nil)
+}
+
+// BrowserClose says "关闭网页并停止浏览器操作"
+// in the language the app shows.
+func BrowserClose() string { return In(i18n.Locale()).BrowserClose() }
+
+// BrowserClose says "关闭网页并停止浏览器操作"
+// in the language of msgs.
+func (msgs Messages) BrowserClose() string {
+	return Catalog.Format(msgs.locale, "browserClose", nil)
+}
+
+// BrowserAddress says "网页地址"
+// in the language the app shows.
+func BrowserAddress() string { return In(i18n.Locale()).BrowserAddress() }
+
+// BrowserAddress says "网页地址"
+// in the language of msgs.
+func (msgs Messages) BrowserAddress() string {
+	return Catalog.Format(msgs.locale, "browserAddress", nil)
+}
+
+// BrowserGo says "前往"
+// in the language the app shows.
+func BrowserGo() string { return In(i18n.Locale()).BrowserGo() }
+
+// BrowserGo says "前往"
+// in the language of msgs.
+func (msgs Messages) BrowserGo() string {
+	return Catalog.Format(msgs.locale, "browserGo", nil)
+}
+
+// BrowserViewport says "当前网页可见区域"
+// in the language the app shows.
+func BrowserViewport() string { return In(i18n.Locale()).BrowserViewport() }
+
+// BrowserViewport says "当前网页可见区域"
+// in the language of msgs.
+func (msgs Messages) BrowserViewport() string {
+	return Catalog.Format(msgs.locale, "browserViewport", nil)
+}
+
+// BrowserPage says "可交互网页"
+// in the language the app shows.
+func BrowserPage() string { return In(i18n.Locale()).BrowserPage() }
+
+// BrowserPage says "可交互网页"
+// in the language of msgs.
+func (msgs Messages) BrowserPage() string {
+	return Catalog.Format(msgs.locale, "browserPage", nil)
+}
+
+// BrowserInputBlocked says "人工控制就绪前阻止网页输入"
+// in the language the app shows.
+func BrowserInputBlocked() string { return In(i18n.Locale()).BrowserInputBlocked() }
+
+// BrowserInputBlocked says "人工控制就绪前阻止网页输入"
+// in the language of msgs.
+func (msgs Messages) BrowserInputBlocked() string {
+	return Catalog.Format(msgs.locale, "browserInputBlocked", nil)
+}
+
+// BrowserTakeOver says "暂停并接管"
+// in the language the app shows.
+func BrowserTakeOver() string { return In(i18n.Locale()).BrowserTakeOver() }
+
+// BrowserTakeOver says "暂停并接管"
+// in the language of msgs.
+func (msgs Messages) BrowserTakeOver() string {
+	return Catalog.Format(msgs.locale, "browserTakeOver", nil)
+}
+
+// BrowserResume says "恢复 Agent 控制"
+// in the language the app shows.
+func BrowserResume() string { return In(i18n.Locale()).BrowserResume() }
+
+// BrowserResume says "恢复 Agent 控制"
+// in the language of msgs.
+func (msgs Messages) BrowserResume() string {
+	return Catalog.Format(msgs.locale, "browserResume", nil)
+}
+
+// BrowserConfirmResume says "确认并恢复"
+// in the language the app shows.
+func BrowserConfirmResume() string { return In(i18n.Locale()).BrowserConfirmResume() }
+
+// BrowserConfirmResume says "确认并恢复"
+// in the language of msgs.
+func (msgs Messages) BrowserConfirmResume() string {
+	return Catalog.Format(msgs.locale, "browserConfirmResume", nil)
+}
+
+// BrowserPermissions says "浏览器权限"
+// in the language the app shows.
+func BrowserPermissions() string { return In(i18n.Locale()).BrowserPermissions() }
+
+// BrowserPermissions says "浏览器权限"
+// in the language of msgs.
+func (msgs Messages) BrowserPermissions() string {
+	return Catalog.Format(msgs.locale, "browserPermissions", nil)
+}
+
+// BrowserPermissionsHint says "恢复后允许读取页面。请选择额外授予当前页面的权限。"
+// in the language the app shows.
+func BrowserPermissionsHint() string { return In(i18n.Locale()).BrowserPermissionsHint() }
+
+// BrowserPermissionsHint says "恢复后允许读取页面。请选择额外授予当前页面的权限。"
+// in the language of msgs.
+func (msgs Messages) BrowserPermissionsHint() string {
+	return Catalog.Format(msgs.locale, "browserPermissionsHint", nil)
+}
+
+// BrowserAllowNavigate says "允许打开地址"
+// in the language the app shows.
+func BrowserAllowNavigate() string { return In(i18n.Locale()).BrowserAllowNavigate() }
+
+// BrowserAllowNavigate says "允许打开地址"
+// in the language of msgs.
+func (msgs Messages) BrowserAllowNavigate() string {
+	return Catalog.Format(msgs.locale, "browserAllowNavigate", nil)
+}
+
+// BrowserAllowInteract says "允许点击、填写和滚动"
+// in the language the app shows.
+func BrowserAllowInteract() string { return In(i18n.Locale()).BrowserAllowInteract() }
+
+// BrowserAllowInteract says "允许点击、填写和滚动"
+// in the language of msgs.
+func (msgs Messages) BrowserAllowInteract() string {
+	return Catalog.Format(msgs.locale, "browserAllowInteract", nil)
+}
+
+// BrowserAllowCapture says "允许向 Agent 分享可见网页"
+// in the language the app shows.
+func BrowserAllowCapture() string { return In(i18n.Locale()).BrowserAllowCapture() }
+
+// BrowserAllowCapture says "允许向 Agent 分享可见网页"
+// in the language of msgs.
+func (msgs Messages) BrowserAllowCapture() string {
+	return Catalog.Format(msgs.locale, "browserAllowCapture", nil)
+}
+
+// BrowserCaptureHint says "截图仅分享面板内当前网页的可见区域，其中可能包含敏感内容。此权限默认关闭。"
+// in the language the app shows.
+func BrowserCaptureHint() string { return In(i18n.Locale()).BrowserCaptureHint() }
+
+// BrowserCaptureHint says "截图仅分享面板内当前网页的可见区域，其中可能包含敏感内容。此权限默认关闭。"
+// in the language of msgs.
+func (msgs Messages) BrowserCaptureHint() string {
+	return Catalog.Format(msgs.locale, "browserCaptureHint", nil)
+}
+
+// BrowserOpening says "正在打开浏览器…"
+// in the language the app shows.
+func BrowserOpening() string { return In(i18n.Locale()).BrowserOpening() }
+
+// BrowserOpening says "正在打开浏览器…"
+// in the language of msgs.
+func (msgs Messages) BrowserOpening() string {
+	return Catalog.Format(msgs.locale, "browserOpening", nil)
+}
+
+// BrowserNavigating says "正在打开地址…"
+// in the language the app shows.
+func BrowserNavigating() string { return In(i18n.Locale()).BrowserNavigating() }
+
+// BrowserNavigating says "正在打开地址…"
+// in the language of msgs.
+func (msgs Messages) BrowserNavigating() string {
+	return Catalog.Format(msgs.locale, "browserNavigating", nil)
+}
+
+// BrowserPausing says "正在暂停自动操作…"
+// in the language the app shows.
+func BrowserPausing() string { return In(i18n.Locale()).BrowserPausing() }
+
+// BrowserPausing says "正在暂停自动操作…"
+// in the language of msgs.
+func (msgs Messages) BrowserPausing() string {
+	return Catalog.Format(msgs.locale, "browserPausing", nil)
+}
+
+// BrowserResuming says "正在请求恢复 Agent 控制…"
+// in the language the app shows.
+func BrowserResuming() string { return In(i18n.Locale()).BrowserResuming() }
+
+// BrowserResuming says "正在请求恢复 Agent 控制…"
+// in the language of msgs.
+func (msgs Messages) BrowserResuming() string {
+	return Catalog.Format(msgs.locale, "browserResuming", nil)
+}
+
+// BrowserClosing says "正在关闭网页并等待操作结束…"
+// in the language the app shows.
+func BrowserClosing() string { return In(i18n.Locale()).BrowserClosing() }
+
+// BrowserClosing says "正在关闭网页并等待操作结束…"
+// in the language of msgs.
+func (msgs Messages) BrowserClosing() string {
+	return Catalog.Format(msgs.locale, "browserClosing", nil)
+}
+
+// BrowserAgent says "Agent 正在操作网页"
+// in the language the app shows.
+func BrowserAgent() string { return In(i18n.Locale()).BrowserAgent() }
+
+// BrowserAgent says "Agent 正在操作网页"
+// in the language of msgs.
+func (msgs Messages) BrowserAgent() string {
+	return Catalog.Format(msgs.locale, "browserAgent", nil)
+}
+
+// BrowserIdle says "Agent 控制已启用 · 等待操作"
+// in the language the app shows.
+func BrowserIdle() string { return In(i18n.Locale()).BrowserIdle() }
+
+// BrowserIdle says "Agent 控制已启用 · 等待操作"
+// in the language of msgs.
+func (msgs Messages) BrowserIdle() string {
+	return Catalog.Format(msgs.locale, "browserIdle", nil)
+}
+
+// BrowserHuman says "人工控制中 · Agent 已暂停"
+// in the language the app shows.
+func BrowserHuman() string { return In(i18n.Locale()).BrowserHuman() }
+
+// BrowserHuman says "人工控制中 · Agent 已暂停"
+// in the language of msgs.
+func (msgs Messages) BrowserHuman() string {
+	return Catalog.Format(msgs.locale, "browserHuman", nil)
+}
+
+// BrowserDraining says "Agent 已暂停 · 等待已发出的操作结束"
+// in the language the app shows.
+func BrowserDraining() string { return In(i18n.Locale()).BrowserDraining() }
+
+// BrowserDraining says "Agent 已暂停 · 等待已发出的操作结束"
+// in the language of msgs.
+func (msgs Messages) BrowserDraining() string {
+	return Catalog.Format(msgs.locale, "browserDraining", nil)
+}
+
+// BrowserClosed says "网页已关闭"
+// in the language the app shows.
+func BrowserClosed() string { return In(i18n.Locale()).BrowserClosed() }
+
+// BrowserClosed says "网页已关闭"
+// in the language of msgs.
+func (msgs Messages) BrowserClosed() string {
+	return Catalog.Format(msgs.locale, "browserClosed", nil)
+}
+
+// BrowserLoading says "网页加载中…"
+// in the language the app shows.
+func BrowserLoading() string { return In(i18n.Locale()).BrowserLoading() }
+
+// BrowserLoading says "网页加载中…"
+// in the language of msgs.
+func (msgs Messages) BrowserLoading() string {
+	return Catalog.Format(msgs.locale, "browserLoading", nil)
+}
+
+// BrowserUnavailable says "浏览器尚未连接"
+// in the language the app shows.
+func BrowserUnavailable() string { return In(i18n.Locale()).BrowserUnavailable() }
+
+// BrowserUnavailable says "浏览器尚未连接"
+// in the language of msgs.
+func (msgs Messages) BrowserUnavailable() string {
+	return Catalog.Format(msgs.locale, "browserUnavailable", nil)
+}
+
+// BrowserWaitingPage says "等待原生网页视图接入"
+// in the language the app shows.
+func BrowserWaitingPage() string { return In(i18n.Locale()).BrowserWaitingPage() }
+
+// BrowserWaitingPage says "等待原生网页视图接入"
+// in the language of msgs.
+func (msgs Messages) BrowserWaitingPage() string {
+	return Catalog.Format(msgs.locale, "browserWaitingPage", nil)
+}
+
+// BrowserInvalidAddress says "请输入完整的 http 或 https 地址，不能包含用户名或密码。"
+// in the language the app shows.
+func BrowserInvalidAddress() string { return In(i18n.Locale()).BrowserInvalidAddress() }
+
+// BrowserInvalidAddress says "请输入完整的 http 或 https 地址，不能包含用户名或密码。"
+// in the language of msgs.
+func (msgs Messages) BrowserInvalidAddress() string {
+	return Catalog.Format(msgs.locale, "browserInvalidAddress", nil)
+}
+
+// BrowserNotFound says "当前对话的浏览器页面不可用。"
+// in the language the app shows.
+func BrowserNotFound() string { return In(i18n.Locale()).BrowserNotFound() }
+
+// BrowserNotFound says "当前对话的浏览器页面不可用。"
+// in the language of msgs.
+func (msgs Messages) BrowserNotFound() string {
+	return Catalog.Format(msgs.locale, "browserNotFound", nil)
+}
+
+// BrowserStale says "网页已变化，请等待最新状态后再操作。"
+// in the language the app shows.
+func BrowserStale() string { return In(i18n.Locale()).BrowserStale() }
+
+// BrowserStale says "网页已变化，请等待最新状态后再操作。"
+// in the language of msgs.
+func (msgs Messages) BrowserStale() string {
+	return Catalog.Format(msgs.locale, "browserStale", nil)
+}
+
+// BrowserBusy says "网页正在加载或操作尚未结束，请稍候。"
+// in the language the app shows.
+func BrowserBusy() string { return In(i18n.Locale()).BrowserBusy() }
+
+// BrowserBusy says "网页正在加载或操作尚未结束，请稍候。"
+// in the language of msgs.
+func (msgs Messages) BrowserBusy() string {
+	return Catalog.Format(msgs.locale, "browserBusy", nil)
+}
+
+// BrowserDenied says "当前控制模式不允许此操作。"
+// in the language the app shows.
+func BrowserDenied() string { return In(i18n.Locale()).BrowserDenied() }
+
+// BrowserDenied says "当前控制模式不允许此操作。"
+// in the language of msgs.
+func (msgs Messages) BrowserDenied() string {
+	return Catalog.Format(msgs.locale, "browserDenied", nil)
+}
+
+// BrowserUnsupported says "当前浏览器尚不支持此能力。"
+// in the language the app shows.
+func BrowserUnsupported() string { return In(i18n.Locale()).BrowserUnsupported() }
+
+// BrowserUnsupported says "当前浏览器尚不支持此能力。"
+// in the language of msgs.
+func (msgs Messages) BrowserUnsupported() string {
+	return Catalog.Format(msgs.locale, "browserUnsupported", nil)
+}
+
+// BrowserSensitive says "页面含有无法安全分享的敏感数据，请人工接管后继续。"
+// in the language the app shows.
+func BrowserSensitive() string { return In(i18n.Locale()).BrowserSensitive() }
+
+// BrowserSensitive says "页面含有无法安全分享的敏感数据，请人工接管后继续。"
+// in the language of msgs.
+func (msgs Messages) BrowserSensitive() string {
+	return Catalog.Format(msgs.locale, "browserSensitive", nil)
+}
+
+// BrowserUnconfirmed says "尚未确认网页发生了预期变化，不会自动重试。"
+// in the language the app shows.
+func BrowserUnconfirmed() string { return In(i18n.Locale()).BrowserUnconfirmed() }
+
+// BrowserUnconfirmed says "尚未确认网页发生了预期变化，不会自动重试。"
+// in the language of msgs.
+func (msgs Messages) BrowserUnconfirmed() string {
+	return Catalog.Format(msgs.locale, "browserUnconfirmed", nil)
+}
+
+// BrowserCancelled says "浏览器请求已取消，请等待已发出的操作结束后再恢复。"
+// in the language the app shows.
+func BrowserCancelled() string { return In(i18n.Locale()).BrowserCancelled() }
+
+// BrowserCancelled says "浏览器请求已取消，请等待已发出的操作结束后再恢复。"
+// in the language of msgs.
+func (msgs Messages) BrowserCancelled() string {
+	return Catalog.Format(msgs.locale, "browserCancelled", nil)
+}
+
+// BrowserTimeout says "浏览器请求超时，请等待已发出的操作结束后再恢复。"
+// in the language the app shows.
+func BrowserTimeout() string { return In(i18n.Locale()).BrowserTimeout() }
+
+// BrowserTimeout says "浏览器请求超时，请等待已发出的操作结束后再恢复。"
+// in the language of msgs.
+func (msgs Messages) BrowserTimeout() string {
+	return Catalog.Format(msgs.locale, "browserTimeout", nil)
+}
+
+// BrowserEngineError says "浏览器请求失败，请检查页面状态后再继续。"
+// in the language the app shows.
+func BrowserEngineError() string { return In(i18n.Locale()).BrowserEngineError() }
+
+// BrowserEngineError says "浏览器请求失败，请检查页面状态后再继续。"
+// in the language of msgs.
+func (msgs Messages) BrowserEngineError() string {
+	return Catalog.Format(msgs.locale, "browserEngineError", nil)
+}
+
+// BrowserToolOpen says "打开网页"
+// in the language the app shows.
+func BrowserToolOpen() string { return In(i18n.Locale()).BrowserToolOpen() }
+
+// BrowserToolOpen says "打开网页"
+// in the language of msgs.
+func (msgs Messages) BrowserToolOpen() string {
+	return Catalog.Format(msgs.locale, "browserToolOpen", nil)
+}
+
+// BrowserToolObserve says "读取网页"
+// in the language the app shows.
+func BrowserToolObserve() string { return In(i18n.Locale()).BrowserToolObserve() }
+
+// BrowserToolObserve says "读取网页"
+// in the language of msgs.
+func (msgs Messages) BrowserToolObserve() string {
+	return Catalog.Format(msgs.locale, "browserToolObserve", nil)
+}
+
+// BrowserToolClick says "点击网页元素"
+// in the language the app shows.
+func BrowserToolClick() string { return In(i18n.Locale()).BrowserToolClick() }
+
+// BrowserToolClick says "点击网页元素"
+// in the language of msgs.
+func (msgs Messages) BrowserToolClick() string {
+	return Catalog.Format(msgs.locale, "browserToolClick", nil)
+}
+
+// BrowserToolFill says "填写网页字段"
+// in the language the app shows.
+func BrowserToolFill() string { return In(i18n.Locale()).BrowserToolFill() }
+
+// BrowserToolFill says "填写网页字段"
+// in the language of msgs.
+func (msgs Messages) BrowserToolFill() string {
+	return Catalog.Format(msgs.locale, "browserToolFill", nil)
+}
+
+// BrowserToolScroll says "滚动网页"
+// in the language the app shows.
+func BrowserToolScroll() string { return In(i18n.Locale()).BrowserToolScroll() }
+
+// BrowserToolScroll says "滚动网页"
+// in the language of msgs.
+func (msgs Messages) BrowserToolScroll() string {
+	return Catalog.Format(msgs.locale, "browserToolScroll", nil)
+}
+
+// BrowserToolCapture says "截取可见网页"
+// in the language the app shows.
+func BrowserToolCapture() string { return In(i18n.Locale()).BrowserToolCapture() }
+
+// BrowserToolCapture says "截取可见网页"
+// in the language of msgs.
+func (msgs Messages) BrowserToolCapture() string {
+	return Catalog.Format(msgs.locale, "browserToolCapture", nil)
+}
+
+// BrowserDispatched says "操作已发出 · 尚未确认页面变化"
+// in the language the app shows.
+func BrowserDispatched() string { return In(i18n.Locale()).BrowserDispatched() }
+
+// BrowserDispatched says "操作已发出 · 尚未确认页面变化"
+// in the language of msgs.
+func (msgs Messages) BrowserDispatched() string {
+	return Catalog.Format(msgs.locale, "browserDispatched", nil)
+}
+
+// BrowserObserved says "已观察到页面变化"
+// in the language the app shows.
+func BrowserObserved() string { return In(i18n.Locale()).BrowserObserved() }
+
+// BrowserObserved says "已观察到页面变化"
+// in the language of msgs.
+func (msgs Messages) BrowserObserved() string {
+	return Catalog.Format(msgs.locale, "browserObserved", nil)
+}
+
+// BrowserNotDispatched says "操作未发出"
+// in the language the app shows.
+func BrowserNotDispatched() string { return In(i18n.Locale()).BrowserNotDispatched() }
+
+// BrowserNotDispatched says "操作未发出"
+// in the language of msgs.
+func (msgs Messages) BrowserNotDispatched() string {
+	return Catalog.Format(msgs.locale, "browserNotDispatched", nil)
+}
+
+// BrowserDispatchUnknown says "操作投递状态未知"
+// in the language the app shows.
+func BrowserDispatchUnknown() string { return In(i18n.Locale()).BrowserDispatchUnknown() }
+
+// BrowserDispatchUnknown says "操作投递状态未知"
+// in the language of msgs.
+func (msgs Messages) BrowserDispatchUnknown() string {
+	return Catalog.Format(msgs.locale, "browserDispatchUnknown", nil)
+}
