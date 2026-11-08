@@ -81,7 +81,7 @@ func (v *View) settingsPane(c *ui.Context) {
 	})
 	if v.section == "Agents" {
 		ui.Row(c).Grow(1).MinHeight(0).AlignItems(ui.Stretch).Children(func() {
-			ui.Column(c).Width(92).Shrink(0).Padding(0, 6).Gap(3).Children(func() { v.agentSidebar(c) })
+			ui.Column(c).Width(126).Shrink(0).Padding(0, 6).Gap(3).Children(func() { v.agentSidebar(c) })
 			ui.Scroll(c).Grow(1).MinWidth(0).Padding(0, 12, 12).Children(func() { v.agentsPane(c) })
 		})
 		return

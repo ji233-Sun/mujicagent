@@ -66,7 +66,7 @@ jobs:
         run: |
           MUJICAGENT_INSTALL_TEST=official go test ./internal/harness -run TestDownloadNativePackage -v -count=1
           MUJICAGENT_INSTALL_TEST=cn go test ./internal/harness -run TestDownloadNativePackage -v -count=1
-          for driver in pi droid; do
+          for driver in pi droid claude; do
             MUJICAGENT_INSTALL_TEST=official MUJICAGENT_INSTALL_DRIVER="$driver" go test ./internal/harness -run TestDownloadNativePackage -v -count=1
             MUJICAGENT_INSTALL_TEST=npm MUJICAGENT_INSTALL_DRIVER="$driver" go test ./internal/harness -run TestDownloadNativePackage -v -count=1
           done

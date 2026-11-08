@@ -22,10 +22,19 @@ var piSVG []byte
 
 //go:embed assets/factory.svg
 var factorySVG []byte
+
+//go:embed assets/claude.svg
+var claudeSVG []byte
+
+var claudeLogo = ui.MustParseSVG(claudeSVG)
 var piLogo = ui.MustParseSVG(piSVG)
 var factoryLogo = ui.MustParseSVG(factorySVG)
 
 func agentGlyph(c *ui.Context, id string) {
+	if id == "claude" {
+		ui.Image(c, claudeLogo).Size(18, 18).Shrink(0)
+		return
+	}
 	if id == "pi" {
 		ui.Image(c, piLogo).Size(18, 18).Shrink(0)
 		return
@@ -62,6 +71,7 @@ func (v *View) harnessRail(c *ui.Context) {
 		v.modelSearch = ""
 		v.C.LoadAgentModels("pi", false)
 		v.C.LoadAgentModels("droid", false)
+		v.C.LoadAgentModels("claude", false)
 	})
 	ui.Divider(c).Margin(2, 4)
 
@@ -182,7 +192,7 @@ func (v *View) externalModels(id string) []codex.Model {
 }
 
 func (v *View) favoriteModelPanel(c *ui.Context) {
-	catalogs := map[string][]codex.Model{"codex": v.C.Models, "pi": v.externalModels("pi"), "droid": v.externalModels("droid")}
+	catalogs := map[string][]codex.Model{"codex": v.C.Models, "pi": v.externalModels("pi"), "droid": v.externalModels("droid"), "claude": v.externalModels("claude")}
 	var choices []modelChoice
 	for _, key := range v.C.State.Settings.ModelFavorites {
 		choices = append(choices, modelChoice{key.Harness, catalogModel(catalogs, key)})
@@ -257,6 +267,9 @@ type agentPermission struct{ id, name, icon, detail string }
 
 func (v *View) agentPermissionOptions(driver string) []agentPermission {
 	tx := v.texts()
+	if driver == "claude" {
+		return []agentPermission{{"", tx.DefaultPermissions(), ":workspace", tx.ClaudeDefaultHint()}, {"acceptEdits", tx.AgentFileEdits(), ":workspace", tx.ClaudeEditsHint()}, {"bypassPermissions", tx.FullAccess(), ":danger-full-access", tx.ClaudeFullAccessHint()}}
+	}
 	if driver == "droid" {
 		return []agentPermission{{"", tx.ReadOnly(), ":read-only", tx.AgentReadOnlyHint()}, {"low", tx.AgentFileEdits(), ":workspace", tx.AgentFileEditsHint()}, {"medium", tx.AgentDevelopment(), ":workspace", tx.AgentDevelopmentHint()}, {"high", tx.FullAccess(), ":danger-full-access", tx.AgentFullAccessHint()}}
 	}
@@ -264,6 +277,9 @@ func (v *View) agentPermissionOptions(driver string) []agentPermission {
 }
 
 func agentFullAccess(driver string) string {
+	if driver == "claude" {
+		return "bypassPermissions"
+	}
 	if driver == "droid" {
 		return "high"
 	}
@@ -271,6 +287,9 @@ func agentFullAccess(driver string) string {
 }
 
 func (v *View) agentDefaultAccess(driver string) *string {
+	if driver == "claude" {
+		return &v.C.State.Settings.ClaudeDefaultAccess
+	}
 	if driver == "droid" {
 		return &v.C.State.Settings.DroidDefaultAccess
 	}

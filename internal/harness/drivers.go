@@ -37,6 +37,7 @@ var Drivers = []Driver{
 		sessionPath: func(dir, id string) string { return filepath.Join(dir, "sessions", "pi", id+".jsonl") },
 	},
 	{ID: "droid", Name: "Droid", args: droidArgs, run: runDroid, steer: droidSteer},
+	{ID: "claude", Name: "Claude Code", args: claudeArgs, run: runClaude, steer: claudeSteer},
 }
 
 func Lookup(id string) (Driver, bool) {

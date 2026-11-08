@@ -52,7 +52,10 @@ func (c *Control) send(v any) error {
 }
 
 func (c *Control) Steer(ctx context.Context, text string, images []string) error {
-	parts, imageErr := imagePrompt(RunOptions{Prompt: text, Images: images})
+	c.mu.Lock()
+	driverID := c.driver
+	c.mu.Unlock()
+	parts, imageErr := imagePrompt(RunOptions{Driver: driverID, Prompt: text, Images: images})
 	if imageErr != nil {
 		return imageErr
 	}
@@ -64,6 +67,9 @@ func (c *Control) Steer(ctx context.Context, text string, images []string) error
 	}
 	c.next++
 	id := fmt.Sprintf("steer-%d", c.next)
+	if c.driver == "claude" {
+		id = claudeUUID()
+	}
 	ch := make(chan error, 1)
 	if c.pending == nil {
 		c.pending = map[string]chan error{}

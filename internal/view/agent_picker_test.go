@@ -31,9 +31,12 @@ func TestNativeToolCards(t *testing.T) {
 		{"tool-search", "toolCall", "ToolSearch", "ToolSearch", `{"query":"documentation"}`, `"Tools loaded"`, "ToolSearch", `"query":`},
 		{"wait-script", "commandExecution", "WaitForScript", "WaitForScript", `{"toolCallId":"script","action":"status"}`, `{"status":"running"}`, "WaitForScript", "running"},
 	}
-	for _, driver := range []string{"codex", "pi", "droid"} {
+	for _, driver := range []string{"codex", "pi", "droid", "claude"} {
 		for _, lang := range []string{"zh-Hans", "en"} {
 			for _, tc := range cases {
+				if driver == "claude" && (tc.scene == "patch" || tc.scene == "tool-search" || tc.scene == "wait-script") {
+					continue
+				}
 				if tc.scene == "script" && driver != "droid" {
 					continue
 				}
@@ -46,10 +49,22 @@ func TestNativeToolCards(t *testing.T) {
 					thread := s.AddThread("", "")
 					thread.Harness = driver
 					name := tc.pi
+					args := tc.args
 					if driver == "droid" {
 						name = tc.droid
 					}
-					item := model.Item{ID: "tool", Kind: tc.kind, Status: "completed", MCP: &model.MCPCall{Tool: name, Arguments: tc.args, Result: tc.output}}
+					if driver == "claude" {
+						if n := map[string]string{"bash": "Bash", "edit": "Edit", "write": "Write", "read": "Read", "todo": "TodoWrite", "search": "Grep"}[tc.scene]; n != "" {
+							name = n
+						}
+						if tc.scene == "edit" {
+							args = `{"file_path":"/workspace/main.go","old_string":"old","new_string":"new"}`
+						}
+						if tc.scene == "todo" {
+							args = `{"todos":[{"content":"Verify","status":"completed","activeForm":"Verifying"},{"content":"Review","status":"in_progress","activeForm":"Reviewing"}]}`
+						}
+					}
+					item := model.Item{ID: "tool", Kind: tc.kind, Status: "completed", MCP: &model.MCPCall{Tool: name, Arguments: args, Result: tc.output}}
 					text := toolActivityText(&item, true)
 					if !strings.Contains(text, tc.title) || !strings.Contains(text, tc.body) {
 						t.Fatal("native fields were not adapted", text)
@@ -153,7 +168,7 @@ func TestDroidScriptBatchScreenshots(t *testing.T) {
 
 func TestAgentRunningPermissionLabel(t *testing.T) {
 	for _, lang := range []string{"zh-Hans", "en"} {
-		for _, driver := range []string{"codex", "pi", "droid"} {
+		for _, driver := range []string{"codex", "pi", "droid", "claude"} {
 			t.Run(lang+"-"+driver, func(t *testing.T) {
 				s := model.New()
 				s.Settings.Language = lang
@@ -198,7 +213,7 @@ func TestAgentRunningPermissionLabel(t *testing.T) {
 }
 
 func TestAgentDefaultPermissionConfirmation(t *testing.T) {
-	for _, driver := range []string{"pi", "droid"} {
+	for _, driver := range []string{"pi", "droid", "claude"} {
 		t.Run(driver, func(t *testing.T) {
 			s := model.New()
 			s.Settings.Language = "en"
@@ -293,8 +308,11 @@ func TestAgentPendingPermissionLabel(t *testing.T) {
 
 func TestHarnessTimelineScreenshots(t *testing.T) {
 	for _, lang := range []string{"zh-Hans", "en"} {
-		for _, driver := range []string{"codex", "pi", "droid"} {
+		for _, driver := range []string{"codex", "pi", "droid", "claude"} {
 			for _, scene := range []string{"collapsed", "expanded", "long-output", "failed", "approval", "running", "stopped", "compact", "compact-running", "compact-failed", "compact-stopped", "compact-stats", "compact-narrow", "compact-unknown", "script-nested"} {
+				if driver == "claude" && scene == "script-nested" {
+					continue
+				}
 				t.Run(lang+"-"+driver+"-"+scene, func(t *testing.T) {
 					s := model.New()
 					s.Settings.Language = lang
@@ -400,7 +418,7 @@ func TestHarnessTimelineScreenshots(t *testing.T) {
 
 func TestHarnessInteractionScreenshots(t *testing.T) {
 	for _, lang := range []string{"en", "zh-Hans"} {
-		for _, scene := range []string{"picker", "picker-empty", "multi-question", "pi-editor", "plan"} {
+		for _, scene := range []string{"picker", "picker-empty", "multi-question", "claude-question", "pi-editor", "plan"} {
 			t.Run(lang+"-"+scene, func(t *testing.T) {
 				s := model.New()
 				s.Settings.Language = lang
@@ -414,7 +432,10 @@ func TestHarnessInteractionScreenshots(t *testing.T) {
 				case "picker-empty":
 					r.RequestedSchema = json.RawMessage(`{"type":"object","properties":{}}`)
 					r.Message = "No channels. Refresh to try again."
-				case "multi-question":
+				case "multi-question", "claude-question":
+					if scene == "claude-question" {
+						thread.Harness = "claude"
+					}
 					r.Method = "item/tool/requestUserInput"
 					r.Cancellable = true
 					r.Questions = []codex.Question{{ID: "q", Question: "Which platforms?", MultiSelect: true, IsOther: true}}
@@ -449,7 +470,7 @@ func TestHarnessInteractionScreenshots(t *testing.T) {
 				if scene == "picker" && (!tt.HasText("Alpha · public") || !tt.HasText(v.texts().AgentRefreshModels())) {
 					t.Fatal("picker controls missing")
 				}
-				if scene == "multi-question" && !tt.HasText(v.texts().Cancel()) {
+				if (scene == "multi-question" || scene == "claude-question") && !tt.HasText(v.texts().Cancel()) {
 					t.Fatal("question cancellation missing")
 				}
 				if scene == "plan" && !tt.HasText("Verify the change") {
@@ -481,13 +502,19 @@ func TestHarnessInstallScreenshots(t *testing.T) {
 		"preparing", "preview-error", "installing", "install-error", "cancelled", "running",
 		"bun-confirm", "pnpm-confirm", "unsupported-manager", "manager-unavailable", "manager-unverified", "manager-ambiguous",
 	}
-	for _, driver := range []string{"codex", "pi", "droid"} {
+	for _, driver := range []string{"codex", "pi", "droid", "claude"} {
 		for _, lang := range []string{"zh-Hans", "en"} {
-			for _, scene := range append(slices.Clone(scenes), "native-confirm", "install-official-npm", "app-managed", "install-runtime-missing", "install-mirror-error") {
+			for _, scene := range append(slices.Clone(scenes), "native-confirm", "install-official-npm", "app-managed", "install-runtime-missing", "install-mirror-error", "bun-unsupported", "pnpm-unsupported", "winget-unsupported") {
+				if driver != "claude" && strings.HasSuffix(scene, "-unsupported") {
+					continue
+				}
 				if driver == "codex" && (scene == "native-confirm" || scene == "install-official-npm" || scene == "app-managed" || scene == "install-runtime-missing" || scene == "install-mirror-error") {
 					continue
 				}
 				if driver != "codex" && scene == "install-npm-fallback" {
+					continue
+				}
+				if driver == "claude" && (scene == "bun-confirm" || scene == "pnpm-confirm" || scene == "app-managed") {
 					continue
 				}
 				if driver == "pi" && (scene == "brew-confirm" || scene == "managed-mirror-confirm" || scene == "install-mirror" || scene == "app-managed") {
@@ -507,6 +534,9 @@ func TestHarnessInstallScreenshots(t *testing.T) {
 					if driver == "droid" {
 						pkg = "@factory/cli"
 					}
+					if driver == "claude" {
+						pkg = "@anthropic-ai/claude-code"
+					}
 					u := c.HarnessFor(driver)
 					u.Binary = s.Settings.AgentPath(driver)
 					u.CheckedAt = time.Now()
@@ -523,6 +553,12 @@ func TestHarnessInstallScreenshots(t *testing.T) {
 						c.Connection = "Disconnected"
 					}
 					switch scene {
+					case "bun-unsupported", "pnpm-unsupported", "winget-unsupported":
+						u.Installation.Method = strings.TrimSuffix(scene, "-unsupported")
+						if scene == "winget-unsupported" {
+							u.Installation.Method = "WinGet"
+						}
+						u.Installation.UpdateIssue = "unsupported"
 					case "native-confirm":
 						u.Installation.Method = "native"
 						u.Installation.Path = "/Users/demo/.local/bin/" + driver
@@ -585,6 +621,9 @@ func TestHarnessInstallScreenshots(t *testing.T) {
 							if driver == "droid" {
 								p.Args = []string{"update", "--version", "0.168.0"}
 							}
+							if driver == "claude" {
+								p.Args = []string{"install", "0.168.0"}
+							}
 						case "vp":
 							p.Command, p.Args = u.Installation.Prefix, []string{"update", "--global", pkg + "@0.168.0"}
 						case "npm":
@@ -633,7 +672,14 @@ func TestHarnessInstallScreenshots(t *testing.T) {
 						}
 					}
 					if p := u.Plan; p != nil && driver != "codex" && p.Command == "" {
-						if driver == "pi" {
+						if driver == "claude" {
+							p.Release.URL = "https://downloads.claude.ai/claude-code-releases/0.168.0/darwin-arm64/claude"
+							p.Path = stage + "/claude"
+							if p.Source == "native-mirror" {
+								p.Release.URL = "https://registry.npmmirror.com/@anthropic-ai/claude-code-darwin-arm64/-/claude-code-darwin-arm64-0.168.0.tgz"
+								p.Path = stage + "/package/claude"
+							}
+						} else if driver == "pi" {
 							p.Release.URL = "https://github.com/earendil-works/pi/releases/download/v0.168.0/pi-darwin-arm64.tar.gz"
 							p.Path = stage + "/pi/pi"
 						} else {
@@ -643,6 +689,12 @@ func TestHarnessInstallScreenshots(t *testing.T) {
 								p.Release.URL = "https://registry.npmmirror.com/@factory/cli-darwin-arm64/-/cli-darwin-arm64-0.168.0.tgz"
 								p.Path = stage + "/package/bin/droid"
 							}
+						}
+					}
+					if p := u.Plan; p != nil && driver == "claude" {
+						p.Args = slices.DeleteFunc(p.Args, func(arg string) bool { return arg == "--ignore-scripts" })
+						if u.Installation.Method == "brew" {
+							p.Args = []string{"upgrade", "--cask", "claude-code"}
 						}
 					}
 					tt := ui.NewTester(v.Render, 1060, 720)
@@ -695,6 +747,8 @@ func TestHarnessInstallScreenshots(t *testing.T) {
 						}
 						message := tx.HarnessUnsupportedManager("vlt")
 						switch scene {
+						case "bun-unsupported", "pnpm-unsupported", "winget-unsupported":
+							message = tx.HarnessUnsupportedManager(harness.ManagerName(u.Installation.Method))
 						case "app-managed":
 							message = tx.HarnessUnsupportedManager("Factory.app")
 						case "unknown":
@@ -735,7 +789,7 @@ func TestHarnessInstallScreenshots(t *testing.T) {
 
 func TestAgentCompactScreenshots(t *testing.T) {
 	for _, lang := range []string{"zh-Hans", "en"} {
-		for _, scene := range []string{"settings-codex", "settings-codex-running", "settings-pi", "settings-droid", "settings-pi-confirm", "settings-droid-confirm", "picker-codex", "picker-pi", "picker-droid", "picker-favorites", "picker-loading", "picker-error", "picker-many", "picker-search-empty", "picker-favorites-empty", "permissions-pi", "permissions-droid"} {
+		for _, scene := range []string{"settings-codex", "settings-codex-running", "settings-pi", "settings-droid", "settings-claude", "settings-claude-confirm", "settings-pi-confirm", "settings-droid-confirm", "picker-codex", "picker-pi", "picker-droid", "picker-claude", "picker-claude-loading", "picker-claude-error", "picker-favorites", "picker-loading", "picker-error", "picker-many", "picker-search-empty", "picker-favorites-empty", "permissions-pi", "permissions-droid", "permissions-claude"} {
 			t.Run(lang+"-"+scene, func(t *testing.T) {
 				s := model.New()
 				s.Settings.Language = lang
@@ -744,7 +798,7 @@ func TestAgentCompactScreenshots(t *testing.T) {
 				c := controller.New(t.TempDir(), s, nil)
 				c.Connection = "Connected"
 				c.Models = []codex.Model{{Model: "gpt-6.1-sol"}, {Model: "gpt-6-astra"}, {Model: "gpt-6.1-terra"}}
-				for _, id := range []string{"pi", "droid"} {
+				for _, id := range []string{"pi", "droid", "claude"} {
 					h := c.HarnessFor(id)
 					h.ModelsChecked = true
 					h.Installation.Version = "1.5.0"
@@ -753,8 +807,16 @@ func TestAgentCompactScreenshots(t *testing.T) {
 						{ID: "claude-sonnet-4-6", Name: "Claude Sonnet 4.6", Efforts: []string{"low", "medium", "high"}, DefaultEffort: "high"},
 						{ID: "custom:Local-0", Name: "Local model"},
 					}
+					if id == "claude" {
+						h.Installation.Version = "2.1.317"
+						h.Models = []harness.AgentModel{
+							{ID: "claude-opus-example", Name: "Opus", Efforts: []string{"low", "medium", "high", "max"}},
+							{ID: "claude-sonnet-example", Name: "Sonnet", Efforts: []string{"low", "medium", "high"}},
+							{ID: "claude-haiku-example", Name: "Haiku"},
+						}
+					}
 				}
-				s.Settings.ModelFavorites = []model.ModelFavorite{{Harness: "codex", ModelID: "gpt-6-astra"}, {Harness: "pi", ModelID: "gpt-6.1-sol"}, {Harness: "droid", ModelID: "gpt-6.1-sol"}}
+				s.Settings.ModelFavorites = []model.ModelFavorite{{Harness: "codex", ModelID: "gpt-6-astra"}, {Harness: "pi", ModelID: "gpt-6.1-sol"}, {Harness: "droid", ModelID: "gpt-6.1-sol"}, {Harness: "claude", ModelID: "claude-sonnet-example"}}
 				v := New(c)
 				if strings.HasPrefix(scene, "permissions-") {
 					thread.Harness = strings.TrimPrefix(scene, "permissions-")
@@ -779,10 +841,13 @@ func TestAgentCompactScreenshots(t *testing.T) {
 				} else {
 					v.modelPicker = true
 					v.pickerHarness = scene[7:]
-					if v.pickerHarness == "pi" || v.pickerHarness == "droid" {
+					if v.pickerHarness == "pi" || v.pickerHarness == "droid" || v.pickerHarness == "claude" {
 						thread.Harness = v.pickerHarness
 						thread.AgentModel = "gpt-6.1-sol"
 						thread.AgentEffort = "medium"
+						if v.pickerHarness == "claude" {
+							thread.AgentModel, thread.AgentEffort = "claude-sonnet-example", ""
+						}
 					}
 					if v.pickerHarness == "loading" || v.pickerHarness == "error" {
 						v.pickerHarness = "pi"
@@ -795,6 +860,14 @@ func TestAgentCompactScreenshots(t *testing.T) {
 					}
 				}
 				switch scene {
+				case "picker-claude-loading", "picker-claude-error":
+					v.pickerHarness = "claude"
+					h := c.HarnessFor("claude")
+					h.Models = nil
+					h.ModelsLoading = scene == "picker-claude-loading"
+					if !h.ModelsLoading {
+						h.ModelsError = "CLI unavailable"
+					}
 				case "picker-many":
 					v.pickerHarness = "pi"
 					for i := 0; i < 20; i++ {
@@ -834,7 +907,7 @@ func TestAgentCompactScreenshots(t *testing.T) {
 						t.Fatalf("removed model control is visible: %s", removed)
 					}
 				}
-				if scene == "settings-pi" || scene == "settings-droid" {
+				if scene == "settings-pi" || scene == "settings-droid" || scene == "settings-claude" {
 					if slices.Contains(tt.Texts(), v.texts().Models()) {
 						t.Fatal("settings still exposes model selection")
 					}
@@ -852,6 +925,9 @@ func TestAgentCompactScreenshots(t *testing.T) {
 				names := []string{"Codex", "Pi", "Droid"}
 				if strings.HasPrefix(scene, "permissions-") {
 					names = []string{v.texts().ReadOnly(), v.texts().FullAccess()}
+					if thread.Driver() == "claude" {
+						names = []string{v.texts().DefaultPermissions(), v.texts().AgentFileEdits(), v.texts().FullAccess()}
+					}
 					if thread.Driver() == "droid" {
 						names = append(names, v.texts().AgentFileEdits(), v.texts().AgentDevelopment())
 					}
@@ -882,8 +958,11 @@ func TestAgentCompactScreenshots(t *testing.T) {
 
 func TestAgentThinkingScreenshots(t *testing.T) {
 	for _, lang := range []string{"zh-Hans", "en"} {
-		for _, driver := range []string{"pi", "droid"} {
+		for _, driver := range []string{"pi", "droid", "claude"} {
 			for _, scene := range []string{"levels", "extended", "single", "toggle-on", "toggle-off", "toggle-default", "none", "empty", "stale", "running"} {
+				if driver == "claude" && (strings.HasPrefix(scene, "toggle") || scene == "none" || scene == "extended") {
+					continue
+				}
 				if scene == "extended" && driver == "pi" {
 					continue
 				}
@@ -893,6 +972,9 @@ func TestAgentThinkingScreenshots(t *testing.T) {
 					thread := s.AddThread("", "")
 					thread.Harness, thread.AgentModel, thread.AgentEffort = driver, "workbuddy/hy4std", "high"
 					m := harness.AgentModel{ID: thread.AgentModel, Name: thread.AgentModel, Efforts: []string{"off", "minimal", "low", "medium", "high", "xhigh", "max"}}
+					if driver == "claude" {
+						m.Efforts = []string{"low", "medium", "high", "max"}
+					}
 					off := "off"
 					if driver == "droid" {
 						off = "none"
@@ -943,7 +1025,7 @@ func TestAgentThinkingScreenshots(t *testing.T) {
 						t.Fatal("harness-specific toggle returned")
 					}
 					if scene == "single" || scene == "stale" {
-						if !tt.HasText("high") || tt.HasText(tx.AgentDefaultEffort()) {
+						if !tt.HasText("high") || slices.Contains(tt.Texts(), tx.AgentDefaultEffort()) {
 							t.Fatal("single level invented choices or a default")
 						}
 					}

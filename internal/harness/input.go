@@ -19,6 +19,9 @@ func imagePrompt(o RunOptions) ([]any, error) {
 		if !strings.HasPrefix(mime, "image/") {
 			return nil, fmt.Errorf("unsupported image: %s", path)
 		}
+		if o.Driver == "claude" && mime != "image/png" && mime != "image/jpeg" && mime != "image/gif" && mime != "image/webp" {
+			return nil, fmt.Errorf("Claude Code does not support image type %s; export as PNG, JPEG, GIF or WebP", mime)
+		}
 		parts = append(parts, map[string]string{"type": "image", "mimeType": mime, "data": base64.StdEncoding.EncodeToString(data)})
 	}
 	return parts, nil

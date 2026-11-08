@@ -34,6 +34,36 @@ type Messages struct{ locale string }
 // source language.
 func In(locale string) Messages { return Messages{locale} }
 
+// ClaudeDefaultHint says "需授权的操作由你确认，沿用 Claude Code 的本机权限规则。"
+// in the language the app shows.
+func ClaudeDefaultHint() string { return In(i18n.Locale()).ClaudeDefaultHint() }
+
+// ClaudeDefaultHint says "需授权的操作由你确认，沿用 Claude Code 的本机权限规则。"
+// in the language of msgs.
+func (msgs Messages) ClaudeDefaultHint() string {
+	return Catalog.Format(msgs.locale, "claudeDefaultHint", nil)
+}
+
+// ClaudeEditsHint says "自动接受文件编辑，其他操作遵循 Claude Code 权限规则。"
+// in the language the app shows.
+func ClaudeEditsHint() string { return In(i18n.Locale()).ClaudeEditsHint() }
+
+// ClaudeEditsHint says "自动接受文件编辑，其他操作遵循 Claude Code 权限规则。"
+// in the language of msgs.
+func (msgs Messages) ClaudeEditsHint() string {
+	return Catalog.Format(msgs.locale, "claudeEditsHint", nil)
+}
+
+// ClaudeFullAccessHint says "跳过 Claude Code 权限检查，不提供操作系统沙箱。"
+// in the language the app shows.
+func ClaudeFullAccessHint() string { return In(i18n.Locale()).ClaudeFullAccessHint() }
+
+// ClaudeFullAccessHint says "跳过 Claude Code 权限检查，不提供操作系统沙箱。"
+// in the language of msgs.
+func (msgs Messages) ClaudeFullAccessHint() string {
+	return Catalog.Format(msgs.locale, "claudeFullAccessHint", nil)
+}
+
 // HarnessNative says "官方安装"
 // in the language the app shows.
 func HarnessNative() string { return In(i18n.Locale()).HarnessNative() }

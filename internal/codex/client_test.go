@@ -98,6 +98,33 @@ func TestProtocolChild(t *testing.T) {
 	}
 }
 
+func TestWindowsClaudeNpmEntries(t *testing.T) {
+	for _, private := range []bool{false, true} {
+		for _, entry := range []string{"bin/claude.exe", "cli.js"} {
+			root := filepath.Join(t.TempDir(), "工具 Program Files")
+			wrapper := filepath.Join(root, "claude.cmd")
+			pkg := filepath.Join(root, "node_modules", "@anthropic-ai", "claude-code")
+			if private {
+				wrapper = filepath.Join(root, "node_modules", ".bin", "claude.cmd")
+			}
+			path := filepath.Join(pkg, filepath.FromSlash(entry))
+			if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, nil, 0700); err != nil {
+				t.Fatal(err)
+			}
+			got, script, err := windowsClaudeEntry(wrapper)
+			if err != nil || got != path || script != (entry == "cli.js") {
+				t.Fatal(got, script, err)
+			}
+		}
+	}
+	if _, _, err := windowsClaudeEntry(filepath.Join(t.TempDir(), "claude.cmd")); err == nil {
+		t.Fatal("unknown wrapper accepted")
+	}
+}
+
 func TestRoundTripAndAsk(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX test launcher")

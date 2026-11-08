@@ -16,7 +16,7 @@ Windows x64 选择 `mujicagent-setup-<版本>-amd64.exe`，Windows ARM64 选择 
 
 未安装时点击“安装”，在统一弹窗中选择当前智能体支持的渠道，预览后确认安装；设置页不常驻下载方式。Codex 提供官方原生包、大陆 npm 镜像、大陆免 Node 镜像包；Pi 提供官方原生包、官方 npm、大陆 npm 镜像；Droid 提供这四种渠道。Pi npm 要求 Node.js ≥ 22.19，Droid npm 要求 Node.js ≥ 20，缺少运行时可选择官方原生包。镜像缺包时显示错误，不在执行时静默切换来源。新安装写入应用私有目录；无 npm 或 Windows 下的镜像原生包方式会在确认前显示下载动作、地址、摘要和安装路径，不执行 curl 或 shell 安装脚本。下载先校验摘要、完整解包并验证版本，再切换路径；安装可取消，失败保留旧配置。Windows 更新前关闭 App Server，托管版本写入新目录，避免覆盖占用中的 exe。有对话运行时不能更新。
 
-Pi 官方脚本安装沿用其自更新命令；Droid 独立原生安装按预览版本自更新，Homebrew 安装沿用 cask。Factory.app 内置 Droid 和 Nix 安装显示来源及原工具更新提示。Pi/Droid 安装更新不会断开 Codex 连接。
+Pi 官方脚本安装沿用其自更新命令；Droid 独立原生安装按预览版本自更新，Homebrew 安装沿用 cask。Factory.app 内置 Droid 和 Nix 安装显示来源及原工具更新提示。其他 Harness 安装更新不会断开 Codex 连接。Claude Code 的渠道和来源规则见下文。
 
 ## 连接 Codex
 
@@ -52,6 +52,22 @@ Pi 工具事件中的 MCP `server/tool` 和 Droid 审批详情中的真实 MCP �
 
 模型行右侧的星标用于收藏，按 `(Harness, Model ID)` 精确保存并在所属 Harness 的列表内置顶。同名模型在不同 Harness 中互不影响。左侧最上方的星标入口汇总全部收藏，行首显示所属 Harness 的官方图标；普通列表不显示行首图标。收藏、取消收藏不切换当前模型，重启后保留。
 
+## Claude Code
+
+在 **设置 → 智能体 → Claude Code** 安装，或指定已有 `claude` 的可执行路径。认证沿用 [Claude Code 官方配置](https://code.claude.com/docs/en/authentication)及进程环境，包括 CLI 登录、API key 和已配置的服务端；应用不保存密钥，安装和模型目录可读不表示已验证登录。登录入口打开官方指南。
+
+全新安装提供官方原生包、官方 npm、大陆 npm 镜像和大陆免 Node 镜像包。原生包按官方 manifest 的 SHA-256 校验，镜像平台包按 npm integrity 校验；npm 要求 Node.js ≥ 22，执行官方 postinstall 安装平台二进制。已安装版本按实际来源更新：官方用户目录安装使用 `claude install <预览版本>`，npm/VP/Homebrew 沿用原工具（保留 `claude-code` 或 `claude-code@latest` cask）。Bun/pnpm 的脚本信任策略尚未自动适配，WinGet、Nix 和未知来源请通过原工具更新。所有更新均先预览再确认，运行时关闭 CLI 自动更新；不升级开发者的全局 CLI 来进行测试。
+
+输入栏通过 CLI 的只读 `initialize` 目录读取模型和真实思考档位。使用目录的精确模型 ID（优先 `resolvedModel`），去除重复及「默认模型」占位，不硬编码名单；自定义模型是否出现取决于 CLI 返回的目录。思考强度复用共享滑条；未提供默认值时沿用 CLI 默认。收藏、上次选择、新会话默认值及跨 Harness 交接与其他智能体共用同一流程，Claude Code 的 session ID 不会交给其他 CLI。
+
+默认权限沿用 Claude Code 的项目规则和逐次审批；「自动编辑」使用 `acceptEdits`；「完全访问」使用 `bypassPermissions` 并需要确认。这些是 Claude Code 工具权限，不是操作系统沙箱。默认权限按 Harness 隔离，只影响新建和交接会话；对话中的权限、模型和思考调整下一轮生效。审批只回传本次允许或拒绝，不自动增加永久规则。AskUserQuestion 使用共享提问界面，支持单选、多选、自定义回答及取消，完全访问下仍会询问。
+
+每轮使用双向 `stream-json`，以 `--resume` 续聊。文本与思考流式显示，Bash、Edit、Write、Read、TodoWrite 和 TaskCreate/TaskUpdate 复用共享过程行、输出、diff 和计划；工具结果按原生事件更新，不伪造 CLI 未发送的增量终端输出。MCP 命名空间来自 Claude Code 的 `mcp__server__tool` 协议。压缩使用 PreCompact/PostCompact 和 compact_boundary 保留开始、完成、摘要及可用统计；异常或停止不冒充压缩成功。
+
+PNG、JPEG、GIF、WebP 图片以 MIME + base64 发送（包含原图和标注导出图）；其他图片类型明确报错，可先导出 PNG。普通文件保留本地路径。运行中插入消息通过同一输入流发送；只有匹配 UUID 的回显才消费本地队列和交接上下文。整轮等待结果、会话空闲及已启动的后台智能体完成，停止会回收进程树和待答请求。CLI 的计划执行模式、速度服务、交互终端命令和通用 MCP elicitation 尚未接入。
+
+本次使用 Claude Code 2.1.317 验证只读模型目录与官方安装来源，并以可控协议进程验证发送、续聊参数、插入、工具、图片和取消。未授权真实模型用量，尚未验证真实推理、图片识别和第二轮模型回复；CPU 截图及交叉编译不代表 Windows 原生运行或 GPU 验收。
+
 ## 界面与会话
 
 - 原生毛玻璃侧栏、紧凑单行会话、统一浅色界面（不跟随系统深色）；悬停高亮，遵循系统“减少动态效果”设置。
@@ -64,7 +80,7 @@ Pi 工具事件中的 MCP `server/tool` 和 Droid 审批详情中的真实 MCP �
 - MCP 调用显示工具名、服务名、参数摘要和执行状态；展开可查看参数、结果和错误，较长内容可滚动查看。缺失数据会明确提示，历史记录中未保存的详情无法补回。参数、结果和错误中的常见敏感字段、认证头及私钥在保存前脱敏；没有字段标识或认证格式的任意文本无法保证识别。
 - **Ask**：选项或自由输入、多问题、私密输入。命令／文件审批支持允许本次、会话内允许、命令前缀规则、网络主机规则及拒绝，具体选项由 App Server 的审批请求决定；通过原始请求 ID 回传。
 - 按对话选择只读、默认权限、自动审批（Approve for me）或完全访问，并展示服务端提供的自定义权限档位；遵循服务端管理策略，完全访问需要确认。
-- 原生设置悬浮面板：保留背后的对话，右上角关闭或按 Esc 返回；Agents 使用紧凑二级侧栏管理 Codex、Pi、Droid；三者卡片统一提供安装来源、版本检查、安装更新和可执行路径；连接与账户信息按真实能力显示。
+- 原生设置悬浮面板：保留背后的对话，右上角关闭或按 Esc 返回；Agents 使用紧凑二级侧栏管理 Codex、Pi、Droid 和 Claude Code；卡片统一提供安装来源、版本检查、安装更新和可执行路径；连接与账户信息按真实能力显示。
 - 项目、会话、草稿和 Settle 状态保存在本机。
 - 启动后自动检查 GitHub Release；设置中可下载签名更新、重启安装并查看历史更新日志。
 - 简体中文／英文即时切换，默认中文；菜单、设置、Ask 操作及原生控件跟随语言，用户内容保持原文。

@@ -64,6 +64,7 @@ type ModelSelection struct {
 }
 
 type Settings struct {
+	ClaudePath, ClaudeDefaultAccess                                                       string          `json:",omitempty"`
 	LastModelSelection                                                                    ModelSelection  `json:",omitzero"`
 	PiDefaultAccess, DroidDefaultAccess                                                   string          `json:",omitempty"`
 	ModelFavorites                                                                        []ModelFavorite `json:",omitempty"`
@@ -214,6 +215,11 @@ func (t *Thread) Driver() string {
 }
 func (s Settings) AgentPath(id string) string {
 	switch id {
+	case "claude":
+		if s.ClaudePath != "" {
+			return s.ClaudePath
+		}
+		return "claude"
 	case "pi":
 		if s.PiPath != "" {
 			return s.PiPath
@@ -230,6 +236,11 @@ func (s Settings) AgentPath(id string) string {
 
 func (s Settings) AgentDefaultAccess(id string) string {
 	switch id {
+	case "claude":
+		switch s.ClaudeDefaultAccess {
+		case "acceptEdits", "bypassPermissions":
+			return s.ClaudeDefaultAccess
+		}
 	case "pi":
 		if s.PiDefaultAccess == "native" {
 			return s.PiDefaultAccess
@@ -252,7 +263,7 @@ func (s *State) IsModelFavorite(key ModelFavorite) bool {
 	return false
 }
 func (s *State) ToggleModelFavorite(key ModelFavorite) {
-	if key.ModelID == "" || key.Harness != "codex" && key.Harness != "pi" && key.Harness != "droid" {
+	if key.ModelID == "" || key.Harness != "codex" && key.Harness != "pi" && key.Harness != "droid" && key.Harness != "claude" {
 		return
 	}
 	for i, favorite := range s.Settings.ModelFavorites {

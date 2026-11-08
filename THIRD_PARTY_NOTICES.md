@@ -38,6 +38,10 @@ SOFTWARE.
 
 These marks identify the supported external products and do not imply endorsement. They are not Lucide substitutes or newly drawn logos.
 
+## Anthropic brand mark
+
+`internal/view/assets/claude.svg` is the official Anthropic mark from [`ant-logo.svg`](https://github.com/anthropics/claude-quickstarts/blob/main/customer-support-agent/public/ant-logo.svg) in Anthropic's Claude Quickstarts repository. The original paths, colors and viewBox are preserved. This Anthropic mark identifies the Claude Code integration; it is not a recreation of the Claude symbol. Anthropic, Claude and their marks belong to Anthropic PBC. Their use does not imply endorsement.
+
 ## Lucide
 
 The SVGs in `internal/view/assets/lucide/` are unmodified assets from [Lucide](https://lucide.dev/), pinned to [commit 1a49fd88d85202bad69f39462241b309a484bba0](https://github.com/lucide-icons/lucide/tree/1a49fd88d85202bad69f39462241b309a484bba0/icons). They use the original 24 × 24 viewBox, 2-unit strokes, and rounded caps and joins, scaled by the native renderer.
@@ -46,4 +50,4 @@ The complete upstream [ISC license and Feather-derived MIT notice](internal/view
 
 ## Dependencies
 
-MyGo and the transitive Go modules retain their respective licenses in their module distributions. `go.mod` and `go.sum` pin the versions used to build MujicAgent. Codex CLI is an external executable, installed separately by the user.
+MyGo and the transitive Go modules retain their respective licenses in their module distributions. `go.mod` and `go.sum` pin the versions used to build MujicAgent. Codex, Pi, Droid and Claude Code are external executables managed through their respective distributions.

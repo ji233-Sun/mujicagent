@@ -71,7 +71,7 @@ func (c *Controller) Handoff(driver, targetModel string) bool {
 
 // LoadAgentModels runs only from actions. Cache identity includes the workspace and executable.
 func (c *Controller) LoadAgentModels(id string, force bool) {
-	if id != "pi" && id != "droid" {
+	if id != "pi" && id != "droid" && id != "claude" {
 		return
 	}
 	h := c.HarnessFor(id)

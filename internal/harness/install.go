@@ -73,6 +73,7 @@ func PrepareInstall(ctx context.Context, driver, root, source string, release Re
 			cmd, err := managerCommand(ctx, "npm")
 			if err == nil && !(driver == "codex" && runtime.GOOS == "windows") {
 				p.Command, p.Args = cmd.Path, append(cmd.Args[1:], "install", "--prefix", p.Stage, packageFor(driver)+"@"+release.Version, "--registry", registry(source), "--ignore-scripts", "--no-audit", "--no-fund")
+				p.Args = installerScriptArgs(driver, p.Args)
 				p.Path = filepath.Join(p.Stage, "node_modules", ".bin", driver)
 				if runtime.GOOS == "windows" {
 					p.Path += ".cmd"
@@ -105,6 +106,9 @@ func checkNodeRuntime(ctx context.Context, driver string) error {
 	minimum := "20.0.0"
 	if driver == "pi" {
 		minimum = "22.19.0"
+	}
+	if driver == "claude" {
+		minimum = "22.0.0"
 	}
 	cmd, err := codex.Command(ctx, "node", "--version")
 	if err == nil {

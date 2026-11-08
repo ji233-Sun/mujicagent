@@ -22,6 +22,22 @@ func desktopCommand(ctx context.Context, binary string, args ...string) (*exec.C
 				return nil, err
 			}
 			if strings.EqualFold(filepath.Ext(resolved), ".cmd") || strings.EqualFold(filepath.Ext(resolved), ".bat") {
+				if strings.EqualFold(strings.TrimSuffix(filepath.Base(resolved), filepath.Ext(resolved)), "claude") {
+					entry, script, err := windowsClaudeEntry(resolved)
+					if err != nil {
+						return nil, err
+					}
+					if script {
+						node, err := exec.LookPath("node.exe")
+						if err != nil {
+							return nil, err
+						}
+						cmd := exec.Command(node, append([]string{entry}, args...)...)
+						return cmd, cmd.Err
+					}
+					cmd := exec.Command(entry, args...)
+					return cmd, cmd.Err
+				}
 				if strings.EqualFold(strings.TrimSuffix(filepath.Base(resolved), filepath.Ext(resolved)), "droid") {
 					native, err := windowsDroidNative(resolved, runtime.GOARCH)
 					if err != nil {
@@ -100,6 +116,21 @@ func desktopCommand(ctx context.Context, binary string, args ...string) (*exec.C
 	}
 	cmd.Env = append(cmd.Env, "PATH="+strings.Join(dirs, string(os.PathListSeparator)))
 	return cmd, nil
+}
+
+func windowsClaudeEntry(wrapper string) (string, bool, error) {
+	for _, root := range windowsNpmRoots(wrapper) {
+		pkg := filepath.Join(root, "@anthropic-ai", "claude-code")
+		// New packages use an official native postinstall; older packages use
+		// cli.js. Only these package-owned entries are allowed, never cmd.exe.
+		for _, entry := range []string{"bin/claude.exe", "cli.js"} {
+			path := filepath.Join(pkg, filepath.FromSlash(entry))
+			if info, err := os.Stat(path); err == nil && !info.IsDir() {
+				return path, entry == "cli.js", nil
+			}
+		}
+	}
+	return "", false, &exec.Error{Name: wrapper, Err: exec.ErrNotFound}
 }
 
 func loginShellPath(ctx context.Context, home string) string {
