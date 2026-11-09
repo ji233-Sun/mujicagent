@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/richtext"
 	"github.com/ji233-Sun/mujicagent/internal/markup"
@@ -129,9 +128,6 @@ func (v *View) attachmentDialog(c *ui.Context) {
 			services := c.Services()
 			path := v.attachment.Path
 			markTool(c, tx.CopyAttachmentPath(), folder, false, func() { services.WriteClipboard(path) })
-			if v.Window != nil {
-				ui.Button(c, tx.RevealAttachment()).FontSize(11).OnClick(func() { mygo.Shell.ShowItemInFolder(path) })
-			}
 			ui.Box(c).Grow(1)
 			if !model.ValidAnnotations(s.notes) {
 				ui.Text(c, tx.AnnotationLimit()).FontSize(11).TextColor(c.Theme().Danger)
@@ -177,6 +173,9 @@ func (v *View) annotationCanvas(c *ui.Context, p *attachmentPreview) {
 			cursor := ui.CursorCrosshair
 			if s.tool == "pan" {
 				cursor = ui.CursorGrab
+				if s.dragging == "pan" || s.dragging == "move" {
+					cursor = ui.CursorGrabbing
+				}
 			}
 			canvas.Cursor(cursor).HandleInput(func(ev ui.InputEvent) bool { return s.input(ev, p.bitmap, s.canvas.Bounds(c)) })
 			canvas.Draw(func(painter *ui.Painter, bounds ui.Rect) {
@@ -220,12 +219,8 @@ func (v *View) annotationCanvas(c *ui.Context, p *attachmentPreview) {
 				})
 			})
 		}
-		toolbarHeight := float32(64)
-		if s.addingNumber() > 0 {
-			toolbarHeight = 88
-		}
-		ui.Column(c).Height(toolbarHeight).Shrink(0).AlignItems(ui.Center).Gap(6).Padding(10, 12).Children(func() {
-			if p.bitmap != nil {
+		if p.bitmap != nil {
+			ui.Column(c).Shrink(0).AlignItems(ui.Center).Gap(6).Padding(10, 12).Children(func() {
 				if number := s.addingNumber(); number > 0 {
 					ui.Text(c, tx.AddingAnnotationShapes(fmt.Sprint(number))).FontSize(11).Bold().TextColor(c.Theme().Accent)
 				}
@@ -240,8 +235,8 @@ func (v *View) annotationCanvas(c *ui.Context, p *attachmentPreview) {
 					markTool(c, tx.UndoAnnotation(), undoMarkIcon, false, func() { s.history(false) }).Disabled(len(s.undo) == 0)
 					markTool(c, tx.RedoAnnotation(), redoMarkIcon, false, func() { s.history(true) }).Disabled(len(s.redo) == 0)
 				})
-			}
-		})
+			})
+		}
 	})
 }
 
@@ -259,7 +254,6 @@ func (v *View) annotationSidebar(c *ui.Context, p *attachmentPreview, compact bo
 			ui.Column(c).Padding(22, 12).Gap(10).AlignItems(ui.Center).Children(func() {
 				ui.Box(c).Size(44, 44).Radius(14).Background(c.Theme().Surface).Center().Children(func() { ui.Icon(c, chat).Size(20, 20).TextColor(c.Theme().Accent) })
 				ui.Text(c, tx.AnnotationEmptyTitle()).Bold().FontSize(13)
-				ui.Text(c, tx.AnnotationEmptyHint()).FontSize(12).TextColor(c.Theme().TextMuted).TextAlign(ui.Center)
 			})
 		}
 		for i := range s.notes {

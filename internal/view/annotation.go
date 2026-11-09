@@ -26,6 +26,7 @@ type annotationEditor struct {
 	confirmClose bool
 	scrollTo     string
 	dragging     string
+	pressed      string
 	start        ui.Point
 	before       []model.Annotation
 	pending      model.Mark
@@ -109,6 +110,7 @@ func (s *annotationEditor) cancelGesture() {
 		s.notes = cloneNotes(s.before)
 	}
 	s.dragging = ""
+	s.pressed = ""
 	s.pending = model.Mark{}
 	s.before = nil
 }
@@ -281,13 +283,14 @@ func (s *annotationEditor) input(ev ui.InputEvent, bitmap *ui.Bitmap, bounds ui.
 		s.start = p
 		s.before = cloneNotes(s.notes)
 		if s.tool == "pan" {
-			if id := s.hit(p, r); id != "" {
-				s.selectNote(id, bitmap, bounds)
-				s.before = cloneNotes(s.notes)
-				s.dragging = "move"
-				return true
+			s.pressed = ""
+			if inside(p, r) {
+				s.pressed = s.hit(p, r)
 			}
-			s.dragging = "pan"
+			s.dragging = "pan-pending"
+			if s.pressed != "" && s.pressed == s.selected {
+				s.dragging = "move-pending"
+			}
 			return true
 		}
 		if !inside(p, r) {
@@ -302,50 +305,12 @@ func (s *annotationEditor) input(ev ui.InputEvent, bitmap *ui.Bitmap, bounds ui.
 		s.dragging = "draw"
 		return true
 	case ui.InputPointerMove:
-		switch s.dragging {
-		case "pan":
-			s.pan.X += p.X - s.start.X
-			s.pan.Y += p.Y - s.start.Y
-			s.start = p
-			return true
-		case "move":
-			s.notes = cloneNotes(s.before)
-			n := s.current()
-			if n == nil {
-				return true
-			}
-			dx, dy := float64((p.X-s.start.X)/r.W*100), float64((p.Y-s.start.Y)/r.H*100)
-			loX, loY, hiX, hiY := 100., 100., 0., 0.
-			for _, m := range n.Marks {
-				for _, q := range m.Points {
-					loX = min(loX, q.X)
-					loY = min(loY, q.Y)
-					hiX = max(hiX, q.X)
-					hiY = max(hiY, q.Y)
-				}
-			}
-			dx = max(-loX, min(dx, 100-hiX))
-			dy = max(-loY, min(dy, 100-hiY))
-			for j := range n.Marks {
-				for k := range n.Marks[j].Points {
-					n.Marks[j].Points[k].X += dx
-					n.Marks[j].Points[k].Y += dy
-				}
-			}
-			return true
-		case "draw":
-			q := normalized(p, r)
-			if s.pending.Kind == "pen" {
-				last := markup.Position(s.pending.Points[len(s.pending.Points)-1], r)
-				if len(s.pending.Points) < 2000 && math.Hypot(float64(p.X-last.X), float64(p.Y-last.Y)) >= 2 {
-					s.pending.Points = append(s.pending.Points, q)
-				}
-			} else {
-				s.pending.Points[1] = q
-			}
-			return true
-		}
+		return s.drag(p, r)
 	case ui.InputPointerUp:
+		if ev.Button != 0 {
+			return false
+		}
+		s.drag(p, r)
 		if s.dragging == "draw" {
 			if math.Hypot(float64(p.X-s.start.X), float64(p.Y-s.start.Y)) >= 3 || len(s.pending.Points) > 3 {
 				s.add(&s.pending)
@@ -355,9 +320,74 @@ func (s *annotationEditor) input(ev ui.InputEvent, bitmap *ui.Bitmap, bounds ui.
 			s.pending = model.Mark{}
 		} else if s.dragging == "move" {
 			s.record(s.before)
+		} else if s.dragging == "pan-pending" || s.dragging == "move-pending" {
+			// Select on release so revealing the sidebar cannot shift an active drag.
+			if s.pressed == "" {
+				s.selected = ""
+			} else if inside(p, r) && s.hit(p, r) == s.pressed {
+				s.selectNote(s.pressed, bitmap, bounds)
+			}
 		}
 		s.dragging = ""
+		s.pressed = ""
 		s.before = nil
+		return true
+	}
+	return false
+}
+
+func (s *annotationEditor) drag(p ui.Point, r ui.Rect) bool {
+	if s.dragging == "pan-pending" || s.dragging == "move-pending" {
+		if math.Hypot(float64(p.X-s.start.X), float64(p.Y-s.start.Y)) < 4 {
+			return true
+		}
+		if s.dragging == "move-pending" {
+			s.dragging = "move"
+		} else {
+			s.dragging = "pan"
+		}
+	}
+	switch s.dragging {
+	case "pan":
+		s.pan.X += p.X - s.start.X
+		s.pan.Y += p.Y - s.start.Y
+		s.start = p
+		return true
+	case "move":
+		s.notes = cloneNotes(s.before)
+		n := s.current()
+		if n == nil {
+			return true
+		}
+		dx, dy := float64((p.X-s.start.X)/r.W*100), float64((p.Y-s.start.Y)/r.H*100)
+		loX, loY, hiX, hiY := 100., 100., 0., 0.
+		for _, m := range n.Marks {
+			for _, q := range m.Points {
+				loX = min(loX, q.X)
+				loY = min(loY, q.Y)
+				hiX = max(hiX, q.X)
+				hiY = max(hiY, q.Y)
+			}
+		}
+		dx = max(-loX, min(dx, 100-hiX))
+		dy = max(-loY, min(dy, 100-hiY))
+		for j := range n.Marks {
+			for k := range n.Marks[j].Points {
+				n.Marks[j].Points[k].X += dx
+				n.Marks[j].Points[k].Y += dy
+			}
+		}
+		return true
+	case "draw":
+		q := normalized(p, r)
+		if s.pending.Kind == "pen" {
+			last := markup.Position(s.pending.Points[len(s.pending.Points)-1], r)
+			if len(s.pending.Points) < 2000 && math.Hypot(float64(p.X-last.X), float64(p.Y-last.Y)) >= 2 {
+				s.pending.Points = append(s.pending.Points, q)
+			}
+		} else {
+			s.pending.Points[1] = q
+		}
 		return true
 	}
 	return false
