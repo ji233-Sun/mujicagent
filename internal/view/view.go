@@ -438,6 +438,9 @@ func (v *View) item(c *ui.Context, item *model.Item, key string, running bool) {
 	if item.MCP != nil && item.Kind != "plan" {
 		display := *item
 		display.Text = toolActivityText(item, *v.openState(key))
+		if text, ok := v.browserActivityText(item, *v.openState(key)); ok {
+			display.Text = text
+		}
 		item = &display
 	}
 	if item.Kind == "steerMessage" {

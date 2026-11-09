@@ -1,8 +1,10 @@
 # BrowserUse 公共契约
 
-本目录完成 #26，只定义 [contracts.go](contracts.go) 的产品语义。没有运行时实现、成功占位、持久化字段或引擎注册系统。平台验证见 [#27 报告](../../WEBVIEW_FEASIBILITY.md)：接口存在不代表平台支持，#29 的合并仍需 #25 明确采用范围。
+公共语义定义于 [contracts.go](contracts.go)；[runtime.go](runtime.go) 实现 #29 的临时页面、互斥、授权、引用与取消生命周期，[mygo.go](mygo.go) 和固定的 [page.js](page.js) 连接现有 MyGo WebView。入口使用 `New(window, changed)`，UI 和 Codex 共用同一个 Runtime，原生页面由 `View(PageKey)` 取得。
 
-#31 的[集成验收准备](../../docs/browseruse-acceptance.md)包含开工条件、loopback 受控测试页、执行步骤和证据记录模板。前置未完成时仅准备验收材料，不代表生产集成或真实链路已通过。
+用户于 2026-11-09 明确采用 #27 的受限首版，并授权隔离的本地合成页面进行真实 Codex 验收。具体能力、使用步骤与实际验证记录见 [运行实现](../../docs/browseruse-runtime.md)；原[集成验收矩阵](../../docs/browseruse-acceptance.md)保留完整目标与待核对项。历史可行性报告的 pageWorld、可信输入及弹窗限制仍然成立。
+
+原生 Capture 当前统一返回 `ErrUnsupported`：pageWorld 可篡改 MyGo 的外层 Eval 返回，不能用它判断截图是否安全；现有 API 也没有原子脱敏边界。因此本实现尚未完成 #29 的安全截图验收，不据此关闭 #29/#31/#25。下文契约中的 Capture 行为是目标要求，不表示当前原生引擎已具备该能力。
 
 ## 下游入口
 
@@ -69,4 +71,4 @@ Capture 授权前 UI 必须说明“将分享当前页面可见区域”，并�
 
 错误用 `errors.Is` 匹配 [contracts.go](contracts.go) 的 sentinel：参数非法 InvalidArgument；未登记/跨线程页面 NotFound（不泄漏其他线程信息）；当前已关闭页 Closed；导航/观察/元素过期 Stale；互斥/加载/排空 Busy；权限或操作者错误 PermissionDenied；能力缺失 Unsupported；无法安全返回 Sensitive；已投递但未确认目标 Unconfirmed；其余底层故障 Engine。context 取消/超时使用标准错误，禁止把原始异常文字或输入值拼进错误。空观察/空图片不能充当成功的 Unsupported 替身。
 
-本次没有自定义可执行逻辑，不添加镜像类型声明的测试。验证命令为 `go test ./internal/browser`（编译契约）和 `go vet ./internal/browser`。具体状态机、并发、脱敏、平台和协议回归测试随 #28/#29/#30 的实现添加；本契约不宣称这些运行行为已实现。
+状态机回归位于 `runtime_test.go`，使用可控的底层等待验证取消后 Busy 不提前解除、关闭优先、旧页面与引用拒绝、显式授权及隔离。原生网页和 Codex 验收复用 `internal/view/browser_native_test.go`，须按运行文档显式开启；普通测试不启动原生窗口或真实模型。

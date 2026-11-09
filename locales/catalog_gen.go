@@ -3104,11 +3104,11 @@ func (msgs Messages) BrowserAllowCapture() string {
 	return Catalog.Format(msgs.locale, "browserAllowCapture", nil)
 }
 
-// BrowserCaptureHint says "截图仅分享面板内当前网页的可见区域，其中可能包含敏感内容。此权限默认关闭。"
+// BrowserCaptureHint says "当前原生引擎无法保证截图脱敏，暂不支持向 Agent 分享截图。"
 // in the language the app shows.
 func BrowserCaptureHint() string { return In(i18n.Locale()).BrowserCaptureHint() }
 
-// BrowserCaptureHint says "截图仅分享面板内当前网页的可见区域，其中可能包含敏感内容。此权限默认关闭。"
+// BrowserCaptureHint says "当前原生引擎无法保证截图脱敏，暂不支持向 Agent 分享截图。"
 // in the language of msgs.
 func (msgs Messages) BrowserCaptureHint() string {
 	return Catalog.Format(msgs.locale, "browserCaptureHint", nil)
@@ -3352,6 +3352,28 @@ func BrowserEngineError() string { return In(i18n.Locale()).BrowserEngineError()
 // in the language of msgs.
 func (msgs Messages) BrowserEngineError() string {
 	return Catalog.Format(msgs.locale, "browserEngineError", nil)
+}
+
+// BrowserThreadUnavailable says "当前连接无法为此对话确认浏览器工具，历史已保留。请新建对话，先打开浏览器再发送。"
+// in the language the app shows.
+func BrowserThreadUnavailable() string { return In(i18n.Locale()).BrowserThreadUnavailable() }
+
+// BrowserThreadUnavailable says "当前连接无法为此对话确认浏览器工具，历史已保留。请新建对话，先打开浏览器再发送。"
+// in the language of msgs.
+func (msgs Messages) BrowserThreadUnavailable() string {
+	return Catalog.Format(msgs.locale, "browserThreadUnavailable", nil)
+}
+
+// BrowserRegistrationUnavailable says "当前 Codex 无法注册浏览器工具，请检查 CLI 版本及协议能力。"
+// in the language the app shows.
+func BrowserRegistrationUnavailable() string {
+	return In(i18n.Locale()).BrowserRegistrationUnavailable()
+}
+
+// BrowserRegistrationUnavailable says "当前 Codex 无法注册浏览器工具，请检查 CLI 版本及协议能力。"
+// in the language of msgs.
+func (msgs Messages) BrowserRegistrationUnavailable() string {
+	return Catalog.Format(msgs.locale, "browserRegistrationUnavailable", nil)
 }
 
 // BrowserToolOpen says "打开网页"

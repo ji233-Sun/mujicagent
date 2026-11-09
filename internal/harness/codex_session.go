@@ -49,17 +49,31 @@ func runCodex(ctx context.Context, o RunOptions, _ []string, emit func(AgentEven
 		params["model"] = o.Model
 	}
 	session := o.Session
+	if o.BrowserThreads != nil && session != "" && !o.BrowserThreads.Registered(session) {
+		return codex.ErrBrowserResume
+	}
 	if !o.Loaded {
-		method := "thread/start"
-		if session != "" {
-			method = "thread/resume"
-			params["threadId"] = session
+		if o.BrowserThreads != nil {
+			if session == "" {
+				session, err = o.BrowserThreads.Start(ctx, params)
+			} else {
+				session, err = o.BrowserThreads.Resume(ctx, session, params)
+			}
+			if err != nil {
+				return err
+			}
+		} else {
+			method := "thread/start"
+			if session != "" {
+				method = "thread/resume"
+				params["threadId"] = session
+			}
+			var result struct{ Thread struct{ ID string } }
+			if err := o.Client.Call(ctx, method, params, &result); err != nil {
+				return err
+			}
+			session = result.Thread.ID
 		}
-		var result struct{ Thread struct{ ID string } }
-		if err := o.Client.Call(ctx, method, params, &result); err != nil {
-			return err
-		}
-		session = result.Thread.ID
 		if session == "" {
 			return fmt.Errorf("Codex returned no thread ID")
 		}

@@ -265,6 +265,13 @@ func NewBrowserThreads(client *Client) *BrowserThreads {
 	return &BrowserThreads{client: client, known: map[string]bool{}}
 }
 
+// Registered is scoped to this live connection, never inferred from disk history.
+func (b *BrowserThreads) Registered(threadID string) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.known[threadID]
+}
+
 func (b *BrowserThreads) Start(ctx context.Context, params map[string]any) (string, error) {
 	return b.open(ctx, "", params)
 }

@@ -15,6 +15,7 @@ type RunOptions struct {
 	Images                                                      []string
 	Input                                                       Input
 	Client                                                      *codex.Client
+	BrowserThreads                                              *codex.BrowserThreads
 	Loaded, Plan                                                bool
 	ServiceTier                                                 string
 }
