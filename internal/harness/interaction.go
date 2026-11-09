@@ -16,6 +16,71 @@ type Interaction struct {
 	Reply   chan any
 }
 
+// Client requests may wait for a person, but must never stop the protocol reader.
+// The reader still owns notifications, acknowledgments and request cancellation.
+type interactions struct {
+	ctx     context.Context
+	cancel  context.CancelCauseFunc
+	mu      sync.Mutex
+	pending map[string]*interactionJob
+	workers sync.WaitGroup
+	emitMu  sync.Mutex
+	emit    func(AgentEvent)
+}
+
+type interactionJob struct{ cancel context.CancelFunc }
+
+func newInteractions(ctx context.Context, emit func(AgentEvent)) *interactions {
+	ctx, cancel := context.WithCancelCause(ctx)
+	return &interactions{ctx: ctx, cancel: cancel, pending: map[string]*interactionJob{}, emit: emit}
+}
+
+func (i *interactions) publish(e AgentEvent) {
+	i.emitMu.Lock()
+	defer i.emitMu.Unlock()
+	i.emit(e)
+}
+
+func (i *interactions) start(id string, handle func(context.Context) error) {
+	ctx, cancel := context.WithCancel(i.ctx)
+	job := &interactionJob{cancel: cancel}
+	i.mu.Lock()
+	if previous := i.pending[id]; previous != nil {
+		previous.cancel()
+	}
+	i.pending[id] = job
+	i.mu.Unlock()
+	i.workers.Add(1)
+	go func() {
+		defer i.workers.Done()
+		defer cancel()
+		defer func() {
+			i.mu.Lock()
+			defer i.mu.Unlock()
+			if i.pending[id] == job {
+				delete(i.pending, id)
+			}
+		}()
+		if err := handle(ctx); err != nil && ctx.Err() == nil {
+			i.cancel(err)
+		}
+	}()
+}
+
+func (i *interactions) resolve(id string) {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	if job := i.pending[id]; job != nil {
+		job.cancel()
+		delete(i.pending, id)
+	}
+}
+
+func (i *interactions) close() {
+	i.cancel(context.Canceled)
+	i.workers.Wait()
+}
+
 func ask(ctx context.Context, emit func(AgentEvent), r *codex.Request) (json.RawMessage, error) {
 	i := &Interaction{Request: r, Reply: make(chan any, 1)}
 	emit(AgentEvent{Interaction: i})

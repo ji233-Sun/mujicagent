@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 )
 
 // droidRPC consumes the official full-duplex protocol, including client requests.
@@ -23,6 +24,7 @@ type droidRPC struct {
 	compactions       int
 	compacting        bool
 	summaries         map[string]bool
+	interactions      *interactions
 }
 
 func (a *droidRPC) call(method string, params any, result any) error {
@@ -69,7 +71,7 @@ func (a *droidRPC) call(method string, params any, result any) error {
 }
 func (a *droidRPC) readError() error {
 	if a.ctx.Err() != nil {
-		return a.ctx.Err()
+		return context.Cause(a.ctx)
 	}
 	if a.out.Err() != nil {
 		return a.out.Err()
@@ -89,17 +91,23 @@ func (a *droidRPC) consume(raw []byte) error {
 		return err
 	}
 	if len(e.ID) > 0 {
-		response := map[string]any{"jsonrpc": "2.0", "id": e.ID}
-		result, err := a.interaction(raw)
-		if err != nil {
-			return err
-		}
-		if result == nil {
-			response["error"] = map[string]any{"code": -32601, "message": "Unsupported client method"}
-		} else {
-			response["result"] = result
-		}
-		return a.control.send(response)
+		raw = slices.Clone(raw) // Scanner reuses its buffer while the user answers.
+		a.interactions.start(string(e.ID), func(ctx context.Context) error {
+			response := map[string]any{"jsonrpc": "2.0", "id": e.ID}
+			result, err := a.interaction(ctx, raw)
+			if ctx.Err() != nil {
+				return nil
+			}
+			if err != nil {
+				response["error"] = map[string]any{"code": -32602, "message": "Invalid client request"}
+			} else if result == nil {
+				response["error"] = map[string]any{"code": -32601, "message": "Unsupported client method"}
+			} else {
+				response["result"] = result
+			}
+			return a.control.send(response)
+		})
+		return nil
 	}
 	if e.Method == "droid.session_notification" && a.streaming && (e.Params.SessionID == "" || e.Params.SessionID == a.session) {
 		return a.update(e.Params.Notification)
@@ -123,8 +131,11 @@ func droidArgs(o RunOptions) ([]string, error) {
 }
 
 func runDroid(ctx context.Context, o RunOptions, args []string, emit func(AgentEvent)) error {
+	handlers := newInteractions(ctx, emit)
+	ctx, emit = handlers.ctx, handlers.publish
 	process, err := startRPCProcess(ctx, o.Binary, o.Cwd, args)
 	if err != nil {
+		handlers.close()
 		return err
 	}
 	defer process.close()
@@ -134,7 +145,8 @@ func runDroid(ctx context.Context, o RunOptions, args []string, emit func(AgentE
 	}
 	control.attach(process, "droid")
 	defer control.close()
-	a := droidRPC{ctx: ctx, control: control, out: process.output, emit: emit}
+	a := droidRPC{ctx: ctx, control: control, out: process.output, emit: emit, interactions: handlers}
+	defer handlers.close()
 	defer func() {
 		status := "unknown"
 		if ctx.Err() != nil {
@@ -218,5 +230,5 @@ func runDroid(ctx context.Context, o RunOptions, args []string, emit func(AgentE
 	if !a.done {
 		return a.readError()
 	}
-	return nil
+	return context.Cause(ctx)
 }

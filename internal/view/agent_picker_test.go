@@ -416,6 +416,85 @@ func TestHarnessTimelineScreenshots(t *testing.T) {
 	}
 }
 
+func TestWaitingQuestionsVisible(t *testing.T) {
+	for _, lang := range []string{"zh-Hans", "en"} {
+		for _, driver := range []string{"codex", "pi", "droid", "claude"} {
+			t.Run(lang+"/"+driver, func(t *testing.T) {
+				s := model.New()
+				s.Settings.Language = lang
+				thread := s.AddThread("", "")
+				thread.Harness, thread.ServerID = driver, "server"
+				thread.Turns = []model.Turn{{ID: "turn", Prompt: "Help with this project", Status: "inProgress", Items: []model.Item{{ID: "reply", Kind: "agentMessage", Text: strings.Repeat("Read the requirements before proceeding.\n\n", 30)}}}}
+				c := controller.New(t.TempDir(), s, nil)
+				defer c.Close()
+				c.Running[thread.ID] = true
+				v := New(c)
+				tt := ui.NewTester(v.Render, 840, 560)
+				tt.Frame()
+				r := &codex.Request{ID: json.RawMessage(`"waiting"`), ThreadID: thread.ID, Method: "item/tool/requestUserInput", Cancellable: true, Questions: []codex.Question{{ID: "q", Question: "Which platform?", IsOther: true}}}
+				if driver == "codex" {
+					r.ThreadID = thread.ServerID
+				}
+				if driver == "pi" {
+					r.Method, r.Mode, r.Title = "client/form", "form", "Which platform?"
+					r.Multiline = true
+					r.RequestedSchema = json.RawMessage(`{"type":"object","properties":{"q":{"type":"string","title":"Notes"}},"required":["q"]}`)
+					r.InitialValues = map[string]string{"q": "Initial\nnotes"}
+				}
+				checkVisible := func(labels ...string) {
+					t.Helper()
+					for _, label := range labels {
+						rect, ok := tt.Find(label)
+						if !ok || rect.W <= 0 || rect.H < 12 || rect.Y < 0 || rect.Y+rect.H > 536 {
+							t.Errorf("waiting control %q outside content viewport: %+v (found %v)", label, rect, ok)
+						}
+					}
+				}
+				accept := v.texts().Continue()
+				if driver == "pi" {
+					accept = v.texts().McpAccept()
+				}
+				c.Requests = []*codex.Request{r}
+				tt.Frame()
+				checkVisible("Which platform?", "q", accept, v.texts().Cancel(), v.texts().Stop())
+				for i := 0; i < 3; i++ {
+					other := *r
+					other.ID = json.RawMessage(fmt.Sprintf(`"waiting-%d"`, i))
+					other.Questions = []codex.Question{{ID: fmt.Sprintf("q%d", i), Question: fmt.Sprintf("Next question %d", i), IsOther: true}}
+					other.Title = fmt.Sprintf("Next question %d", i)
+					c.Requests = append(c.Requests, &other)
+				}
+				thread.Queue = []model.QueuedMessage{{ID: "queued", Text: "Keep this follow-up queued"}}
+				tt.Frame()
+				checkVisible("Which platform?", "q", accept, v.texts().Cancel(), v.texts().Stop())
+				if dir := os.Getenv("MUJICAGENT_QUESTIONS_SCREENSHOTS"); dir != "" {
+					if err := os.MkdirAll(dir, 0700); err != nil {
+						t.Fatal(err)
+					}
+					f, err := os.Create(filepath.Join(dir, lang+"-"+driver+".png"))
+					if err != nil {
+						t.Fatal(err)
+					}
+					defer f.Close()
+					if err := png.Encode(f, tt.Image()); err != nil {
+						t.Fatal(err)
+					}
+				}
+				// Direct state setup, never simulated input, also checks the end of the queue.
+				v.scroll["requests-"+string(r.ID)].Y = 1e9
+				tt.Frame()
+				checkVisible("Keep this follow-up queued", v.texts().Stop())
+				c.Requests = nil
+				tt.Frame()
+				tt.Frame()
+				if len(v.answers) != 0 {
+					t.Fatal("resolved question answers retained")
+				}
+			})
+		}
+	}
+}
+
 func TestHarnessInteractionScreenshots(t *testing.T) {
 	for _, lang := range []string{"en", "zh-Hans"} {
 		for _, scene := range []string{"picker", "picker-empty", "multi-question", "claude-question", "pi-editor", "plan"} {

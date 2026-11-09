@@ -47,6 +47,24 @@
 名称表包含有条件启用的工具，并不证明对应服务已授权或执行成功。
 通用详情适配也不代表客户端实现了 Factory 自身的所有专用产品界面。
 
+## 等待用户回答
+
+- `droid.ask_user`、权限和选项请求交给独立处理任务，stdout 继续读取通知、
+  其他请求和消息确认；不会等待第一份答案后才展示下一份问卷。
+- `ask_user_resolved.requestIds` 和 `permission_resolved.requestId` 撤销对应等待；
+  停止、会话结束或管道关闭会清理全部等待任务。已撤销请求不回传迟到答案。
+- 问卷保留 `index/question/options/optionDescriptions/multiSelect`；回答携带原始
+  问题和索引，多选与自定义回答完整回传。空问卷返回协议错误，不打开无法回答的表单。
+- Pi 同样异步等待扩展表单，保留 editor 预填、多行和超时；Claude Code 使用原有
+  异步 control 请求，Codex 使用持久连接上的 server request。
+- 四个 Harness 共用限高滚动请求区，多个请求和待发消息不会挤走输入框及停止按钮。
+  新请求不会继承已结束请求的滚动位置和答案。
+
+验证使用本地协议子进程，通过 Controller 的发送、唤醒、回答、续聊及停止入口。
+旧代码在两个未回答请求场景中，Droid/Pi 均只能发布第一个；修复后四个 Harness
+均通过。中英文最小窗口截图使用 CPU 离屏渲染。此验证不代表已复现用户原会话的
+全部事件顺序，也不代表真实模型、GPU 或系统原生窗口验收。
+
 ## Compact 生命周期
 
 - 自动压缩开始：`droid_working_state_changed.newState=compacting_conversation`。
