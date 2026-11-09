@@ -26,6 +26,297 @@ type updateTransport func(*http.Request) (*http.Response, error)
 
 func (f updateTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
+func TestReconnectProtocolChild(t *testing.T) {
+	if os.Getenv("MUJICAGENT_RECONNECT_CHILD") != "1" {
+		return
+	}
+	dec, enc := json.NewDecoder(os.Stdin), json.NewEncoder(os.Stdout)
+	for {
+		var m codex.Message
+		if dec.Decode(&m) != nil {
+			os.Exit(0)
+		}
+		log, err := os.OpenFile(os.Getenv("MUJICAGENT_RECONNECT_LOG"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+		if err != nil {
+			os.Exit(2)
+		}
+		json.NewEncoder(log).Encode(m)
+		log.Close()
+		var result any = map[string]any{}
+		switch m.Method {
+		case "initialized":
+			continue
+		case "account/read":
+			mode, _ := os.ReadFile(os.Getenv("MUJICAGENT_RECONNECT_MODE"))
+			if string(mode) == "exit" {
+				os.Exit(0)
+			}
+			if string(mode) == "hold" {
+				continue
+			}
+			result = map[string]any{"account": nil, "requiresOpenaiAuth": false}
+		case "model/list":
+			result = map[string]any{"data": []codex.Model{{Model: "test-model", IsDefault: true}}}
+		case "permissionProfile/list":
+			result = map[string]any{"data": []codex.PermissionProfile{{ID: ":workspace", Allowed: true}}}
+		case "thread/start", "thread/resume":
+			result = map[string]any{"thread": map[string]string{"id": "reconnect-thread"}}
+		case "turn/start":
+			result = map[string]any{"turn": map[string]string{"id": "reconnect-turn"}}
+		}
+		if err := enc.Encode(map[string]any{"id": m.ID, "result": result}); err != nil {
+			os.Exit(3)
+		}
+	}
+}
+
+func reconnectController(t *testing.T) (*Controller, string, string) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX test launcher")
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	binary, log, mode := filepath.Join(dir, "codex"), filepath.Join(dir, "requests"), filepath.Join(dir, "mode")
+	launcher := fmt.Sprintf("#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'codex test'; exit 0; fi\nexec '%s' -test.run=^TestReconnectProtocolChild$ -- \"$@\"\n", strings.ReplaceAll(exe, "'", "'\\''"))
+	if err := os.WriteFile(binary, []byte(launcher), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("MUJICAGENT_RECONNECT_CHILD", "1")
+	t.Setenv("MUJICAGENT_RECONNECT_LOG", log)
+	t.Setenv("MUJICAGENT_RECONNECT_MODE", mode)
+	c := New(dir, model.New(), nil)
+	c.State.Settings.CodexPath = binary
+	c.State.Settings.DefaultPermissionProfile = ":workspace"
+	c.AddProject(dir)
+	t.Cleanup(c.Close)
+	return c, log, mode
+}
+
+func awaitConnection(t *testing.T, c *Controller, done func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(8 * time.Second)
+	for !done() {
+		c.Drain()
+		if time.Now().After(deadline) {
+			t.Fatalf("connection timeout: %s / %s", c.Connection, c.Error)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+func TestReconnectAfterFifteenSeconds(t *testing.T) {
+	c, _, _ := reconnectController(t)
+	c.Connect()
+	awaitConnection(t, c, func() bool { return c.Connection == "Connected" })
+	thread := c.State.Thread(c.State.Selected)
+	if !c.Send("original task", false) {
+		t.Fatal(c.Error)
+	}
+	awaitConnection(t, c, func() bool { return thread.ServerID != "" && len(thread.Turns) == 1 && thread.Turns[0].ID != "" })
+	c.Send("paused queue", false)
+	c.client.Close() // Exercise the real transport closure and its UI callback.
+	awaitConnection(t, c, func() bool { return c.Connection == "Disconnected" })
+	if thread.Turns[0].Status != "interrupted" || c.Running[thread.ID] || c.reconnectTimer == nil {
+		t.Fatal("disconnect did not interrupt the turn and schedule reconnection")
+	}
+	started := time.Now()
+	deadline := started.Add(20 * time.Second)
+	for c.Connection != "Connected" && time.Now().Before(deadline) {
+		c.Drain()
+		time.Sleep(5 * time.Millisecond)
+	}
+	if c.Connection != "Connected" || time.Since(started) < 14*time.Second {
+		t.Fatalf("15-second retry failed: %s after %s", c.Connection, time.Since(started))
+	}
+	if len(thread.Turns) != 1 || len(thread.Queue) != 1 || thread.Queue[0].Sending || c.loaded[thread.ID] {
+		t.Fatal("reconnection replayed interrupted work or retained loaded session state")
+	}
+	// A subsequent explicit send resumes the same server thread.
+	c.ResumeQueue(thread.ID)
+	awaitConnection(t, c, func() bool { return len(thread.Queue) == 0 })
+	if len(thread.Turns) != 2 || thread.Turns[1].Prompt != "paused queue" {
+		t.Fatal("explicit resume did not submit the queued message")
+	}
+}
+
+func TestReconnectSendAndManualWhileOtherHarnessRuns(t *testing.T) {
+	for _, trigger := range []string{"send", "manual", "resume"} {
+		t.Run(trigger, func(t *testing.T) {
+			c, log, _ := reconnectController(t)
+			thread := c.State.Thread(c.State.Selected)
+			other := c.State.AddThread("", c.Dir)
+			other.Harness = "droid"
+			c.State.Selected = thread.ID
+			c.Running[other.ID] = true
+			request := &codex.Request{ThreadID: other.ID}
+			c.Requests = []*codex.Request{request}
+			c.agentReplies = map[*codex.Request]chan any{request: make(chan any, 1)}
+			switch trigger {
+			case "send":
+				thread.Draft = "offline prompt"
+				if !c.Send(thread.Draft, true) || len(thread.Queue) != 1 || thread.Draft != "" {
+					t.Fatal("offline send was not retained")
+				}
+			case "resume":
+				thread.ServerID = "reconnect-thread"
+				thread.Queue = []model.QueuedMessage{{ID: "queued", Text: "resume prompt"}}
+				c.ResumeQueue(thread.ID)
+			case "manual":
+				c.Connect()
+			}
+			epoch := c.epoch
+			c.Connect()
+			if c.Connection != "Connecting" || c.epoch != epoch {
+				t.Fatal("connection was blocked or a duplicate attempt started")
+			}
+			awaitConnection(t, c, func() bool {
+				return c.Connection == "Connected" && (trigger == "manual" || len(thread.Queue) == 0)
+			})
+			if !c.Running[other.ID] || len(c.Requests) != 1 || c.Requests[0] != request || c.agentReplies[request] == nil {
+				t.Fatal("reconnecting interfered with the other harness")
+			}
+			data, err := os.ReadFile(log)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if bytes.Count(data, []byte(`"method":"initialize"`)) != 1 {
+				t.Fatal("started duplicate servers")
+			}
+			if trigger != "manual" && (len(thread.Turns) != 1 || bytes.Count(data, []byte(`"method":"turn/start"`)) != 1) {
+				t.Fatal("pending prompt was lost or sent twice")
+			}
+			if trigger == "send" && !bytes.Contains(data, []byte(`"mode":"plan"`)) {
+				t.Fatal("offline submission lost plan mode")
+			}
+			if trigger == "resume" && !bytes.Contains(data, []byte(`"method":"thread/resume"`)) {
+				t.Fatal("reconnection lost the existing server session")
+			}
+		})
+	}
+}
+
+func TestReconnectFailureAndStaleCallbacks(t *testing.T) {
+	c, log, mode := reconnectController(t)
+	binary := c.State.Settings.CodexPath
+	c.State.Settings.CodexPath = filepath.Join(c.Dir, "missing")
+	c.Send("keep this message", false)
+	awaitConnection(t, c, func() bool { return c.Connection == "Disconnected" })
+	thread := c.State.Thread(c.State.Selected)
+	if c.reconnectTimer == nil || len(thread.Queue) != 1 || thread.Queue[0].Sending {
+		t.Fatal("failure did not preserve the prompt and retry")
+	}
+	// A blocked retry must remain scheduled.
+	c.HarnessFor("codex").Installing = true
+	c.reconnectTimer.Reset(0)
+	old := c.reconnectGeneration
+	awaitConnection(t, c, func() bool { return c.reconnectGeneration != old })
+	if c.Connection != "Disconnected" || c.reconnectTimer == nil {
+		t.Fatal("retry overlapped installation or stopped retrying")
+	}
+	c.HarnessFor("codex").Installing = false
+	c.State.Settings.CodexPath = binary
+	if err := os.WriteFile(mode, []byte("exit"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	c.Connect()
+	awaitConnection(t, c, func() bool { return c.Connection == "Disconnected" })
+	if c.Connection != "Disconnected" || c.reconnectTimer == nil || len(thread.Turns) != 0 {
+		t.Fatal("stale discovery revived a dead connection or sent the prompt")
+	}
+	if err := os.WriteFile(mode, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	c.reconnectTimer.Reset(0)
+	awaitConnection(t, c, func() bool { return c.Connection == "Connected" && len(thread.Queue) == 0 })
+	data, _ := os.ReadFile(log)
+	if bytes.Count(data, []byte(`"method":"turn/start"`)) != 1 {
+		t.Fatal("failed connections lost or replayed the pending prompt")
+	}
+}
+
+func TestReconnectCloseAndQueueChanges(t *testing.T) {
+	for _, action := range []string{"delete", "edit", "close"} {
+		t.Run(action, func(t *testing.T) {
+			c, log, mode := reconnectController(t)
+			if err := os.WriteFile(mode, []byte("hold"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			thread := c.State.Thread(c.State.Selected)
+			c.Send("pending", false)
+			awaitConnection(t, c, func() bool {
+				data, _ := os.ReadFile(log)
+				return bytes.Contains(data, []byte(`"method":"account/read"`))
+			})
+			switch action {
+			case "delete":
+				c.DeleteQueued(thread.ID, thread.Queue[0].ID)
+			case "edit":
+				c.EditQueued(thread.ID, thread.Queue[0].ID)
+			case "close":
+				c.Close()
+				c.Connect()
+				if c.CanConnect() || c.reconnectTimer != nil {
+					t.Fatal("closed controller reconnected")
+				}
+				return
+			}
+			c.client = nil
+			c.handle(codex.Message{Method: "transport/closed"})
+			if err := os.WriteFile(mode, nil, 0600); err != nil {
+				t.Fatal(err)
+			}
+			c.Connect()
+			awaitConnection(t, c, func() bool { return c.Connection == "Connected" })
+			if len(thread.Turns) != 0 {
+				t.Fatal("reconnection submitted deleted or actively edited text")
+			}
+		})
+	}
+}
+
+func TestReconnectCloseBeforeApply(t *testing.T) {
+	c, _, _ := reconnectController(t)
+	c.Connect()
+	deadline := time.Now().Add(8 * time.Second)
+	for len(c.events) == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if len(c.events) == 0 {
+		t.Fatal("connection did not complete discovery")
+	}
+	c.Close()
+	c.Drain()
+	if c.client != nil || c.Connection == "Connected" || c.reconnectTimer != nil {
+		t.Fatal("queued discovery result revived a closed controller")
+	}
+}
+
+func TestReconnectGuards(t *testing.T) {
+	c := New(t.TempDir(), model.New(), nil)
+	defer c.Close()
+	thread := c.State.AddThread("", "")
+	for _, state := range []string{"running", "accepting", "installing", "preparing", "connecting"} {
+		c.Running[thread.ID] = state == "running"
+		c.turnRuns = nil
+		if state == "accepting" {
+			c.turnRuns = map[string]*turnRun{thread.ID: {}}
+		}
+		c.HarnessFor("codex").Installing = state == "installing"
+		c.HarnessFor("codex").Preparing = state == "preparing"
+		c.Connection = "Disconnected"
+		if state == "connecting" {
+			c.Connection = "Connecting"
+		}
+		if c.CanConnect() {
+			t.Fatalf("connection allowed during %s", state)
+		}
+	}
+}
+
 func TestDrainYieldsToRendering(t *testing.T) {
 	c := New(t.TempDir(), model.New(), nil)
 	defer c.Close()

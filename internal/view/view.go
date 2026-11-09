@@ -522,7 +522,7 @@ func (v *View) composer(c *ui.Context, t *model.Thread) {
 					if editing {
 						label = tx.QueueSave()
 					}
-					ui.PrimaryButton(c, "").Label(label).Tooltip(label).Size(30, 30).Padding(0).Gap(0).Center().Radius(15).Disabled(t == nil || strings.TrimSpace(*draft) == "" || (!editing && t.Driver() == "codex" && v.C.Connection != "Connected")).Children(func() { ui.Icon(c, arrow).Size(16, 16).Shrink(0) }).OnClick(func() {
+					ui.PrimaryButton(c, "").Label(label).Tooltip(label).Size(30, 30).Padding(0).Gap(0).Center().Radius(15).Disabled(t == nil || strings.TrimSpace(*draft) == "").Children(func() { ui.Icon(c, arrow).Size(16, 16).Shrink(0) }).OnClick(func() {
 						if v.C.Send(*draft, false) {
 							v.draft = ""
 						}

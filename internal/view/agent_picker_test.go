@@ -17,6 +17,104 @@ import (
 	"time"
 )
 
+func TestReconnectScreenshots(t *testing.T) {
+	for _, lang := range []string{"zh-Hans", "en"} {
+		for _, scene := range []string{"settings-disconnected", "settings-connecting", "composer-disconnected", "composer-connecting"} {
+			t.Run(lang+"/"+scene, func(t *testing.T) {
+				s := model.New()
+				s.Settings.Language = lang
+				thread := s.AddThread("", "")
+				thread.Draft = "Check the current project and explain the next step."
+				c := controller.New(t.TempDir(), s, nil)
+				defer c.Close()
+				if strings.HasSuffix(scene, "-connecting") {
+					c.Connection = "Connecting"
+				}
+				other := s.AddThread("", "")
+				other.Harness, other.Title = "droid", "Droid task"
+				c.Running[other.ID] = true
+				s.Selected = thread.ID
+				u := c.HarnessFor("codex")
+				u.Installation = harness.Installation{Path: "/Users/demo/.vite-plus/bin/codex", Version: "0.167.0", Method: "vp"}
+				u.Release.Version = u.Installation.Version
+				v := New(c)
+				v.Settings = strings.HasPrefix(scene, "settings-")
+				*v.openState("harness-codex") = true
+				tt := ui.NewTester(v.Render, 1060, 720)
+				tt.Frame()
+				tt.Advance(time.Second)
+				tx := v.texts()
+				label := tx.Send()
+				if v.Settings {
+					label = tx.Connect()
+					status := tx.Disconnected()
+					if c.Connection == "Connecting" {
+						status = tx.Connecting()
+					}
+					if !tt.HasText(status) {
+						t.Fatal("connection status missing")
+					}
+				}
+				b, ok := tt.Find(label)
+				if !ok || b.X < 0 || b.Y < 0 || b.X+b.W > 1060 || b.Y+b.H > 720 {
+					t.Fatalf("action missing or clipped: %+v", b)
+				}
+				if output := os.Getenv("MUJICAGENT_RECONNECT_SCREENSHOTS"); output != "" {
+					if err := os.MkdirAll(output, 0755); err != nil {
+						t.Fatal(err)
+					}
+					f, err := os.Create(filepath.Join(output, lang+"-"+scene+".png"))
+					if err != nil {
+						t.Fatal(err)
+					}
+					defer f.Close()
+					if err := png.Encode(f, tt.Image()); err != nil {
+						t.Fatal(err)
+					}
+				}
+			})
+		}
+	}
+}
+
+// Input regression is separate from direct-state screenshot acceptance.
+func TestReconnectActions(t *testing.T) {
+	for _, action := range []string{"connect", "send", "send-connecting"} {
+		t.Run(action, func(t *testing.T) {
+			s := model.New()
+			thread := s.AddThread("", "")
+			thread.Draft = "offline message"
+			c := controller.New(t.TempDir(), s, nil)
+			defer c.Close()
+			s.Settings.CodexPath = filepath.Join(c.Dir, "missing-codex")
+			other := s.AddThread("", "")
+			other.Harness = "droid"
+			c.Running[other.ID] = true
+			s.Selected = thread.ID
+			v := New(c)
+			v.Settings = action == "connect"
+			if action == "send-connecting" {
+				c.Connection = "Connecting"
+			}
+			tt := ui.NewTester(v.Render, 1060, 720)
+			label := v.texts().Send()
+			if v.Settings {
+				label = v.texts().Connect()
+			}
+			if err := tt.Click(label); err != nil {
+				t.Fatal(err)
+			}
+			tt.Frame()
+			if c.Connection == "Disconnected" && c.Error == "" {
+				t.Fatal("action did not attempt connection")
+			}
+			if action != "connect" && (len(thread.Queue) != 1 || thread.Draft != "") {
+				t.Fatal("send button did not retain the offline message")
+			}
+		})
+	}
+}
+
 func TestNativeToolCards(t *testing.T) {
 	cases := []struct{ scene, kind, pi, droid, args, output, title, body string }{
 		{"bash", "commandExecution", "bash", "Execute", `{"command":"printf 'hello\\n'","timeout":30}`, `{"content":[{"type":"text","text":"hello\n"}]}`, "$ printf 'hello\\n'", "hello"},

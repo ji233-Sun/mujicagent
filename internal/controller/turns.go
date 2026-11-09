@@ -41,8 +41,8 @@ func (c *Controller) sendThread(t *model.Thread, text string, plan bool, queuedI
 		return false
 	}
 	if driver.Capabilities.PersistentConnection && (c.client == nil || c.Connection != "Connected") {
-		c.ReportError("Connect Codex in Settings before sending.")
-		return false
+		c.waitForConnection(t, text, plan, queuedID)
+		return true
 	}
 	if err := c.prepareWorkspace(t, text); err != nil {
 		c.ReportError(err.Error())

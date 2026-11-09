@@ -166,6 +166,10 @@ func (c *Client) Reply(id json.RawMessage, result any) error {
 func (c *Client) Reject(id json.RawMessage, text string) error {
 	return c.write(map[string]any{"id": id, "error": RPCError{Code: -32601, Message: text}})
 }
+
+// Done closes as soon as the transport stops accepting requests.
+func (c *Client) Done() <-chan struct{} { return c.done }
+
 func (c *Client) Close() {
 	c.once.Do(func() {
 		close(c.done)
