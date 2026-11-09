@@ -17,6 +17,9 @@ func (v *View) attachmentEditable() bool {
 	return v.editor != nil && v.editorThread == v.attachmentThread && v.C.State.Selected == v.attachmentThread && v.editorQueue == v.attachmentQueue && v.C.State.Thread(v.attachmentThread) != nil
 }
 func (v *View) closeAttachment() {
+	if v.annotation != nil {
+		v.annotation.finishAdding()
+	}
 	if s := v.annotation; s != nil && notesKey(s.notes) != s.baseline {
 		s.confirmClose = true
 	} else {
@@ -28,6 +31,7 @@ func (v *View) applyAnnotations() {
 		return
 	}
 	s := v.annotation
+	s.finishAdding()
 	if !model.ValidAnnotations(s.notes) {
 		return
 	}
@@ -59,6 +63,9 @@ func (v *View) applyAnnotations() {
 
 func (v *View) attachmentDialog(c *ui.Context) {
 	if !v.attachmentOpen {
+		if v.annotation != nil {
+			v.annotation.finishAdding()
+		}
 		return
 	}
 	tx := v.texts()
@@ -73,6 +80,9 @@ func (v *View) attachmentDialog(c *ui.Context) {
 		c.After(time.Millisecond)
 	}
 	panel := ui.DialogBase(c.Key("attachment-dialog"), &v.attachmentOpen, func(backdrop, panel ui.Element) {
+		if s.addingTo != "" || s.dragging != "" {
+			panel.OnShortcut(0, ui.KeyEscape, s.finishAdding)
+		}
 		backdrop.Background(ui.RGBA(20, 36, 30, .38))
 		panel.Width(width).Height(height).MaxWidthPercent(96).MaxHeightPercent(96).Radius(18).Clip().Background(c.Theme().Background).Border(1, c.Theme().Border).Shadow(0, 18, 60, 0, ui.RGBA(0, 0, 0, .2))
 		ui.Row(c).Height(76).Shrink(0).Padding(16, 22).Gap(12).AlignItems(ui.Center).Children(func() {
@@ -89,7 +99,12 @@ func (v *View) attachmentDialog(c *ui.Context) {
 				}
 				ui.Text(c, meta).FontSize(11).TextColor(c.Theme().TextMuted)
 			})
-			markTool(c.Key("sidebar-toggle"), tx.AnnotationSidebar(), sidebarMarkIcon, s.sidebar, func() { s.sidebar = !s.sidebar })
+			markTool(c.Key("sidebar-toggle"), tx.AnnotationSidebar(), sidebarMarkIcon, s.sidebar, func() {
+				s.sidebar = !s.sidebar
+				if !s.sidebar {
+					s.finishAdding()
+				}
+			})
 			markTool(c.Key("close-preview"), tx.CloseAttachment(), closeIcon, false, v.closeAttachment)
 		})
 		ui.Divider(c)
@@ -131,6 +146,7 @@ func (v *View) attachmentDialog(c *ui.Context) {
 		v.closeAttachment()
 	}
 	if ui.AlertDialog(c.Key("discard-annotations"), &s.confirmClose, tx.DiscardAnnotationsTitle(), tx.DiscardAnnotationsMessage(), tx.KeepEditing(), tx.DiscardAnnotations()) == 1 {
+		s.finishAdding()
 		v.attachmentOpen = false
 	}
 }
@@ -158,7 +174,11 @@ func (v *View) annotationCanvas(c *ui.Context, p *attachmentPreview) {
 		})
 		canvas := ui.Box(c.Key("image-canvas")).Bind(&s.canvas).Grow(1).MinHeight(0).FillWidth().Clip().Label(tx.MarkImage()).Focusable()
 		if p.bitmap != nil {
-			canvas.Cursor(ui.CursorCrosshair).HandleInput(func(ev ui.InputEvent) bool { return s.input(ev, p.bitmap, s.canvas.Bounds(c)) })
+			cursor := ui.CursorCrosshair
+			if s.tool == "pan" {
+				cursor = ui.CursorGrab
+			}
+			canvas.Cursor(cursor).HandleInput(func(ev ui.InputEvent) bool { return s.input(ev, p.bitmap, s.canvas.Bounds(c)) })
 			canvas.Draw(func(painter *ui.Painter, bounds ui.Rect) {
 				painter.Clip(bounds, 0, func() {
 					r := s.imageRect(bounds.W, bounds.H, p.bitmap)
@@ -177,10 +197,8 @@ func (v *View) annotationCanvas(c *ui.Context, p *attachmentPreview) {
 							}
 						}
 						painter.Image(p.bitmap, r, ui.Contain)
-						markup.Draw(painter, s.notes, r, s.selected)
-						if s.dragging == "draw" {
-							markup.Draw(painter, []model.Annotation{{Marks: []model.Mark{s.pending}}}, r, "")
-						}
+						notes, selected := s.displayNotes()
+						markup.Draw(painter, notes, r, selected)
 					})
 				})
 			})
@@ -202,27 +220,26 @@ func (v *View) annotationCanvas(c *ui.Context, p *attachmentPreview) {
 				})
 			})
 		}
-		ui.Column(c).Height(92).Shrink(0).AlignItems(ui.Center).Gap(8).Padding(10, 12).Children(func() {
+		toolbarHeight := float32(64)
+		if s.addingNumber() > 0 {
+			toolbarHeight = 88
+		}
+		ui.Column(c).Height(toolbarHeight).Shrink(0).AlignItems(ui.Center).Gap(6).Padding(10, 12).Children(func() {
 			if p.bitmap != nil {
+				if number := s.addingNumber(); number > 0 {
+					ui.Text(c, tx.AddingAnnotationShapes(fmt.Sprint(number))).FontSize(11).Bold().TextColor(c.Theme().Accent)
+				}
 				ui.Row(c).Radius(12).Padding(5, 7).Gap(3).Background(c.Theme().Background).Border(1, c.Theme().Border).Shadow(0, 4, 12, 0, ui.RGBA(0, 0, 0, .07)).Children(func() {
 					for _, tool := range []struct {
 						id, label string
 						icon      *ui.SVG
-					}{{"select", tx.SelectAnnotation(), selectMarkIcon}, {"pan", tx.PanImage(), panMarkIcon}, {"pen", tx.DrawPen(), penMarkIcon}, {"rectangle", tx.DrawRectangle(), stopIcon}, {"arrow", tx.DrawArrow(), arrowMarkIcon}, {"point", tx.AddPointComment(), chat}} {
-						markTool(c.Key(tool.id), tool.label, tool.icon, s.tool == tool.id, func() { s.tool = tool.id })
+					}{{"pan", tx.PanImage(), panMarkIcon}, {"pen", tx.DrawPen(), penMarkIcon}, {"rectangle", tx.DrawRectangle(), stopIcon}, {"arrow", tx.DrawArrow(), arrowMarkIcon}, {"point", tx.AddPointComment(), chat}} {
+						markTool(c.Key(tool.id), tool.label, tool.icon, s.tool == tool.id, func() { s.chooseTool(tool.id) })
 					}
 					ui.Box(c).Width(1).Height(22).Margin(6, 5).Background(c.Theme().Border)
 					markTool(c, tx.UndoAnnotation(), undoMarkIcon, false, func() { s.history(false) }).Disabled(len(s.undo) == 0)
 					markTool(c, tx.RedoAnnotation(), redoMarkIcon, false, func() { s.history(true) }).Disabled(len(s.redo) == 0)
 				})
-				hint := tx.AnnotationCanvasHint()
-				if s.tool == "pan" {
-					hint = tx.AnnotationPanHint()
-				}
-				if s.link {
-					hint = tx.AnnotationLinkHint()
-				}
-				ui.Text(c, hint).FontSize(10).TextColor(c.Theme().TextMuted)
 			}
 		})
 	})
@@ -234,7 +251,7 @@ func (v *View) annotationSidebar(c *ui.Context, p *attachmentPreview, compact bo
 	ui.Row(c).Height(51).Shrink(0).Padding(14, 18).Gap(8).AlignItems(ui.Center).Children(func() {
 		ui.Text(c, tx.AnnotationsAndComments()).Bold().FontSize(13).Grow(1)
 		ui.Textf(c, "%02d", len(s.notes)).FontSize(11).TextColor(c.Theme().TextMuted)
-		markTool(c, tx.AddImageComment(), plus, false, func() { s.link = false; s.add(nil) }).Disabled(p.bitmap == nil)
+		markTool(c, tx.AddImageComment(), plus, false, func() { s.add(nil) }).Disabled(p.bitmap == nil)
 	})
 	ui.Divider(c)
 	ui.Scroll(c.Key("annotation-list")).Grow(1).MinHeight(0).Padding(12).Gap(8).Children(func() {
@@ -248,9 +265,10 @@ func (v *View) annotationSidebar(c *ui.Context, p *attachmentPreview, compact bo
 		for i := range s.notes {
 			n := &s.notes[i]
 			selected := n.ID == s.selected
+			adding := n.ID == s.addingTo && selected
 			card := ui.Column(c.Key(n.ID)).Padding(12).Gap(8).Radius(10).Border(1, c.Theme().Border).Background(c.Theme().Background)
 			if selected {
-				card.Border(1, c.Theme().Accent.Alpha(.55)).Background(ui.Hex("#f1f8f5"))
+				card.Border(2, c.Theme().Accent).Background(ui.Hex("#f1f8f5"))
 			}
 			if s.scrollTo == n.ID {
 				card.ScrollIntoView()
@@ -258,22 +276,36 @@ func (v *View) annotationSidebar(c *ui.Context, p *attachmentPreview, compact bo
 			}
 			card.Children(func() {
 				ui.ButtonBase(c.Key("select")).Label(fmt.Sprintf("%s %d", tx.SelectAnnotation(), i+1)).FillWidth().OnClick(func() {
-					if p.bitmap != nil {
-						s.selectNote(n.ID, p.bitmap, s.canvas.Bounds(c))
-					}
+					s.selectNote(n.ID, p.bitmap, s.canvas.Bounds(c))
 				}).Children(func() {
 					ui.Row(c).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
 						ui.Box(c).Size(22, 22).Radius(7).Background(annotationColor(n, c.Theme().Accent)).Center().Children(func() { ui.Textf(c, "%d", i+1).FontSize(11).Bold().TextColor(c.Theme().AccentText) })
-						title := tx.ImageComment()
-						if len(n.Marks) > 0 {
-							title = fmt.Sprintf("%s · %d", tx.ImageMarkup(), len(n.Marks))
-						}
-						ui.Text(c, title).FontSize(12).Bold().Grow(1)
+						ui.Text(c, tx.AnnotationCommentNumber(fmt.Sprint(i+1))).FontSize(12).Bold().Grow(1)
 						if selected {
 							ui.Icon(c, checkIcon).Size(13, 13).TextColor(c.Theme().Accent)
 						}
 					})
 				})
+				ui.Row(c.Key("shape-count")).Gap(6).AlignItems(ui.Center).Children(func() {
+					ui.Text(c, tx.AnnotationShapeCount(fmt.Sprint(len(n.Marks)))).FontSize(11).TextColor(c.Theme().TextMuted).Grow(1)
+					for _, shape := range []struct {
+						kind, label string
+						icon        *ui.SVG
+					}{{"pen", tx.DrawPen(), penMarkIcon}, {"rectangle", tx.DrawRectangle(), stopIcon}, {"arrow", tx.DrawArrow(), arrowMarkIcon}, {"point", tx.AddPointComment(), chat}} {
+						for _, mark := range n.Marks {
+							if mark.Kind == shape.kind {
+								ui.Icon(c.Key(shape.kind), shape.icon).Size(14, 14).TextColor(c.Theme().TextMuted).Tooltip(shape.label)
+								break
+							}
+						}
+					}
+				})
+				if adding {
+					ui.Row(c.Key("adding-status")).Gap(8).AlignItems(ui.Center).Children(func() {
+						ui.Text(c, tx.AddingAnnotationShapes(fmt.Sprint(i+1))).FontSize(11).Bold().TextColor(c.Theme().Accent).Grow(1).MinWidth(0)
+						ui.Button(c.Key("finish-adding"), tx.FinishAddingShapes()).Height(28).Shrink(0).FontSize(11).Tooltip(tx.FinishAddingShapes() + " · Esc").OnClick(s.finishAdding)
+					})
+				}
 				if selected {
 					before := cloneNotes(s.notes)
 					ui.TextArea(c.Key("comment"), &n.Comment).Label(tx.AnnotationTip()).Placeholder(tx.AnnotationPlaceholder()).Lines(2, 5).FontSize(12).OnChange(func() { s.record(before) })
@@ -284,26 +316,25 @@ func (v *View) annotationSidebar(c *ui.Context, p *attachmentPreview, compact bo
 						} else {
 							ui.Box(c).Grow(1)
 						}
-						markTool(c, tx.DeleteAnnotation(), closeIcon, false, func() {
-							before := cloneNotes(s.notes)
-							s.notes = append(s.notes[:i], s.notes[i+1:]...)
-							s.selected = ""
-							s.link = false
-							s.record(before)
-						})
+						markTool(c, tx.DeleteAnnotation(), closeIcon, false, func() { s.deleteNote(n.ID) })
 					})
-					ui.Checkbox(c, &s.link, tx.LinkNextMarkup()).FontSize(11)
 				} else {
 					text := n.Comment
 					if text == "" {
 						text = tx.AnnotationNoComment()
 					}
 					ui.ButtonBase(c.Key("comment-preview")).Label(text).FillWidth().OnClick(func() {
-						if p.bitmap != nil {
-							s.selectNote(n.ID, p.bitmap, s.canvas.Bounds(c))
-						}
+						s.selectNote(n.ID, p.bitmap, s.canvas.Bounds(c))
 					}).Children(func() {
 						ui.Text(c, text).FillWidth().TextAlign(ui.Start).FontSize(12).TextColor(c.Theme().TextMuted)
+					})
+				}
+				if !adding {
+					ui.ButtonBase(c.Key("add-shape")).Label(tx.AddAnnotationShapeForNumber(fmt.Sprint(i + 1))).Tooltip(tx.AddAnnotationShapeForNumber(fmt.Sprint(i + 1))).FillWidth().Height(28).Radius(6).Gap(5).AlignItems(ui.Center).TextColor(c.Theme().Accent).Disabled(p.bitmap == nil).OnClick(func() {
+						s.beginAdding(n.ID, p.bitmap, s.canvas.Bounds(c))
+					}).Children(func() {
+						ui.Icon(c, plus).Size(14, 14)
+						ui.Text(c, tx.AddAnnotationShape()).FontSize(11)
 					})
 				}
 			})
