@@ -23,6 +23,7 @@ import (
 type View struct {
 	C                           *controller.Controller
 	Window                      *mygo.Window
+	Browser                     BrowserPanel
 	Settings                    bool
 	section                     string
 	agentSection, pickerHarness string
@@ -91,6 +92,7 @@ func (v *View) theme(c *ui.Context) {
 func (v *View) Render(c *ui.Context) {
 	tx := v.texts()
 	v.C.Drain()
+	v.Browser.selectThread(v.C.State.Selected)
 	for id, end := range v.settling {
 		thread := v.C.State.Thread(id)
 		if thread == nil || !thread.Settled || !c.Now().Before(end) || c.Preferences().ReduceMotion {
@@ -134,6 +136,7 @@ func (v *View) Render(c *ui.Context) {
 	v.settingsDialog(c)
 	v.harnessInstallDialog(c)
 	v.attachmentDialog(c)
+	v.browserResumeDialog(c)
 	warning := tx.FullAccessWarning()
 	if v.defaultPermissionHarness != "" {
 		warning = tx.FullAccessDefaultWarning()
@@ -338,8 +341,29 @@ func (v *View) conversation(c *ui.Context) {
 		if t != nil && t.Settled {
 			ui.Button(c, tx.Restore()).OnClick(func() { v.C.Settle(t.ID, false) })
 		}
+		v.browserToggle(c, t)
 	})
 	ui.Divider(c)
+	wide, _ := c.Size()
+	if t != nil && v.Browser.thread(t.ID).visible {
+		if wide >= 1120 {
+			ui.Row(c.Key("browser-workspace")).Grow(1).MinHeight(0).AlignItems(ui.Stretch).Children(func() {
+				ui.Column(c).Grow(1).MinWidth(0).Children(func() { v.conversationBody(c, t) })
+				ui.Column(c).WidthPercent(44).MinWidth(360).MaxWidth(620).Shrink(0).BorderWidth(0, 0, 0, 1).BorderColor(c.Theme().Border).Children(func() { v.browserPane(c, t.ID) })
+			})
+		} else {
+			ui.Column(c.Key("browser-workspace")).Grow(1).MinHeight(0).Children(func() {
+				ui.Column(c).Grow(1).MinHeight(0).Children(func() { v.conversationBody(c, t) })
+				ui.Column(c).HeightPercent(46).Shrink(0).BorderWidth(1, 0, 0, 0).BorderColor(c.Theme().Border).Children(func() { v.browserPane(c, t.ID) })
+			})
+		}
+		return
+	}
+	v.conversationBody(c, t)
+}
+
+func (v *View) conversationBody(c *ui.Context, t *model.Thread) {
+	tx := v.texts()
 	if t == nil || len(t.Turns) == 0 {
 		ui.Column(c).Grow(1).Center().Gap(14).Children(func() {
 			ui.Icon(c, spark).Size(36, 36).TextColor(c.Theme().TextMuted)
