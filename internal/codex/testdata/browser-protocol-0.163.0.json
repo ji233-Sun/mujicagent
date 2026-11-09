@@ -1,0 +1,333 @@
+{
+  "v2/ThreadStartParams.json": {
+    "title": "ThreadStartParams",
+    "properties": {
+      "dynamicTools": {
+        "default": null,
+        "items": {
+          "$ref": "#/definitions/DynamicToolSpec"
+        },
+        "type": [
+          "array",
+          "null"
+        ]
+      }
+    },
+    "definitions": {
+      "DynamicToolSpec": {
+        "oneOf": [
+          {
+            "properties": {
+              "deferLoading": {
+                "type": "boolean"
+              },
+              "description": {
+                "type": "string"
+              },
+              "inputSchema": true,
+              "name": {
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "function"
+                ],
+                "title": "FunctionDynamicToolSpecType",
+                "type": "string"
+              }
+            },
+            "required": [
+              "description",
+              "inputSchema",
+              "name",
+              "type"
+            ],
+            "title": "FunctionDynamicToolSpec",
+            "type": "object"
+          },
+          {
+            "properties": {
+              "description": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "tools": {
+                "items": {
+                  "$ref": "#/definitions/DynamicToolNamespaceTool"
+                },
+                "type": "array"
+              },
+              "type": {
+                "enum": [
+                  "namespace"
+                ],
+                "title": "NamespaceDynamicToolSpecType",
+                "type": "string"
+              }
+            },
+            "required": [
+              "description",
+              "name",
+              "tools",
+              "type"
+            ],
+            "title": "NamespaceDynamicToolSpec",
+            "type": "object"
+          }
+        ]
+      },
+      "DynamicToolNamespaceTool": {
+        "oneOf": [
+          {
+            "properties": {
+              "deferLoading": {
+                "type": "boolean"
+              },
+              "description": {
+                "type": "string"
+              },
+              "inputSchema": true,
+              "name": {
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "function"
+                ],
+                "title": "FunctionDynamicToolNamespaceToolType",
+                "type": "string"
+              }
+            },
+            "required": [
+              "description",
+              "inputSchema",
+              "name",
+              "type"
+            ],
+            "title": "FunctionDynamicToolNamespaceTool",
+            "type": "object"
+          }
+        ]
+      }
+    }
+  },
+  "v2/ThreadResumeParams.json": {
+    "title": "ThreadResumeParams",
+    "properties": {
+      "threadId": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "threadId"
+    ]
+  },
+  "DynamicToolCallParams.json": {
+    "title": "DynamicToolCallParams",
+    "properties": {
+      "arguments": true,
+      "callId": {
+        "type": "string"
+      },
+      "namespace": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "threadId": {
+        "type": "string"
+      },
+      "tool": {
+        "type": "string"
+      },
+      "turnId": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "arguments",
+      "callId",
+      "threadId",
+      "tool",
+      "turnId"
+    ]
+  },
+  "DynamicToolCallResponse.json": {
+    "title": "DynamicToolCallResponse",
+    "properties": {
+      "contentItems": {
+        "items": {
+          "$ref": "#/definitions/DynamicToolCallOutputContentItem"
+        },
+        "type": "array"
+      },
+      "success": {
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "contentItems",
+      "success"
+    ],
+    "definitions": {
+      "DynamicToolCallOutputContentItem": {
+        "oneOf": [
+          {
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "inputText"
+                ],
+                "title": "InputTextDynamicToolCallOutputContentItemType",
+                "type": "string"
+              }
+            },
+            "required": [
+              "text",
+              "type"
+            ],
+            "title": "InputTextDynamicToolCallOutputContentItem",
+            "type": "object"
+          },
+          {
+            "properties": {
+              "imageUrl": {
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "inputImage"
+                ],
+                "title": "InputImageDynamicToolCallOutputContentItemType",
+                "type": "string"
+              }
+            },
+            "required": [
+              "imageUrl",
+              "type"
+            ],
+            "title": "InputImageDynamicToolCallOutputContentItem",
+            "type": "object"
+          },
+          {
+            "properties": {
+              "audioUrl": {
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "inputAudio"
+                ],
+                "title": "InputAudioDynamicToolCallOutputContentItemType",
+                "type": "string"
+              }
+            },
+            "required": [
+              "audioUrl",
+              "type"
+            ],
+            "title": "InputAudioDynamicToolCallOutputContentItem",
+            "type": "object"
+          }
+        ]
+      }
+    }
+  },
+  "v1/InitializeParams.json": {
+    "title": "InitializeParams",
+    "properties": {
+      "capabilities": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/InitializeCapabilities"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "clientInfo"
+    ],
+    "definitions": {
+      "InitializeCapabilities": {
+        "description": "Client-declared capabilities negotiated during initialize.",
+        "properties": {
+          "experimentalApi": {
+            "default": false,
+            "description": "Opt into receiving experimental API methods and fields.",
+            "type": "boolean"
+          },
+          "explicitGatewayOauth": {
+            "description": "Use explicit gateway OAuth login instead of automatic browser authorization. Applies to this app-server's gateway runtime; later connections cannot undo it.",
+            "type": "boolean"
+          },
+          "extensions": {
+            "additionalProperties": true,
+            "description": "MCP extension settings declared by the app-server client.",
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "mcpServerOpenaiFormElicitation": {
+            "description": "Legacy opt-in for the `openai/form` MCP extension.\n\nNew clients should declare `openai/form` in [`Self::extensions`].",
+            "type": "boolean"
+          },
+          "optOutNotificationMethods": {
+            "description": "Exact notification method names that should be suppressed for this connection (for example `thread/started`).",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "requestAttestation": {
+            "default": false,
+            "description": "Opt into `attestation/generate` requests for upstream `x-oai-attestation`.",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      }
+    }
+  },
+  "ServerRequest.json": {
+    "oneOf": [
+      {
+        "description": "Execute a dynamic tool call on the client.",
+        "properties": {
+          "id": {
+            "$ref": "#/definitions/RequestId"
+          },
+          "method": {
+            "enum": [
+              "item/tool/call"
+            ],
+            "title": "Item/tool/callRequestMethod",
+            "type": "string"
+          },
+          "params": {
+            "$ref": "#/definitions/DynamicToolCallParams"
+          }
+        },
+        "required": [
+          "id",
+          "method",
+          "params"
+        ],
+        "title": "Item/tool/callRequest",
+        "type": "object"
+      }
+    ]
+  }
+}

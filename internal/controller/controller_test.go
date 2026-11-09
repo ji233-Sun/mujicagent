@@ -353,6 +353,7 @@ func TestServiceTierRequests(t *testing.T) {
 	if os.Getenv("MUJICAGENT_SPEED_CHILD") == "1" {
 		dec, enc := json.NewDecoder(os.Stdin), json.NewEncoder(os.Stdout)
 		earlyTurns := 0
+		var browserReplies []codex.Message
 		for {
 			var m codex.Message
 			if dec.Decode(&m) != nil {
@@ -362,6 +363,16 @@ func TestServiceTierRequests(t *testing.T) {
 			switch m.Method {
 			case "initialized":
 				continue
+			case "browser/requests":
+				var requests []codex.Message
+				if json.Unmarshal(m.Params, &requests) != nil {
+					os.Exit(4)
+				}
+				for _, request := range requests {
+					enc.Encode(request)
+				}
+			case "browser/replies":
+				result = browserReplies
 			case "permissionProfile/list":
 				result = map[string]any{"data": []codex.PermissionProfile{{ID: ":read-only", Allowed: true}, {ID: ":workspace", Allowed: true}, {ID: ":danger-full-access", Allowed: true}}}
 			case "experimentalFeature/list":
@@ -401,6 +412,7 @@ func TestServiceTierRequests(t *testing.T) {
 					continue
 				}
 			case "":
+				browserReplies = append(browserReplies, m)
 				data, _ := json.Marshal(m)
 				if os.WriteFile(os.Getenv("MUJICAGENT_SPEED_REQUEST"), data, 0600) != nil {
 					os.Exit(3)
