@@ -613,20 +613,30 @@ func TestMarkupCommentWorkflow(t *testing.T) {
 	if v.annotation.notes[0].Comment != "Make these align" {
 		t.Fatal("comment redo failed")
 	}
-	click("新图形关联到此评论")
+	click("为评论 1 添加图形")
+	if !tt.HasText("正在为评论 1 添加图形") {
+		t.Fatal("adding target was not shown before drawing")
+	}
 	draw("箭头", .3, .4, .7, .6)
 	if len(v.annotation.notes) != 1 || len(v.annotation.notes[0].Marks) != 2 || v.annotation.notes[0].Comment != "Make these align" {
 		t.Fatalf("grouped marks: %+v", v.annotation.notes)
 	}
+	draw("画笔", .25, .3, .5, .3)
+	if len(v.annotation.notes) != 1 || len(v.annotation.notes[0].Marks) != 3 || !tt.HasText("3 个图形") {
+		t.Fatal("continuous drawing did not update the target and count")
+	}
 	click("撤销标注")
-	if len(v.annotation.notes[0].Marks) != 1 {
-		t.Fatal("undo did not remove only arrow")
+	if len(v.annotation.notes[0].Marks) != 2 || !tt.HasText("2 个图形") {
+		t.Fatal("undo did not update the shape count")
 	}
 	click("重做标注")
-	if len(v.annotation.notes[0].Marks) != 2 {
-		t.Fatal("redo lost arrow")
+	if len(v.annotation.notes[0].Marks) != 3 || !tt.HasText("3 个图形") || v.annotation.addingTo == "" {
+		t.Fatal("redo lost the shape or explicit adding state")
 	}
-	// Redo deliberately clears linking; a pen stroke starts a new annotation.
+	click("完成")
+	if v.annotation.tool != "pan" || v.annotation.addingTo != "" || tt.HasText("正在为评论 1 添加图形") {
+		t.Fatal("Done did not return to the hand tool")
+	}
 	draw("画笔", .1, .8, .4, .8)
 	if len(v.annotation.notes) != 2 || v.annotation.notes[1].Marks[0].Kind != "pen" {
 		t.Fatal("pen missing")
@@ -662,7 +672,7 @@ func TestMarkupCommentWorkflow(t *testing.T) {
 	click("适应窗口")
 	// Hiding the sidebar preserves marks; clicking a mark reveals its comment.
 	click("显示或收起评论栏")
-	click("选择标注")
+	click("移动画布")
 	b, _ = tt.Find("标记图片")
 	r = v.annotation.imageRect(b.W, b.H, bitmap)
 	tt.ClickAt(b.X+r.X+r.W*.15, b.Y+r.Y+r.H*.2)
@@ -710,6 +720,10 @@ func TestMarkupCommentWorkflow(t *testing.T) {
 	parts := model.MessageParts(thread.Draft)
 	if len(parts) != 3 || parts[0].Text != "Before " || parts[2].Text != " after" || len(parts[1].Attachment.Annotations) != 3 {
 		t.Fatalf("draft replacement: %s", thread.Draft)
+	}
+	group := parts[1].Attachment.Annotations[0]
+	if group.ID != v.annotation.notes[0].ID || len(group.Marks) != 3 || group.Comment != "Make these align" {
+		t.Fatalf("shared comment changed when applying: %+v", group)
 	}
 	if v.attachmentOpen {
 		t.Fatal("editor still open")

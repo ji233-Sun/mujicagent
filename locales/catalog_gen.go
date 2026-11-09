@@ -2182,36 +2182,6 @@ func (msgs Messages) RedoAnnotation() string {
 	return Catalog.Format(msgs.locale, "redoAnnotation", nil)
 }
 
-// AnnotationCanvasHint says "画出重点，再在右侧补充说明"
-// in the language the app shows.
-func AnnotationCanvasHint() string { return In(i18n.Locale()).AnnotationCanvasHint() }
-
-// AnnotationCanvasHint says "画出重点，再在右侧补充说明"
-// in the language of msgs.
-func (msgs Messages) AnnotationCanvasHint() string {
-	return Catalog.Format(msgs.locale, "annotationCanvasHint", nil)
-}
-
-// AnnotationPanHint says "拖动或滚动平移 · 双指捏合缩放"
-// in the language the app shows.
-func AnnotationPanHint() string { return In(i18n.Locale()).AnnotationPanHint() }
-
-// AnnotationPanHint says "拖动或滚动平移 · 双指捏合缩放"
-// in the language of msgs.
-func (msgs Messages) AnnotationPanHint() string {
-	return Catalog.Format(msgs.locale, "annotationPanHint", nil)
-}
-
-// AnnotationLinkHint says "接下来绘制的图形将关联到当前评论"
-// in the language the app shows.
-func AnnotationLinkHint() string { return In(i18n.Locale()).AnnotationLinkHint() }
-
-// AnnotationLinkHint says "接下来绘制的图形将关联到当前评论"
-// in the language of msgs.
-func (msgs Messages) AnnotationLinkHint() string {
-	return Catalog.Format(msgs.locale, "annotationLinkHint", nil)
-}
-
 // AnnotationsAndComments says "标注与评论"
 // in the language the app shows.
 func AnnotationsAndComments() string { return In(i18n.Locale()).AnnotationsAndComments() }
@@ -2292,14 +2262,70 @@ func (msgs Messages) DeleteAnnotation() string {
 	return Catalog.Format(msgs.locale, "deleteAnnotation", nil)
 }
 
-// LinkNextMarkup says "新图形关联到此评论"
+// AnnotationCommentNumber says "评论 {number}"
 // in the language the app shows.
-func LinkNextMarkup() string { return In(i18n.Locale()).LinkNextMarkup() }
+func AnnotationCommentNumber(number string) string {
+	return In(i18n.Locale()).AnnotationCommentNumber(number)
+}
 
-// LinkNextMarkup says "新图形关联到此评论"
+// AnnotationCommentNumber says "评论 {number}"
 // in the language of msgs.
-func (msgs Messages) LinkNextMarkup() string {
-	return Catalog.Format(msgs.locale, "linkNextMarkup", nil)
+func (msgs Messages) AnnotationCommentNumber(number string) string {
+	return Catalog.Format(msgs.locale, "annotationCommentNumber", map[string]any{"number": number})
+}
+
+// AnnotationShapeCount says "{count} 个图形"
+// in the language the app shows.
+func AnnotationShapeCount(count string) string { return In(i18n.Locale()).AnnotationShapeCount(count) }
+
+// AnnotationShapeCount says "{count} 个图形"
+// in the language of msgs.
+func (msgs Messages) AnnotationShapeCount(count string) string {
+	return Catalog.Format(msgs.locale, "annotationShapeCount", map[string]any{"count": count})
+}
+
+// AddAnnotationShape says "添加图形"
+// in the language the app shows.
+func AddAnnotationShape() string { return In(i18n.Locale()).AddAnnotationShape() }
+
+// AddAnnotationShape says "添加图形"
+// in the language of msgs.
+func (msgs Messages) AddAnnotationShape() string {
+	return Catalog.Format(msgs.locale, "addAnnotationShape", nil)
+}
+
+// AddAnnotationShapeForNumber says "为评论 {number} 添加图形"
+// in the language the app shows.
+func AddAnnotationShapeForNumber(number string) string {
+	return In(i18n.Locale()).AddAnnotationShapeForNumber(number)
+}
+
+// AddAnnotationShapeForNumber says "为评论 {number} 添加图形"
+// in the language of msgs.
+func (msgs Messages) AddAnnotationShapeForNumber(number string) string {
+	return Catalog.Format(msgs.locale, "addAnnotationShapeForNumber", map[string]any{"number": number})
+}
+
+// AddingAnnotationShapes says "正在为评论 {number} 添加图形"
+// in the language the app shows.
+func AddingAnnotationShapes(number string) string {
+	return In(i18n.Locale()).AddingAnnotationShapes(number)
+}
+
+// AddingAnnotationShapes says "正在为评论 {number} 添加图形"
+// in the language of msgs.
+func (msgs Messages) AddingAnnotationShapes(number string) string {
+	return Catalog.Format(msgs.locale, "addingAnnotationShapes", map[string]any{"number": number})
+}
+
+// FinishAddingShapes says "完成"
+// in the language the app shows.
+func FinishAddingShapes() string { return In(i18n.Locale()).FinishAddingShapes() }
+
+// FinishAddingShapes says "完成"
+// in the language of msgs.
+func (msgs Messages) FinishAddingShapes() string {
+	return Catalog.Format(msgs.locale, "finishAddingShapes", nil)
 }
 
 // AnnotationNoComment says "尚未添加说明"

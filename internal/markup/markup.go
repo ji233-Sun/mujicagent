@@ -92,7 +92,8 @@ func Draw(p *ui.Painter, notes []model.Annotation, r ui.Rect, selected string) {
 			paths := Paths(m, r)
 			if n.ID == selected {
 				for _, path := range paths {
-					p.StrokePolyline(path, m.Width+5, color.Alpha(.17))
+					p.StrokePolyline(path, m.Width+7, ui.Hex("#ffffff"))
+					p.StrokePolyline(path, m.Width+4, color.Alpha(.4))
 				}
 			}
 			for _, path := range paths {
@@ -104,6 +105,9 @@ func Draw(p *ui.Painter, notes []model.Annotation, r ui.Rect, selected string) {
 			q := BadgePosition(m.Points[0], r)
 			// Keep number badges visible even at the image edges.
 			badge := ui.Rect{X: q.X - 11, Y: q.Y - 11, W: 22, H: 22}
+			if n.ID == selected {
+				p.Fill(ui.Rect{X: q.X - 15, Y: q.Y - 15, W: 30, H: 30}, ui.Hex("#28413a"), 15)
+			}
 			p.Fill(badge, ui.Hex("#ffffff"), 11)
 			p.Fill(ui.Rect{X: badge.X + 2, Y: badge.Y + 2, W: 18, H: 18}, color, 9)
 			label := fmt.Sprint(i + 1)

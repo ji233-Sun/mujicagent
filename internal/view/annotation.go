@@ -11,23 +11,24 @@ import (
 )
 
 type annotationEditor struct {
-	notes         []model.Annotation
-	selected      string
-	tool, color   string
-	width         float32
-	sidebar, link bool
-	zoom          float32
-	pan           ui.Point
-	canvas        ui.Handle
-	undo, redo    [][]model.Annotation
-	baseline      string
-	layoutKey     string
-	confirmClose  bool
-	scrollTo      string
-	dragging      string
-	start         ui.Point
-	before        []model.Annotation
-	pending       model.Mark
+	notes        []model.Annotation
+	selected     string
+	addingTo     string
+	tool, color  string
+	width        float32
+	sidebar      bool
+	zoom         float32
+	pan          ui.Point
+	canvas       ui.Handle
+	undo, redo   [][]model.Annotation
+	baseline     string
+	layoutKey    string
+	confirmClose bool
+	scrollTo     string
+	dragging     string
+	start        ui.Point
+	before       []model.Annotation
+	pending      model.Mark
 }
 
 func cloneNotes(notes []model.Annotation) []model.Annotation {
@@ -42,7 +43,7 @@ func cloneNotes(notes []model.Annotation) []model.Annotation {
 }
 func notesKey(notes []model.Annotation) string { b, _ := json.Marshal(notes); return string(b) }
 func newAnnotationEditor(notes []model.Annotation) *annotationEditor {
-	return &annotationEditor{notes: cloneNotes(notes), tool: "select", color: "#e05263", width: 4, sidebar: true, baseline: notesKey(notes)}
+	return &annotationEditor{notes: cloneNotes(notes), tool: "pan", color: "#e05263", width: 4, sidebar: true, baseline: notesKey(notes)}
 }
 func (s *annotationEditor) current() *model.Annotation {
 	for i := range s.notes {
@@ -63,6 +64,7 @@ func (s *annotationEditor) record(before []model.Annotation) {
 	s.redo = nil
 }
 func (s *annotationEditor) history(redo bool) {
+	s.cancelGesture()
 	from, to := &s.undo, &s.redo
 	if redo {
 		from, to = &s.redo, &s.undo
@@ -76,12 +78,21 @@ func (s *annotationEditor) history(redo bool) {
 	if s.current() == nil {
 		s.selected = ""
 	}
-	s.link = false
+	if s.addingTo != "" && s.selected != s.addingTo {
+		s.finishAdding()
+	}
 }
 func (s *annotationEditor) add(mark *model.Mark) {
+	if mark == nil {
+		s.finishAdding()
+	}
 	before := cloneNotes(s.notes)
 	n := s.current()
-	if !s.link || n == nil {
+	if s.addingTo != "" && (n == nil || n.ID != s.addingTo) {
+		s.finishAdding()
+		return
+	}
+	if s.addingTo == "" {
 		s.notes = append(s.notes, model.Annotation{ID: model.ID()})
 		n = &s.notes[len(s.notes)-1]
 		s.selected = n.ID
@@ -92,6 +103,70 @@ func (s *annotationEditor) add(mark *model.Mark) {
 	s.sidebar = true
 	s.scrollTo = s.selected
 	s.record(before)
+}
+func (s *annotationEditor) cancelGesture() {
+	if s.dragging == "move" {
+		s.notes = cloneNotes(s.before)
+	}
+	s.dragging = ""
+	s.pending = model.Mark{}
+	s.before = nil
+}
+func (s *annotationEditor) finishAdding() {
+	s.cancelGesture()
+	s.addingTo = ""
+	s.tool = "pan"
+}
+func (s *annotationEditor) beginAdding(id string, bitmap *ui.Bitmap, bounds ui.Rect) {
+	s.selectNote(id, bitmap, bounds)
+	if s.current() != nil {
+		s.addingTo = id
+		s.tool = "pen"
+	}
+}
+func (s *annotationEditor) chooseTool(tool string) {
+	s.cancelGesture()
+	if tool == "pan" {
+		s.finishAdding()
+	} else {
+		s.tool = tool
+	}
+}
+func (s *annotationEditor) deleteNote(id string) {
+	s.cancelGesture()
+	before := cloneNotes(s.notes)
+	for i := range s.notes {
+		if s.notes[i].ID == id {
+			s.notes = slices.Delete(s.notes, i, i+1)
+			break
+		}
+	}
+	if s.selected == id || s.addingTo == id {
+		s.finishAdding()
+		s.selected = ""
+	}
+	s.record(before)
+}
+func (s *annotationEditor) addingNumber() int {
+	for i, n := range s.notes {
+		if n.ID == s.addingTo && n.ID == s.selected {
+			return i + 1
+		}
+	}
+	return 0
+}
+func (s *annotationEditor) displayNotes() ([]model.Annotation, string) {
+	if s.dragging != "draw" {
+		return s.notes, s.selected
+	}
+	notes := slices.Clone(s.notes)
+	// Preview in the target's position so an unfinished shape has its real number.
+	if number := s.addingNumber(); number > 0 {
+		n := &notes[number-1]
+		n.Marks = append(slices.Clone(n.Marks), s.pending)
+		return notes, s.selected
+	}
+	return append(notes, model.Annotation{Marks: []model.Mark{s.pending}}), ""
 }
 func (s *annotationEditor) imageRect(w, h float32, bitmap *ui.Bitmap) ui.Rect {
 	bw, bh := bitmap.Size()
@@ -123,6 +198,9 @@ func (s *annotationEditor) hit(p ui.Point, r ui.Rect) string {
 	for i := len(s.notes) - 1; i >= 0; i-- {
 		n := s.notes[i]
 		for _, m := range n.Marks {
+			if len(m.Points) == 0 {
+				continue
+			}
 			q := markup.BadgePosition(m.Points[0], r)
 			if math.Hypot(float64(p.X-q.X), float64(p.Y-q.Y)) < 16 {
 				return n.ID
@@ -139,12 +217,16 @@ func (s *annotationEditor) hit(p ui.Point, r ui.Rect) string {
 	return ""
 }
 func (s *annotationEditor) selectNote(id string, bitmap *ui.Bitmap, bounds ui.Rect) {
+	if id != s.selected || s.addingTo == "" {
+		s.finishAdding()
+	} else {
+		s.cancelGesture()
+	}
 	s.selected = id
 	s.scrollTo = id
 	s.sidebar = true
-	s.link = false
 	n := s.current()
-	if n == nil || len(n.Marks) == 0 {
+	if n == nil || len(n.Marks) == 0 || bitmap == nil {
 		return
 	}
 	s.color, s.width = n.Marks[0].Color, n.Marks[0].Width
@@ -183,6 +265,10 @@ func (s *annotationEditor) input(ev ui.InputEvent, bitmap *ui.Bitmap, bounds ui.
 		}
 		return true
 	case ui.InputKeyDown:
+		if ev.Key == ui.KeyEscape && ev.Mods == 0 && (s.addingTo != "" || s.dragging != "") {
+			s.finishAdding()
+			return true
+		}
 		if ev.Mods&ui.Cmd != 0 && ev.Key == ui.KeyZ {
 			s.history(ev.Mods&ui.Shift != 0)
 			return true
@@ -195,19 +281,16 @@ func (s *annotationEditor) input(ev ui.InputEvent, bitmap *ui.Bitmap, bounds ui.
 		s.start = p
 		s.before = cloneNotes(s.notes)
 		if s.tool == "pan" {
+			if id := s.hit(p, r); id != "" {
+				s.selectNote(id, bitmap, bounds)
+				s.before = cloneNotes(s.notes)
+				s.dragging = "move"
+				return true
+			}
 			s.dragging = "pan"
 			return true
 		}
 		if !inside(p, r) {
-			return true
-		}
-		if s.tool == "select" {
-			s.selected = s.hit(p, r)
-			s.link = false
-			if s.selected != "" {
-				s.selectNote(s.selected, bitmap, bounds)
-				s.dragging = "move"
-			}
 			return true
 		}
 		if s.tool == "point" {
@@ -266,12 +349,15 @@ func (s *annotationEditor) input(ev ui.InputEvent, bitmap *ui.Bitmap, bounds ui.
 		if s.dragging == "draw" {
 			if math.Hypot(float64(p.X-s.start.X), float64(p.Y-s.start.Y)) >= 3 || len(s.pending.Points) > 3 {
 				s.add(&s.pending)
+			} else if id := s.hit(p, r); id != "" {
+				s.selectNote(id, bitmap, bounds)
 			}
 			s.pending = model.Mark{}
 		} else if s.dragging == "move" {
 			s.record(s.before)
 		}
 		s.dragging = ""
+		s.before = nil
 		return true
 	}
 	return false
@@ -282,7 +368,6 @@ func annotationIcon(path string) *ui.SVG {
 }
 
 var (
-	selectMarkIcon  = annotationIcon(`<path d="m5 3 14 9-7 1-3 7z"/>`)
 	panMarkIcon     = annotationIcon(`<path d="M8 13V6a2 2 0 0 1 4 0v6-8a2 2 0 0 1 4 0v8-5a2 2 0 0 1 4 0v9c0 4-3 6-7 6-3 0-5-2-7-5l-3-4a2 2 0 0 1 3-2l2 2"/>`)
 	penMarkIcon     = annotationIcon(`<path d="m15 4 5 5M4 20l5-1L20 8a3 3 0 0 0-4-4L5 15z"/>`)
 	arrowMarkIcon   = annotationIcon(`<path d="M5 19 19 5M8 5h11v11"/>`)
