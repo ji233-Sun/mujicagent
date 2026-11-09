@@ -418,19 +418,21 @@ func TestBrowserResizeAndModalLayers(t *testing.T) {
 func TestBrowserLayoutScreenshots(t *testing.T) {
 	for _, lang := range []string{"zh-Hans", "en"} {
 		for _, size := range [][2]int{{840, 560}, {1440, 900}} {
-			for _, scene := range []string{"human", "agent", "loading", "draining", "error", "collapsed", "permissions", "unavailable", "tools"} {
+			for _, scene := range []string{"human", "agent", "loading", "draining", "error", "collapsed", "permissions", "capture-unavailable", "unavailable", "tools"} {
 				t.Run(fmt.Sprintf("%s-%s-%dx%d", lang, scene, size[0], size[1]), func(t *testing.T) {
 					v, id, status := browserTestView(t)
 					v.C.State.Settings.Language = lang
+					status.CaptureSupported = scene != "capture-unavailable"
 					v.C.State.Thread(id).Turns = []model.Turn{{Prompt: "Inspect the page layout", Status: "completed", Items: []model.Item{{Kind: "agentMessage", Text: "The browser and conversation share this workspace.", Status: "completed"}}}}
 					if scene == "tools" {
 						v.C.State.Thread(id).Turns[0].Items = []model.Item{
 							{ID: "fill", Kind: "toolCall", Status: "completed", MCP: &model.MCPCall{Tool: "browser_fill", Result: `{"dispatch":"dispatched","completion":"observed"}`}},
-							{ID: "capture", Kind: "toolCall", Status: "failed", MCP: &model.MCPCall{Tool: "browser_capture", Result: `{"dispatch":"not_dispatched","error":{"code":"unsupported"}}`}},
+							{ID: "capture", Kind: "toolCall", Status: "completed", MCP: &model.MCPCall{Tool: "browser_capture", Result: `{"width":776,"height":1412}`}},
 							{ID: "click", Kind: "toolCall", Status: "interrupted", MCP: &model.MCPCall{Tool: "browser_click", Result: `{"dispatch":"unknown","error":{"code":"cancelled"}}`}},
+							{ID: "opaque", Kind: "toolCall", Status: "failed", MCP: &model.MCPCall{Tool: "browser_capture", Result: `{"dispatch":"not_dispatched","error":{"code":"sensitive"}}`}},
 						}
 						*v.openState("activity-" + id + "-0-0") = true
-						for i := 0; i < 3; i++ {
+						for i := 0; i < 4; i++ {
 							*v.openState(fmt.Sprintf("%s-0-0-%d", id, i)) = true
 						}
 					}
@@ -449,7 +451,7 @@ func TestBrowserLayoutScreenshots(t *testing.T) {
 					}
 					v.Browser.SetStatus(status)
 					v.Browser.thread(id).visible = scene != "collapsed"
-					v.Browser.thread(id).confirm = scene == "permissions"
+					v.Browser.thread(id).confirm = scene == "permissions" || scene == "capture-unavailable"
 					if scene == "unavailable" {
 						v.Browser.thread(id).status = browser.Status{}
 					}
@@ -461,8 +463,8 @@ func TestBrowserLayoutScreenshots(t *testing.T) {
 						t.Fatal("engine details leaked into the UI")
 					}
 					if scene == "tools" {
-						detail, _ := v.browserActivityText(&v.C.State.Thread(id).Turns[0].Items[1], true)
-						if !tt.HasText(v.texts().BrowserToolFill()) || tt.HasText("browser_fill") || !strings.Contains(detail, v.texts().BrowserUnsupported()) {
+						detail, _ := v.browserActivityText(&v.C.State.Thread(id).Turns[0].Items[3], true)
+						if !tt.HasText(v.texts().BrowserToolFill()) || tt.HasText("browser_fill") || !strings.Contains(detail, v.texts().BrowserSensitive()) {
 							t.Fatal("browser activities did not use localized titles/errors")
 						}
 					}

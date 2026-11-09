@@ -4,7 +4,7 @@
 
 用户于 2026-11-09 明确采用 #27 的受限首版，并授权隔离的本地合成页面进行真实 Codex 验收。具体能力、使用步骤与实际验证记录见 [运行实现](../../docs/browseruse-runtime.md)；原[集成验收矩阵](../../docs/browseruse-acceptance.md)保留完整目标与待核对项。历史可行性报告的 pageWorld、可信输入及弹窗限制仍然成立。
 
-原生 Capture 当前统一返回 `ErrUnsupported`：pageWorld 可篡改 MyGo 的外层 Eval 返回，不能用它判断截图是否安全；现有 API 也没有原子脱敏边界。因此本实现尚未完成 #29 的安全截图验收，不据此关闭 #29/#31/#25。下文契约中的 Capture 行为是目标要求，不表示当前原生引擎已具备该能力。
+macOS Capture 已通过系统 WebKit 进程内扩展补足可信边界：独立 world 的固定策略与同步原生 snapshot 在同次调用中执行，再经私有 IPC 返回；不使用 pageWorld 的安全声明。无法可靠检查的复杂内容返回 `ErrSensitive`，不具备扩展的平台返回 `ErrUnsupported`。详情见[可信截图实现](../../docs/browseruse-trusted-capture.md)。#29 执行器已有原生与真实六工具证据；#31/#25 的人工原生窗口验收仍有缺口。
 
 ## 下游入口
 

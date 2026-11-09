@@ -585,11 +585,11 @@ func (r *Runtime) Capture(ctx context.Context, req Request) (Screenshot, error) 
 	value, err := r.run(ctx, req, "capture", func(op *operation) (any, error) {
 		ref := op.reference()
 		image, err := op.p.engine.capture(op.ctx)
-		if err != nil {
-			return nil, err
-		}
 		if ref != op.reference() || op.ctx.Err() != nil {
 			return nil, ErrStale
+		}
+		if err != nil {
+			return nil, err
 		}
 		image.Page = ref
 		return image, nil

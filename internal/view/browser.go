@@ -313,8 +313,11 @@ func (v *View) browserResumeDialog(c *ui.Context) {
 		ui.Text(c, tx.BrowserPermissionsHint()).FontSize(12)
 		ui.Checkbox(c, &s.permissions.Navigate, tx.BrowserAllowNavigate())
 		ui.Checkbox(c, &s.permissions.Interact, tx.BrowserAllowInteract())
-		ui.Checkbox(c, &s.permissions.Capture, tx.BrowserAllowCapture()).Disabled(true)
+		ui.Checkbox(c, &s.permissions.Capture, tx.BrowserAllowCapture()).Disabled(!s.status.CaptureSupported)
 		ui.Text(c, tx.BrowserCaptureHint()).FontSize(11).TextColor(c.Theme().TextMuted)
+		if !s.status.CaptureSupported {
+			ui.Text(c, tx.BrowserCaptureUnavailable()).FontSize(11).TextColor(c.Theme().TextMuted)
+		}
 		ui.Text(c, s.status.URL).FontSize(11).SingleLine().TextColor(c.Theme().TextMuted)
 		ui.Row(c).Justify(ui.End).Gap(8).Children(func() {
 			ui.Button(c, tx.Cancel()).OnClick(func() { s.confirm = false })

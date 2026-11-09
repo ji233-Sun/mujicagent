@@ -1,4 +1,5 @@
 {
+  "buildCommand": "go run ./scripts/build-browser-capture",
   "i18n": {
     "dir": "locales",
     "source": "zh-Hans"

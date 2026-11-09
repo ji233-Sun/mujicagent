@@ -124,4 +124,10 @@
     try { return stringify(run(action,args || {})); }
     catch { return stringify({code:"engine"}); }
   }});
+  // The preload discards this value. Only the injected bundle keeps it in its
+  // private world; no pause command is exposed to the page-world handler.
+  return {
+    pause: () => { flush(); observer.disconnect(); },
+    resume: () => observer.observe(document, {subtree:true, childList:true, attributes:true, characterData:true})
+  };
 })();

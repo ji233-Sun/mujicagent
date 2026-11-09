@@ -20,8 +20,9 @@ import (
 var pageScript string
 
 type mygoPage struct {
-	view *mygo.WebView
-	p    *runtimePage
+	view     *mygo.WebView
+	p        *runtimePage
+	snapshot *nativeCapture
 }
 
 // New creates the runtime for a native UI window. changed can run on workers;
@@ -32,13 +33,18 @@ func New(window *mygo.Window, changed func(Status)) *Runtime {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		v, err := window.NewWebView(mygo.WebViewOptions{URL: "about:blank", Page: mygo.PageOptions{
+		capture := newNativeCapture()
+		options := mygo.WebViewOptions{URL: "about:blank", Page: mygo.PageOptions{
 			Session: mygo.NewEphemeralSession(), Untrusted: true, PreloadScript: pageScript,
-		}})
+		}}
+		if capture != nil {
+			options.ConfigureWKWebView = capture.configure
+		}
+		v, err := window.NewWebView(options)
 		if err != nil {
 			return nil, ErrEngine
 		}
-		engine := &mygoPage{view: v, p: p}
+		engine := &mygoPage{view: v, p: p, snapshot: capture}
 		page := v.Page()
 		page.OnWillNavigate(func(e *mygo.NavigateEvent) {
 			target, err := parseURL(e.URL)
@@ -108,6 +114,7 @@ func New(window *mygo.Window, changed func(Status)) *Runtime {
 		}
 		p.mu.Lock()
 		p.status.Loading, p.status.Page.Navigation = false, 1
+		p.status.CaptureSupported = capture.supported()
 		p.mu.Unlock()
 		return engine, nil
 	}
@@ -130,7 +137,7 @@ func (r *Runtime) View(key PageKey) ui.NativeWebView {
 	return nil
 }
 
-func (e *mygoPage) destroy() { e.view.Destroy() }
+func (e *mygoPage) destroy() { e.view.Destroy(); e.snapshot.destroy() }
 
 func (e *mygoPage) refresh() {
 	raw := e.view.Page().URL()
@@ -190,20 +197,28 @@ func (e *mygoPage) eval(ctx context.Context, action string, args any) (pageData,
 		return pageData{}, ErrInvalidArgument
 	}
 	e.p.mu.Lock()
-	before := e.p.commits
+	before, expectedOrigin := e.p.commits, e.p.origin
 	e.p.mu.Unlock()
 	// The fixed scripts are synchronous. Cancelling the caller must not make
 	// Busy false while native JavaScript is still executing.
 	engineCtx, cancel := context.WithTimeout(context.Background(), DefaultTimeout)
 	defer cancel()
-	value, err := e.view.Page().EvalContext(engineCtx, "window.__mujicBrowser(..."+string(wire)+")")
-	if engineCtx.Err() != nil {
+	var value any
+	if e.snapshot.supported() {
+		value, err = e.snapshot.eval(engineCtx, e.view, expectedOrigin, action, args)
+	} else {
+		value, err = e.view.Page().EvalContext(engineCtx, "window.__mujicBrowser(..."+string(wire)+")")
+	}
+	if engineCtx.Err() != nil || e.view.IsDestroyed() {
 		// Destruction is the fallback barrier when MyGo cannot cancel JS.
 		e.view.Destroy()
 		e.p.mu.Lock()
 		e.p.status.State, e.p.status.Loading = StateClosed, false
 		e.p.mu.Unlock()
-		return pageData{}, engineCtx.Err()
+		if engineCtx.Err() != nil {
+			return pageData{}, engineCtx.Err()
+		}
+		return pageData{}, ErrEngine
 	}
 	if err != nil {
 		return pageData{}, ErrEngine
@@ -254,11 +269,18 @@ func (e *mygoPage) eval(ctx context.Context, action string, args any) (pageData,
 	return data, dataError(data)
 }
 
-func (e *mygoPage) capture(context.Context) (Screenshot, error) {
-	// MyGo 0.7.4 serializes Eval through page-world JSON.stringify. A page can
-	// forge any safety-check response, and capture cannot atomically redact
-	// the native bitmap. Permission alone does not make that channel trusted.
-	return Screenshot{}, ErrUnsupported
+func (e *mygoPage) capture(ctx context.Context) (Screenshot, error) {
+	e.p.mu.Lock()
+	origin := e.p.origin
+	e.p.mu.Unlock()
+	image, err := e.snapshot.capture(ctx, e.view, origin)
+	e.refresh()
+	if e.view.IsDestroyed() {
+		e.p.mu.Lock()
+		e.p.status.State, e.p.status.Loading = StateClosed, false
+		e.p.mu.Unlock()
+	}
+	return image, err
 }
 
 var tokenPattern = regexp.MustCompile(`\b(sk-[a-zA-Z0-9_-]{8,}|eyJ[a-zA-Z0-9_-]{12,}(?:\.[a-zA-Z0-9_-]+){1,2})\b`)

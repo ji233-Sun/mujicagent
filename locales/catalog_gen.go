@@ -3104,14 +3104,24 @@ func (msgs Messages) BrowserAllowCapture() string {
 	return Catalog.Format(msgs.locale, "browserAllowCapture", nil)
 }
 
-// BrowserCaptureHint says "当前原生引擎无法保证截图脱敏，暂不支持向 Agent 分享截图。"
+// BrowserCaptureHint says "…"
 // in the language the app shows.
 func BrowserCaptureHint() string { return In(i18n.Locale()).BrowserCaptureHint() }
 
-// BrowserCaptureHint says "当前原生引擎无法保证截图脱敏，暂不支持向 Agent 分享截图。"
+// BrowserCaptureHint says "…"
 // in the language of msgs.
 func (msgs Messages) BrowserCaptureHint() string {
 	return Catalog.Format(msgs.locale, "browserCaptureHint", nil)
+}
+
+// BrowserCaptureUnavailable says "此设备未启用安全截图支持。"
+// in the language the app shows.
+func BrowserCaptureUnavailable() string { return In(i18n.Locale()).BrowserCaptureUnavailable() }
+
+// BrowserCaptureUnavailable says "此设备未启用安全截图支持。"
+// in the language of msgs.
+func (msgs Messages) BrowserCaptureUnavailable() string {
+	return Catalog.Format(msgs.locale, "browserCaptureUnavailable", nil)
 }
 
 // BrowserOpening says "正在打开浏览器…"

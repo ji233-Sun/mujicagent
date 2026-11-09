@@ -34,6 +34,15 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	mygo.App.SetPath(mygo.PathUserData, dir)
+	resourceRoot := os.Getenv("MUJICAGENT_BROWSER_RESOURCES")
+	if resourceRoot == "" {
+		resourceRoot = "../../resources"
+	}
+	resources, err := filepath.Abs(resourceRoot)
+	if err != nil {
+		panic(err)
+	}
+	mygo.App.SetPath(mygo.PathResources, resources)
 	mygo.Bind(BrowserNativeProbe{})
 	mygo.App.OnWindowAllClosed(func() {})
 	var code atomic.Int32
@@ -230,8 +239,11 @@ func TestBrowserNativeRuntime(t *testing.T) {
 	if err != nil || !strings.Contains(observation.Text, "Committed: fixture-native") {
 		t.Fatalf("commit not observed: %v", err)
 	}
-	if capture, err := s.runtime.Capture(ctx, request); !errors.Is(err, browser.ErrUnsupported) || len(capture.PNG) != 0 {
-		t.Fatalf("untrusted capture must fail closed: %v", err)
+	if capture, err := s.runtime.Capture(ctx, request); err != nil || len(capture.PNG) == 0 {
+		t.Fatalf("trusted viewport capture failed: %v", err)
+	}
+	if _, err := s.runtime.Fill(ctx, browser.FillRequest{Request: request, Element: nativeElement(t, observation, "Controlled text"), Text: "fixture-after-capture"}); err != nil {
+		t.Fatalf("Capture invalidated a previously valid element reference: %v", err)
 	}
 	observation, err = s.runtime.Observe(ctx, request)
 	if err != nil {
@@ -365,8 +377,8 @@ func TestBrowserNativeRuntime(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, _ = s.runtime.Resume(ctx, status.Page.PageKey, browser.Permissions{Capture: true})
-	if _, err := s.runtime.Capture(ctx, request); !errors.Is(err, browser.ErrUnsupported) {
-		t.Fatalf("sensitive capture accepted: %v", err)
+	if capture, err := s.runtime.Capture(ctx, request); err != nil || len(capture.PNG) == 0 {
+		t.Fatalf("redacted password capture failed: %v", err)
 	}
 	observation, err = s.runtime.Observe(ctx, request)
 	if err != nil || strings.Contains(observation.Text, "fixture-private") {
@@ -391,17 +403,17 @@ func TestBrowserNativeRuntime(t *testing.T) {
 			t.Fatal("textarea initial value entered accessible name")
 		}
 	}
-	if _, err := first.Page().EvalContext(ctx, `const original = JSON.stringify; JSON.stringify = () => original({ok:true,v:'{"code":"ok"}'}); return true`); err != nil {
+	if _, err := first.Page().EvalContext(ctx, `document.body.insertAdjacentHTML("beforeend", "<canvas></canvas>"); const original = JSON.stringify; JSON.stringify = () => original({ok:true,v:'{"code":"ok"}'}); return true`); err != nil {
 		t.Fatal(err)
 	}
-	if capture, err := s.runtime.Capture(ctx, request); !errors.Is(err, browser.ErrUnsupported) || len(capture.PNG) != 0 {
+	if capture, err := s.runtime.Capture(ctx, request); !errors.Is(err, browser.ErrSensitive) || len(capture.PNG) != 0 {
 		t.Fatalf("forged capture approval must not release a bitmap: %v", err)
 	}
 	if _, err := first.Page().EvalContext(ctx, `const saved = JSON.stringify; JSON.stringify = () => saved({ok:true,v:"fixture-tampered"}); return true`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.runtime.Observe(ctx, request); !errors.Is(err, browser.ErrEngine) {
-		t.Fatalf("tampered pageWorld result accepted: %v", err)
+	if observation, err := s.runtime.Observe(ctx, request); err != nil || strings.Contains(observation.Text, "fixture-tampered") {
+		t.Fatalf("pageWorld tampering crossed the isolated tool channel: %v", err)
 	}
 	closed, err := s.runtime.Close(ctx, status.Page.PageKey)
 	if err != nil || closed.State != browser.StateClosed || closed.Busy {
@@ -410,7 +422,7 @@ func TestBrowserNativeRuntime(t *testing.T) {
 	if _, err := s.runtime.Observe(ctx, request); !errors.Is(err, browser.ErrClosed) {
 		t.Fatalf("closed native page accepted callback: %v", err)
 	}
-	t.Log("native controlled fill/click/observe/scroll passed; session isolation, textarea privacy and forged capture approval rejection passed; native capture unsupported")
+	t.Log("native controlled fill/click/observe/scroll/capture passed; session isolation, textarea privacy and forged canvas capture approval rejection passed")
 }
 
 func TestBrowserNativeCodex(t *testing.T) {
@@ -463,7 +475,7 @@ func TestBrowserNativeCodex(t *testing.T) {
 			c.State.Settings.Model = selected
 		}
 		t.Logf("Codex=%s model=%s", c.Version, c.State.Settings.Model)
-		if !c.Send("Use only the six browser_* tools, without shell, files, external browsers or other tools. First use browser_open to open "+server.URL+"/acceptance-simple.html in the existing authorized page. Observe, fill Controlled text with fixture-live, observe again, click Commit controlled text, observe and confirm Committed: fixture-live. Scroll down 1000 pixels and observe. Finally call browser_capture once: this native engine must return unsupported; report that limitation explicitly and never claim an image was shared. Do not guess element IDs. Report BROWSER_LIVE_OK only after the other five tools succeed and capture is explicitly rejected. Stop on any other error.", false) {
+		if !c.Send("Use only the six browser_* tools, without shell, files, external browsers or other tools. First use browser_open to open "+server.URL+"/acceptance-simple.html in the existing authorized page. Observe, fill Controlled text with fixture-live, observe again, click Commit controlled text, observe and confirm Committed: fixture-live. Scroll down 1000 pixels and observe. Finally call browser_capture once and briefly describe the returned viewport image. Do not guess element IDs. Report BROWSER_LIVE_OK only after all six tools succeed, including receiving the screenshot. Stop on any error.", false) {
 			t.Errorf("Codex send failed: %s", c.Error)
 		}
 	})
@@ -477,7 +489,7 @@ func TestBrowserNativeCodex(t *testing.T) {
 		turn = thread.Turns[len(thread.Turns)-1]
 	})
 	text, tools := "", map[string]bool{}
-	captureRejected := false
+	captureShared := false
 	for _, item := range turn.Items {
 		if item.Kind == "agentMessage" {
 			text += item.Text
@@ -485,17 +497,17 @@ func TestBrowserNativeCodex(t *testing.T) {
 		if item.MCP != nil && strings.HasPrefix(item.MCP.Tool, "browser_") && item.Status == "completed" {
 			tools[item.MCP.Tool] = true
 		}
-		if item.MCP != nil && item.MCP.Tool == "browser_capture" && item.Status == "failed" {
-			var result struct{ Error *struct{ Code string } }
-			if json.Unmarshal([]byte(item.MCP.Result), &result) == nil && result.Error != nil && result.Error.Code == "unsupported" {
-				captureRejected = true
+		if item.MCP != nil && item.MCP.Tool == "browser_capture" && item.Status == "completed" {
+			var result struct{ Width, Height int }
+			if json.Unmarshal([]byte(item.MCP.Result), &result) == nil && result.Width > 0 && result.Height > 0 {
+				captureShared = true
 			}
 		}
 	}
 	native := s.runtime.View(status.Page.PageKey).(*mygo.WebView)
 	matches, err := native.Page().EvalContext(ctx, `document.getElementById("committed").textContent === "Committed: fixture-live" && scrollY > 0`)
-	if turn.Status != "completed" || !strings.Contains(text, "BROWSER_LIVE_OK") || err != nil || matches != true || len(tools) < 5 || !captureRejected {
-		t.Fatalf("live browser result: status=%s error=%s reply=%s pageMatches=%v captureRejected=%v", turn.Status, turn.Error, text, matches, captureRejected)
+	if turn.Status != "completed" || !strings.Contains(text, "BROWSER_LIVE_OK") || err != nil || matches != true || len(tools) < 6 || !captureShared {
+		t.Fatalf("live browser result: status=%s error=%s reply=%s pageMatches=%v captureShared=%v", turn.Status, turn.Error, text, matches, captureShared)
 	}
-	t.Logf("real Codex controlled the visible native PageKey; %d activity items; five tools and explicit capture refusal verified", len(turn.Items))
+	t.Logf("real Codex controlled the visible native PageKey; %d activity items; all six tools and native screenshot sharing verified", len(turn.Items))
 }
