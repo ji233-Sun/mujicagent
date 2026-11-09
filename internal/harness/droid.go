@@ -18,13 +18,21 @@ type droidRPC struct {
 	next              int
 	session           string
 	streaming         bool
-	done              bool
+	turnCompleted     bool
+	idle              bool
+	backgroundWork    int
 	progress          map[string]string
 	compactionSummary string
 	compactions       int
 	compacting        bool
 	summaries         map[string]bool
 	interactions      *interactions
+}
+
+// A model turn can end while Script, Execute or a child still owes a wake.
+// Keep the RPC process alive until the CLI also reports idle without that work.
+func (a *droidRPC) done() bool {
+	return a.turnCompleted && a.idle && a.backgroundWork == 0
 }
 
 func (a *droidRPC) call(method string, params any, result any) error {
@@ -204,7 +212,7 @@ func runDroid(ctx context.Context, o RunOptions, args []string, emit func(AgentE
 		return err
 	}
 	emit(AgentEvent{Accepted: true})
-	for !a.done && a.out.Scan() {
+	for !a.done() && a.out.Scan() {
 		var e struct {
 			ID     json.RawMessage
 			Method string
@@ -227,7 +235,7 @@ func runDroid(ctx context.Context, o RunOptions, args []string, emit func(AgentE
 			control.response(id, failure)
 		}
 	}
-	if !a.done {
+	if !a.done() {
 		return a.readError()
 	}
 	return context.Cause(ctx)
