@@ -4,7 +4,7 @@
 
 用户于 2026-11-09 明确采用 #27 的受限首版，并授权隔离的本地合成页面进行真实 Codex 验收。具体能力、使用步骤与实际验证记录见 [运行实现](../../docs/browseruse-runtime.md)；原[集成验收矩阵](../../docs/browseruse-acceptance.md)保留完整目标与待核对项。历史可行性报告的 pageWorld、可信输入及弹窗限制仍然成立。
 
-macOS Capture 已通过系统 WebKit 进程内扩展补足可信边界：独立 world 的固定策略与同步原生 snapshot 在同次调用中执行，再经私有 IPC 返回；不使用 pageWorld 的安全声明。无法可靠检查的复杂内容返回 `ErrSensitive`，不具备扩展的平台返回 `ErrUnsupported`。详情见[可信截图实现](../../docs/browseruse-trusted-capture.md)。#29 执行器已有原生与真实六工具证据；#31/#25 的人工原生窗口验收仍有缺口。
+macOS Capture 已通过系统 WebKit 进程内扩展补足可信边界：独立 world 的固定策略与同步原生 snapshot 在同次调用中执行，再经私有 IPC 返回；不使用 pageWorld 的安全声明。无法可靠检查的复杂内容返回 `ErrSensitive`，不具备扩展的平台返回 `ErrUnsupported`。详情见[可信截图实现](../../docs/browseruse-trusted-capture.md)。#29 执行器已有原生与真实六工具证据；#31/#25 剩余人工流程已由需求方明确豁免，未执行项不记为通过。
 
 ## 下游入口
 

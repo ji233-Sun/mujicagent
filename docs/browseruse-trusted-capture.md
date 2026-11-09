@@ -44,4 +44,4 @@ WebKit 的异步 `takeSnapshotWithConfiguration`、节点句柄或暂停 API 也
 - [BackForwardCache.cpp](https://github.com/WebKit/WebKit/blob/8e16cbe44f3a7e6aec2a641d612cba2b641cbf87/Source/WebCore/history/BackForwardCache.cpp)：暂停之前仍派发 pagehide。
 - [WebFrame.cpp](https://github.com/WebKit/WebKit/blob/8e16cbe44f3a7e6aec2a641d612cba2b641cbf87/Source/WebKit/WebProcess/WebPage/WebFrame.cpp)：后续节点快照解析活节点。
 
-实际回归包括 30 次独立位图对比（含 body 外可见凭据及 ResizeObserver）、13 类复杂内容拒绝、真实原生取消/关页/导航 race，以及真实 Codex 六工具与图片传递。body 外文字与可显示 script/style/head 的旧策略失败先在原生环境复现，修改后同一场景通过。命令及验收缺口见 [运行说明](browseruse-runtime.md)。人工焦点、IME 和原生层级仍阻塞 #31/#25 的完整验收。
+实际回归包括 30 次独立位图对比（含 body 外可见凭据及 ResizeObserver）、13 类复杂内容拒绝、真实原生取消/关页/导航 race，以及真实 Codex 六工具与图片传递。body 外文字与可显示 script/style/head 的旧策略失败先在原生环境复现，修改后同一场景通过。命令与未执行项见 [运行说明](browseruse-runtime.md)。需求方于 2026-11-09 明确豁免剩余人工焦点、IME、原生层级与连续流程，允许按已有证据合并关闭；豁免不作为通过证据。
