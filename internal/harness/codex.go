@@ -21,6 +21,7 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/egoist/mygo/netproxy"
 	"github.com/ji233-Sun/mujicagent/internal/codex"
@@ -162,15 +163,32 @@ func get(ctx context.Context, endpoint string) (*http.Response, error) {
 		}
 		return nil
 	}}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode != 200 {
+	return downloadResponse(client, req)
+}
+
+// Retry only temporary HTTP failures before consuming a download body.
+// Keep the same source, request context, and subsequent integrity checks.
+func downloadResponse(client *http.Client, req *http.Request) (*http.Response, error) {
+	for attempt := 0; ; attempt++ {
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode == http.StatusOK {
+			return resp, nil
+		}
 		resp.Body.Close()
-		return nil, fmt.Errorf("download HTTP %d", resp.StatusCode)
+		if attempt == 2 || (resp.StatusCode != http.StatusBadGateway && resp.StatusCode != http.StatusServiceUnavailable && resp.StatusCode != http.StatusGatewayTimeout) {
+			return nil, fmt.Errorf("download HTTP %d", resp.StatusCode)
+		}
+		timer := time.NewTimer(time.Duration(1<<attempt) * time.Second)
+		select {
+		case <-req.Context().Done():
+			timer.Stop()
+			return nil, req.Context().Err()
+		case <-timer.C:
+		}
 	}
-	return resp, nil
 }
 func getJSON(ctx context.Context, endpoint string, result any) error {
 	resp, err := get(ctx, endpoint)
