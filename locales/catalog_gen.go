@@ -1982,16 +1982,6 @@ func (msgs Messages) CopyAttachmentPath() string {
 	return Catalog.Format(msgs.locale, "copyAttachmentPath", nil)
 }
 
-// RevealAttachment says "在文件夹中显示"
-// in the language the app shows.
-func RevealAttachment() string { return In(i18n.Locale()).RevealAttachment() }
-
-// RevealAttachment says "在文件夹中显示"
-// in the language of msgs.
-func (msgs Messages) RevealAttachment() string {
-	return Catalog.Format(msgs.locale, "revealAttachment", nil)
-}
-
 // AnnotationUnapplied says "有未应用的更改"
 // in the language the app shows.
 func AnnotationUnapplied() string { return In(i18n.Locale()).AnnotationUnapplied() }
@@ -2210,16 +2200,6 @@ func AnnotationEmptyTitle() string { return In(i18n.Locale()).AnnotationEmptyTit
 // in the language of msgs.
 func (msgs Messages) AnnotationEmptyTitle() string {
 	return Catalog.Format(msgs.locale, "annotationEmptyTitle", nil)
-}
-
-// AnnotationEmptyHint says "圈出范围、画出箭头，或点击图片添加评论。图形与说明可以自由组合。"
-// in the language the app shows.
-func AnnotationEmptyHint() string { return In(i18n.Locale()).AnnotationEmptyHint() }
-
-// AnnotationEmptyHint says "圈出范围、画出箭头，或点击图片添加评论。图形与说明可以自由组合。"
-// in the language of msgs.
-func (msgs Messages) AnnotationEmptyHint() string {
-	return Catalog.Format(msgs.locale, "annotationEmptyHint", nil)
 }
 
 // ImageComment says "整体说明"

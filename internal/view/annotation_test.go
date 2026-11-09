@@ -18,6 +18,7 @@ func annotationWorkspace(t *testing.T, notes []model.Annotation, width, height i
 	t.Helper()
 	state := model.New()
 	ctrl := controller.New(t.TempDir(), state, nil)
+	t.Cleanup(ctrl.Close)
 	ctrl.NewThread("")
 	a := model.Attachment{Kind: "image", Path: filepath.Join(t.TempDir(), "workspace.png"), Annotations: cloneNotes(notes)}
 	state.Thread(state.Selected).Draft = a.Link()
@@ -196,9 +197,21 @@ func TestAnnotationHandSelection(t *testing.T) {
 		s.input(ui.InputEvent{Kind: kind, X: r.X + r.W*x, Y: r.Y + r.H*y}, bitmap, bounds)
 	}
 	input(ui.InputPointerDown, .8, .65)
-	if s.selected != "target" || s.dragging != "move" {
-		t.Fatal("hand did not select the arrow's shared comment")
+	input(ui.InputPointerMove, .802, .652)
+	if s.selected != "" || notesKey(s.notes) != notesKey(notes) {
+		t.Fatal("press or click jitter selected or moved an unselected shape")
 	}
+	input(ui.InputPointerUp, .8, .65)
+	if s.selected != "target" || notesKey(s.notes) != notesKey(notes) || len(s.undo) != 0 {
+		t.Fatal("click did not select the arrow's shared comment without moving it")
+	}
+	input(ui.InputPointerDown, .8, .65)
+	input(ui.InputPointerMove, .802, .652)
+	input(ui.InputPointerUp, .802, .652)
+	if notesKey(s.notes) != notesKey(notes) || s.pan != (ui.Point{}) || len(s.undo) != 0 {
+		t.Fatal("click jitter moved an already selected shape or created undo history")
+	}
+	input(ui.InputPointerDown, .8, .65)
 	input(ui.InputPointerMove, .85, .70)
 	input(ui.InputPointerUp, .85, .70)
 	for i, mark := range s.notes[1].Marks {
@@ -209,10 +222,26 @@ func TestAnnotationHandSelection(t *testing.T) {
 			}
 		}
 	}
+	moved := notesKey(s.notes)
+	if s.pan != (ui.Point{}) || len(s.undo) != 1 {
+		t.Fatal("moving selected shapes panned the canvas or created multiple undo entries")
+	}
 	s.history(false)
 	if notesKey(s.notes) != notesKey(notes) {
 		t.Fatal("undo lost the grouped geometry")
 	}
+	s.history(true)
+	if notesKey(s.notes) != moved {
+		t.Fatal("redo lost the grouped movement")
+	}
+	s.history(false)
+	input(ui.InputPointerDown, .12, .21)
+	input(ui.InputPointerMove, .17, .26)
+	input(ui.InputPointerUp, .17, .26)
+	if s.selected != "target" || s.pan == (ui.Point{}) || notesKey(s.notes) != notesKey(notes) || len(s.undo) != 0 {
+		t.Fatal("dragging an unselected badge did not pan without selecting or moving it")
+	}
+	s.pan = ui.Point{}
 	s.beginAdding("target", bitmap, bounds)
 	input(ui.InputPointerDown, .12, .21)
 	input(ui.InputPointerUp, .12, .21)
@@ -228,12 +257,60 @@ func TestAnnotationHandSelection(t *testing.T) {
 	}
 }
 
+func TestAnnotationHandSidebarAndReopen(t *testing.T) {
+	for _, target := range []struct {
+		name string
+		x, y float32
+	}{{"shape", .3, .35}, {"badge", .08, .35}} {
+		t.Run(target.name, func(t *testing.T) {
+			v, tt := annotationWorkspace(t, annotationFixture(), 1140, 780)
+			s := v.annotation
+			original := notesKey(s.notes)
+			s.sidebar = false
+			tt.Frame()
+			bounds, _ := tt.Find(v.texts().MarkImage())
+			r := s.imageRect(bounds.W, bounds.H, v.preview(v.attachment).bitmap)
+			x, y := bounds.X+r.X+r.W*target.x, bounds.Y+r.Y+r.H*target.y
+			tt.Press(x, y)
+			if s.sidebar || s.selected != "" {
+				t.Fatal("press revealed the sidebar before distinguishing click from drag")
+			}
+			tt.Move(x+30, y+20)
+			tt.Release(x+30, y+20)
+			if s.sidebar || s.selected != "" || s.pan != (ui.Point{X: 30, Y: 20}) || notesKey(s.notes) != original {
+				t.Fatal("dragging an unselected shape changed selection, layout or geometry")
+			}
+			tt.ClickAt(x+30, y+20)
+			if !s.sidebar || s.selected != "target" || notesKey(s.notes) != original {
+				t.Fatal("click did not reveal and select the shape's comment")
+			}
+			s.chooseTool("rectangle")
+			v.closeAttachment()
+			tt.Frame()
+			v.openAttachment(v.attachment, v.attachmentThread)
+			tt.Frame()
+			if v.annotation.tool != "pan" || v.annotation.selected != "" || v.annotation.pan != (ui.Point{}) {
+				t.Fatal("reopening the workspace retained the previous tool or gesture state")
+			}
+			if err := tt.Click(v.texts().CopyAttachmentPath()); err != nil {
+				t.Fatal(err)
+			}
+			if tt.Clipboard() != v.attachment.Path {
+				t.Fatal("folder icon no longer copies the attachment path")
+			}
+		})
+	}
+}
+
 func TestAnnotationAddingScreenshots(t *testing.T) {
 	for _, language := range []string{"zh-Hans", "en"} {
 		for _, size := range [][2]int{{1140, 780}, {840, 560}, {720, 780}} {
-			for _, scene := range []string{"adding-existing", "added-multiple", "adding-empty", "finished"} {
+			for _, scene := range []string{"empty", "adding-existing", "added-multiple", "adding-empty", "finished"} {
 				t.Run(fmt.Sprintf("%s-%dx%d-%s", language, size[0], size[1], scene), func(t *testing.T) {
 					notes := annotationFixture()
+					if scene == "empty" {
+						notes = nil
+					}
 					if scene == "added-multiple" || scene == "finished" {
 						notes[1].Marks = append(notes[1].Marks,
 							model.Mark{Kind: "arrow", Color: "#e05263", Width: 4, Points: []model.ImagePoint{{X: 74, Y: 65}, {X: 48, Y: 48}}},
@@ -248,16 +325,18 @@ func TestAnnotationAddingScreenshots(t *testing.T) {
 						target, number = "empty", "3"
 					}
 					bounds, _ := tt.Find(v.texts().MarkImage())
-					s.beginAdding(target, v.preview(v.attachment).bitmap, bounds)
-					if scene == "finished" {
-						s.finishAdding()
-					} else {
-						s.chooseTool("arrow")
+					if scene != "empty" {
+						s.beginAdding(target, v.preview(v.attachment).bitmap, bounds)
+						if scene == "finished" {
+							s.finishAdding()
+						} else {
+							s.chooseTool("arrow")
+						}
 					}
 					tt.Frame()
 					tt.Advance(time.Second)
 					tx := v.texts()
-					if scene != "finished" {
+					if scene != "finished" && scene != "empty" {
 						if !tt.HasText(tx.AddingAnnotationShapes(number)) {
 							t.Fatal("target comment number is missing")
 						}
@@ -266,14 +345,26 @@ func TestAnnotationAddingScreenshots(t *testing.T) {
 							t.Fatalf("Done is outside the comments viewport: %+v", b)
 						}
 					}
-					if !tt.HasText(tx.AnnotationShapeCount(fmt.Sprint(len(s.current().Marks)))) {
+					if scene == "empty" {
+						if !tt.HasText(tx.AnnotationEmptyTitle()) || s.tool != "pan" {
+							t.Fatal("empty workspace lost its title or default hand tool")
+						}
+					} else if !tt.HasText(tx.AnnotationShapeCount(fmt.Sprint(len(s.current().Marks)))) {
 						t.Fatal("shape count is missing")
 					}
 					canvas, ok := tt.Find(tx.MarkImage())
 					if !ok || canvas.W < 200 || canvas.H < 50 {
 						t.Fatalf("canvas is too small: %+v", canvas)
 					}
-					for _, removed := range []string{"新图形关联到此评论", "Link new marks to this comment", "画出重点，再在右侧补充说明", "选择标注"} {
+					hand, ok := tt.Find(tx.PanImage())
+					toolbarSpace := float32(54)
+					if s.addingNumber() > 0 {
+						toolbarSpace += 24
+					}
+					if !ok || hand.Y < canvas.Y+canvas.H || hand.Y+hand.H > canvas.Y+canvas.H+toolbarSpace {
+						t.Fatalf("toolbar left unused tutorial space: canvas=%+v hand=%+v", canvas, hand)
+					}
+					for _, removed := range []string{"新图形关联到此评论", "Link new marks to this comment", "画出重点，再在右侧补充说明", "Mark what matters, then add a comment on the right", "拖动或滚动平移 · 双指捏合缩放", "Drag or scroll to pan · Pinch to zoom", "接下来绘制的图形将关联到当前评论", "New marks will share the selected comment", "圈出范围、画出箭头，或点击图片添加评论。图形与说明可以自由组合。", "Draw a region or arrow, or pin a comment. Combine marks and notes as you need.", "在文件夹中显示", "Show in folder", tx.SelectAnnotation()} {
 						if _, ok := tt.Find(removed); ok {
 							t.Fatalf("removed control or tutorial is still visible: %s", removed)
 						}
