@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -13,8 +14,11 @@ import (
 )
 
 func runPi(ctx context.Context, o RunOptions, args []string, emit func(AgentEvent)) error {
+	handlers := newInteractions(ctx, emit)
+	ctx, emit = handlers.ctx, handlers.publish
 	process, err := startRPCProcess(ctx, o.Binary, o.Cwd, args)
 	if err != nil {
+		handlers.close()
 		return err
 	}
 	defer process.close()
@@ -24,6 +28,7 @@ func runPi(ctx context.Context, o RunOptions, args []string, emit func(AgentEven
 	}
 	control.attach(process, "pi")
 	defer control.close()
+	defer handlers.close()
 	parts, err := imagePrompt(o)
 	if err != nil {
 		return err
@@ -64,8 +69,20 @@ func runPi(ctx context.Context, o RunOptions, args []string, emit func(AgentEven
 			continue
 		}
 		if e.Type == "extension_ui_request" {
-			if err = piInteraction(ctx, scanner.Bytes(), control, emit); err != nil {
+			var request struct{ Method string }
+			if err = json.Unmarshal(scanner.Bytes(), &request); err != nil {
 				return err
+			}
+			switch request.Method {
+			case "confirm", "select", "input", "editor":
+				raw := slices.Clone(scanner.Bytes())
+				handlers.start(e.ID, func(ctx context.Context) error {
+					return piInteraction(ctx, raw, control, emit)
+				})
+			default:
+				if err = piInteraction(ctx, scanner.Bytes(), control, emit); err != nil {
+					return err
+				}
 			}
 			continue
 		}
@@ -76,11 +93,11 @@ func runPi(ctx context.Context, o RunOptions, args []string, emit func(AgentEven
 			if e.Aborted {
 				return fmt.Errorf("Pi: %w", ErrInterrupted)
 			}
-			return nil
+			return context.Cause(ctx)
 		}
 	}
 	if ctx.Err() != nil {
-		return ctx.Err()
+		return context.Cause(ctx)
 	}
 	if scanner.Err() != nil {
 		return scanner.Err()
@@ -135,6 +152,9 @@ func piInteraction(ctx context.Context, raw []byte, control *Control, emit func(
 	}
 	if err != nil {
 		return err
+	}
+	if parent.Err() != nil {
+		return parent.Err()
 	}
 	var response struct {
 		Decision string

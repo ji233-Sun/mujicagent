@@ -1,6 +1,7 @@
 package harness
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -9,7 +10,7 @@ import (
 	"github.com/ji233-Sun/mujicagent/internal/codex"
 )
 
-func (a *droidRPC) interaction(raw []byte) (any, error) {
+func (a *droidRPC) interaction(ctx context.Context, raw []byte) (any, error) {
 	var v struct {
 		ID     json.RawMessage
 		Method string
@@ -27,10 +28,11 @@ func (a *droidRPC) interaction(raw []byte) (any, error) {
 				}
 			}
 			Questions []struct {
-				Index           int
-				Topic, Question string
-				Options         []string
-				MultiSelect     bool
+				Index              int
+				Topic, Question    string
+				Options            []string
+				OptionDescriptions []string
+				MultiSelect        bool
 			}
 		}
 	}
@@ -59,14 +61,21 @@ func (a *droidRPC) interaction(raw []byte) (any, error) {
 			r.Reason += t.ToolUse.Name + "\n" + string(t.ToolUse.Input) + "\n"
 		}
 	case "droid.ask_user":
+		if len(v.Params.Questions) == 0 {
+			return nil, fmt.Errorf("empty Droid questionnaire")
+		}
 		r.Method = "item/tool/requestUserInput"
 		for _, q := range v.Params.Questions {
 			question := codex.Question{ID: fmt.Sprint(q.Index), Header: q.Topic, Question: q.Question, IsOther: true, MultiSelect: q.MultiSelect}
-			for _, label := range q.Options {
+			for index, label := range q.Options {
+				description := ""
+				if index < len(q.OptionDescriptions) {
+					description = q.OptionDescriptions[index]
+				}
 				question.Options = append(question.Options, struct {
 					Label       string `json:"label"`
 					Description string `json:"description"`
-				}{Label: label})
+				}{Label: label, Description: description})
 			}
 			r.Questions = append(r.Questions, question)
 		}
@@ -113,7 +122,7 @@ func (a *droidRPC) interaction(raw []byte) (any, error) {
 	default:
 		return nil, nil
 	}
-	answer, err := ask(a.ctx, a.emit, r)
+	answer, err := ask(ctx, a.emit, r)
 	if err != nil {
 		return nil, err
 	}
@@ -197,6 +206,24 @@ func (a *droidRPC) update(raw json.RawMessage) error {
 	}
 	e := AgentEvent{Status: "inProgress"}
 	switch v.Type {
+	case "ask_user_resolved", "permission_resolved":
+		var resolved struct {
+			RequestID  string
+			RequestIDs []string
+		}
+		if err := json.Unmarshal(raw, &resolved); err != nil {
+			return err
+		}
+		if resolved.RequestID != "" {
+			resolved.RequestIDs = append(resolved.RequestIDs, resolved.RequestID)
+		}
+		if a.interactions != nil {
+			for _, id := range resolved.RequestIDs {
+				key, _ := json.Marshal(id)
+				a.interactions.resolve(string(key))
+			}
+		}
+		return nil
 	case "create_message":
 		// Script children are published as real assistant message blocks, without
 		// tool_call notifications. Text/thinking already have their own deltas.

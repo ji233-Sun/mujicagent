@@ -109,6 +109,7 @@ func (v *View) Render(c *ui.Context) {
 		}
 		if !pending {
 			delete(v.answers, key)
+			delete(v.scroll, "requests-"+key)
 		}
 	}
 	v.theme(c)
@@ -362,7 +363,7 @@ func (v *View) timeline(c *ui.Context, t *model.Thread) {
 	if s.Y >= s.MaxY-2 {
 		s.Y = math.MaxFloat32
 	}
-	ui.Scroll(c.Key("timeline-"+t.ID)).Grow(1).TrackScroll(s).Padding(26, 28).Gap(30).Children(func() {
+	ui.Scroll(c.Key("timeline-"+t.ID)).Grow(1).MinHeight(0).TrackScroll(s).Padding(26, 28).Gap(30).Children(func() {
 		for i := range t.Turns {
 			turn := &t.Turns[i]
 			ui.Column(c.Key(i)).Gap(20).FillWidth().Children(func() {
@@ -474,17 +475,34 @@ func (v *View) item(c *ui.Context, item *model.Item, key string, running bool) {
 func (v *View) composer(c *ui.Context, t *model.Thread) {
 	tx := v.texts()
 	ui.Column(c).Shrink(0).Padding(8, 24, 16).Gap(8).Children(func() {
+		var requests []*codex.Request
 		for _, r := range v.C.Requests {
 			if t != nil && (r.ThreadID == t.ServerID || r.ThreadID == t.ID) {
-				v.request(c, r)
+				requests = append(requests, r)
 			}
+		}
+		if len(requests) > 0 {
+			key := "requests-" + string(requests[0].ID)
+			if v.scroll[key] == nil {
+				v.scroll[key] = &ui.ScrollState{}
+			}
+			// Reserve room for the composer and header even at the minimum window size.
+			_, height := c.Size()
+			ui.Scroll(c.Key(key)).TrackScroll(v.scroll[key]).MaxHeight(min(300, max(100, height-320))).Shrink(0).Gap(8).Children(func() {
+				for _, r := range requests {
+					v.request(c, r)
+				}
+				v.messageQueue(c, t)
+			})
 		}
 		draft := &v.draft
 		if t != nil {
 			draft = v.C.ComposerDraft(t)
 		}
 		busy := t != nil && v.C.Running[t.ID]
-		v.messageQueue(c, t)
+		if len(requests) == 0 {
+			v.messageQueue(c, t)
+		}
 		if busy {
 			v.projectPicker = false
 		} else {
@@ -544,7 +562,7 @@ func (v *View) request(c *ui.Context, r *codex.Request) {
 		}
 		v.answers[key] = values
 	}
-	ui.Scroll(c.Key("request-"+key)).MaxHeight(300).Padding(14).Radius(12).Border(1, c.Theme().Accent).Gap(10).Children(func() {
+	ui.Column(c.Key("request-"+key)).Shrink(0).Padding(14).Radius(12).Border(1, c.Theme().Accent).Gap(10).Children(func() {
 		if r.Method == "mcpServer/elicitation/request" || r.Method == "client/form" {
 			v.elicitation(c, r, values)
 		} else if r.Method == "item/tool/requestUserInput" {

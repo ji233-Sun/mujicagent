@@ -1231,7 +1231,7 @@ func TestAgentInteractionReplies(t *testing.T) {
 				e.Interaction.Reply <- map[string]any{"decision": decision}
 			}
 		}}
-		result, err := a.interaction([]byte(`{"id":"p","method":"droid.request_permission","params":{"options":[{"value":"proceed_once"},{"value":"cancel"}],"toolUses":[{"toolUse":{"name":"Execute","input":{"command":"pwd"}}}]}}`))
+		result, err := a.interaction(a.ctx, []byte(`{"id":"p","method":"droid.request_permission","params":{"options":[{"value":"proceed_once"},{"value":"cancel"}],"toolUses":[{"toolUse":{"name":"Execute","input":{"command":"pwd"}}}]}}`))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1285,7 +1285,7 @@ func TestDroidPickerAndMultiSelect(t *testing.T) {
 			}
 			e.Interaction.Reply <- map[string]any{"action": action, "content": content}
 		}}
-		result, err := a.interaction([]byte(`{"id":"picker","method":"droid.pick_options","params":{"title":"Choose channels","multi":true,"initialSearch":"beta","preselectedIds":["b","missing"],"rows":[{"id":"a","label":"Alpha"},{"id":"b","label":"Beta"}]}}`))
+		result, err := a.interaction(a.ctx, []byte(`{"id":"picker","method":"droid.pick_options","params":{"title":"Choose channels","multi":true,"initialSearch":"beta","preselectedIds":["b","missing"],"rows":[{"id":"a","label":"Alpha"},{"id":"b","label":"Beta"}]}}`))
 		if err != nil || !resolved {
 			t.Fatal(result, err, resolved)
 		}
@@ -1309,7 +1309,7 @@ func TestDroidPickerAndMultiSelect(t *testing.T) {
 		}
 		e.Interaction.Reply <- map[string]any{"answers": map[string]any{"2": map[string]any{"answers": []string{"A", "B"}}}}
 	}}
-	result, err := a.interaction([]byte(`{"id":"q","method":"droid.ask_user","params":{"questions":[{"index":2,"question":"Choose","options":["A","B"],"multiSelect":true}]}}`))
+	result, err := a.interaction(a.ctx, []byte(`{"id":"q","method":"droid.ask_user","params":{"questions":[{"index":2,"question":"Choose","options":["A","B"],"multiSelect":true}]}}`))
 	data, _ := json.Marshal(result)
 	if err != nil || !strings.Contains(string(data), `"answer":"A, B"`) {
 		t.Fatal(string(data), err)
@@ -1379,7 +1379,7 @@ func TestMCPMetadataAndOfferedPermissions(t *testing.T) {
 		}
 		e.Interaction.Reply <- map[string]string{"decision": "accept"}
 	}}
-	result, err := a.interaction([]byte(`{"id":"p","method":"droid.request_permission","params":{"options":[{"value":"cancel"}],"toolUses":[{"toolUse":{"id":"m","name":"opaque","input":{}},"details":{"type":"mcp_tool","serverName":"docs","actualToolName":"lookup"}}]}}`))
+	result, err := a.interaction(a.ctx, []byte(`{"id":"p","method":"droid.request_permission","params":{"options":[{"value":"cancel"}],"toolUses":[{"toolUse":{"id":"m","name":"opaque","input":{}},"details":{"type":"mcp_tool","serverName":"docs","actualToolName":"lookup"}}]}}`))
 	if err != nil || result.(map[string]string)["selectedOption"] != "cancel" || metadata == nil || metadata.Server != "docs" {
 		t.Fatal(result, metadata, err)
 	}
