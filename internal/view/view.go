@@ -55,6 +55,7 @@ type View struct {
 	scroll                      map[string]*ui.ScrollState
 	md                          markdown.Options
 	attachments                 map[string]*attachmentPreview
+	lightbox                    imageLightbox
 	attachmentOpen              bool
 	attachment                  model.Attachment
 	attachmentThread            string
@@ -136,6 +137,7 @@ func (v *View) Render(c *ui.Context) {
 	v.settingsDialog(c)
 	v.harnessInstallDialog(c)
 	v.attachmentDialog(c)
+	v.imageLightboxDialog(c)
 	v.browserResumeDialog(c)
 	warning := tx.FullAccessWarning()
 	if v.defaultPermissionHarness != "" {

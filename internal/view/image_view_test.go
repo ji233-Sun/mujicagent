@@ -104,7 +104,7 @@ func TestImageView(t *testing.T) {
 						t.Fatal("loading image has no status")
 					}
 				case "ready", "relative", "narrow":
-					r, ok := tt.Find(v.texts().ImagePreview())
+					r, ok := tt.Find(v.texts().ImagePreview() + ": " + a.Path)
 					if !ok || r.W <= 0 || r.H <= 0 || r.X+r.W > float32(width) {
 						t.Fatalf("thumbnail missing or outside viewport: %+v", r)
 					}
@@ -142,7 +142,7 @@ func TestImageViewThumbnailDoesNotOpenAnnotations(t *testing.T) {
 		v.attachmentDialog(c)
 	}, 400, 300)
 	tt.Frame()
-	r, ok := tt.Find(v.texts().ImagePreview())
+	r, ok := tt.Find(v.texts().ImagePreview() + ": " + item.Text)
 	if !ok {
 		t.Fatal("thumbnail missing")
 	}
@@ -151,5 +151,8 @@ func TestImageViewThumbnailDoesNotOpenAnnotations(t *testing.T) {
 	tt.Frame()
 	if v.attachmentOpen || v.annotation != nil {
 		t.Fatal("clicking a tool thumbnail must not open image annotations")
+	}
+	if !v.lightbox.open || v.lightbox.path != item.Text || v.lightbox.bitmap != v.attachments["image:"+item.Text].bitmap {
+		t.Fatal("clicking a tool thumbnail must open the corresponding image lightbox")
 	}
 }
