@@ -165,7 +165,7 @@ func DecodeCodexEvent(m codex.Message) (CodexEvent, bool, error) {
 			ID, Type, Text, Status, Command, AggregatedOutput string
 			Summary, Content                                  []string
 			Changes                                           []struct{ Path, Diff string }
-			Query, Path, Server, Tool                         string
+			Query, Path, Server, Tool, Namespace              string
 			Arguments, Result                                 json.RawMessage
 			Error                                             *struct{ Message string }
 		}
@@ -173,6 +173,11 @@ func DecodeCodexEvent(m codex.Message) (CodexEvent, bool, error) {
 			return event, false, err
 		}
 		if v.ID == "" || v.Type == "userMessage" {
+			return event, false, nil
+		}
+		if v.Type == "dynamicToolCall" && v.Namespace == "" && codex.IsBrowserTool(v.Tool) {
+			// The browser dispatcher publishes safe activity. Native snapshots can
+			// contain fill values and screenshots, and cannot overwrite its result.
 			return event, false, nil
 		}
 		e.ID, e.Kind, e.Status, e.Text = v.ID, v.Type, v.Status, v.Text
