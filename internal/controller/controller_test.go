@@ -360,6 +360,7 @@ printf '%s\n' '{"id":"request-3","result":{}}'
 `
 				delta = `{"method":"droid.session_notification","params":{"sessionId":"burst","notification":{"type":"assistant_text_delta","messageId":"m","textDelta":"x"}}}`
 				finish = `{"method":"droid.session_notification","params":{"sessionId":"burst","notification":{"type":"agent_turn_completed","reason":"completed"}}}`
+				finish += "\n" + `{"method":"droid.session_notification","params":{"sessionId":"burst","notification":{"type":"droid_working_state_changed","newState":"idle","backgroundWork":0}}}`
 			} else {
 				script += "printf '%s\\n' '{\"type\":\"response\",\"id\":\"prompt\",\"success\":true}'\n"
 			}
@@ -2143,6 +2144,7 @@ read request
 printf '%s\n' '{"id":"request-3","result":{}}'
 printf '%s\n' '{"method":"droid.session_notification","params":{"sessionId":"owned-droid","notification":{"type":"assistant_text_delta","messageId":"m","blockIndex":0,"textDelta":"done"}}}'
 printf '%s\n' '{"method":"droid.session_notification","params":{"sessionId":"owned-droid","notification":{"type":"agent_turn_completed","reason":"completed"}}}'
+printf '%s\n' '{"method":"droid.session_notification","params":{"sessionId":"owned-droid","notification":{"type":"droid_working_state_changed","newState":"idle","backgroundWork":0}}}'
 sleep 20
 `
 			}

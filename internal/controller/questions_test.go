@@ -125,6 +125,7 @@ func TestQuestionProtocolChild(t *testing.T) {
 		switch driver {
 		case "droid":
 			send(map[string]any{"method": "droid.session_notification", "params": map[string]any{"sessionId": "questions", "notification": map[string]string{"type": "agent_turn_completed", "reason": "completed"}}})
+			send(map[string]any{"method": "droid.session_notification", "params": map[string]any{"sessionId": "questions", "notification": map[string]any{"type": "droid_working_state_changed", "newState": "idle", "backgroundWork": 0}}})
 		case "pi":
 			send(map[string]string{"type": "agent_settled"})
 		case "claude":

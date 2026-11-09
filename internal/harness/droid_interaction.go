@@ -193,6 +193,7 @@ func (a *droidRPC) update(raw json.RawMessage) error {
 	var v struct {
 		Type, MessageID, TextDelta, ToolUseID, ToolName, NewState, Reason string
 		BlockIndex                                                        int
+		BackgroundWork                                                    *int
 		Content, Update, Message                                          json.RawMessage
 		IsError                                                           bool
 		ToolUse                                                           struct {
@@ -342,6 +343,15 @@ func (a *droidRPC) update(raw json.RawMessage) error {
 		e.Kind = "contextCompaction"
 		e.Status = "completed"
 	case "droid_working_state_changed":
+		a.idle = v.NewState == "idle"
+		if !a.idle {
+			// A background completion can start another model turn. Its own
+			// completion must arrive before a later idle can finish this run.
+			a.turnCompleted = false
+		}
+		if v.BackgroundWork != nil {
+			a.backgroundWork = *v.BackgroundWork
+		}
 		if v.NewState != "compacting_conversation" {
 			// The CLI returns to streaming on successful compaction even when
 			// no summary was saved. Idle alone does not prove success.
@@ -370,7 +380,7 @@ func (a *droidRPC) update(raw json.RawMessage) error {
 			return fmt.Errorf("Droid stopped: %s", v.Reason)
 		}
 		a.finishCompaction("unknown")
-		a.done = true
+		a.turnCompleted = true
 		return nil
 	case "error":
 		if a.compacting {

@@ -53,6 +53,8 @@ flowchart TD
 
 Codex 的 `Session.Run` 在提交被接受后返回，最终状态来自常驻连接的通知；Pi/Droid/Claude Code 的 `Session.Run` 持续消费协议流，直到原生协议确认整个任务结束。Claude Code 的 result 可能早于后台任务完成，需同时等待会话空闲及已启动任务收尾。这个差异留在驱动与会话层，Controller 只消费 `Accepted` 和 `End`。
 
+Droid 的 `agent_turn_completed` 只表示一次模型回合结束，还需等待 `droid_working_state_changed` 的 `idle` 且 `backgroundWork` 清零。后台 Script、Execute 或子任务仍待唤醒时，保留同一 RPC 进程和本地运行记录；再次进入工作状态后，等待新回合自己的完成通知。旧 CLI 未提供后台计数时仍等待完成与 idle，但无法保证未报告的后台工作被保留。工具返回 `running` 或 `WaitForScript` 返回本身都不是整轮完成依据。
+
 Pi/Droid/Claude Code 取消会回收本轮进程树。Codex 使用 turn/interrupt，保留 App Server 连接。关闭应用会取消运行实例及目录探测，再关闭原生连接。
 
 ## 事件与身份
@@ -74,7 +76,7 @@ Pi 使用应用数据目录下的会话文件，Droid/Codex 使用各自返回�
 | 能力 | Codex | Pi | Droid | Claude Code |
 | --- | --- | --- | --- | --- |
 | 传输 | 常驻 App Server，复用连接 | 每轮 RPC 进程，复用会话文件 | 每轮 JSON-RPC 进程，load_session 续聊 | 每轮 stream-json 进程，--resume 续聊 |
-| 整轮结束 | turn/completed | agent_settled，agent_end 不算结束 | agent_turn_completed | result、会话 idle、后台任务收尾 |
+| 整轮结束 | turn/completed | agent_settled，agent_end 不算结束 | agent_turn_completed、idle、backgroundWork 清零 | result、会话 idle、后台任务收尾 |
 | 输入被接受 | turn/start 回复 | prompt 成功回复 | add_user_message 成功回复 | 匹配 UUID 的 user 回显 |
 | 模型/思考目录 | model/list | get_available_models | droid.list_models | control initialize models |
 | 计划执行模式 | collaborationMode | 当前未接入 | 当前未接入 | 当前未接入 |
