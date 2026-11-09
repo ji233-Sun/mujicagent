@@ -47,6 +47,10 @@ type Controller struct {
 	streamFinal                         bool
 	writer                              *snapshotWriter
 	epoch                               int
+	connectCancel                       context.CancelFunc
+	reconnectTimer                      *time.Timer
+	reconnectGeneration                 uint64
+	connectionQueue                     map[string]bool
 }
 
 func New(dir string, s *model.State, wake func()) *Controller {
@@ -94,6 +98,11 @@ func (c *Controller) Save() {
 func (c *Controller) Close() {
 	c.once.Do(func() {
 		close(c.stop)
+		c.epoch++
+		c.cancelReconnect()
+		if c.connectCancel != nil {
+			c.connectCancel()
+		}
 		c.CancelHarness("codex")
 		for _, run := range c.turnRuns {
 			run.close()
@@ -129,23 +138,34 @@ func (c *Controller) AnyRunning() bool {
 }
 
 func (c *Controller) Connect() {
-	if c.Connection == "Connecting" || c.AnyRunning() || c.HarnessInstalling() {
+	if !c.CanConnect() {
 		return
 	}
+	c.cancelReconnect()
+	if c.connectCancel != nil {
+		c.connectCancel()
+	}
+	connectionCtx, connectionCancel := context.WithCancel(context.Background())
+	c.connectCancel = connectionCancel
+	c.epoch++
 	if c.client != nil {
 		c.client.Close()
 		c.client = nil
 	}
-	c.epoch++
 	epoch := c.epoch
 	c.Connection = "Connecting"
 	c.Error = ""
-	c.Requests = nil
+	for i := len(c.Requests) - 1; i >= 0; i-- {
+		if c.agentReplies[c.Requests[i]] == nil {
+			c.Requests = append(c.Requests[:i], c.Requests[i+1:]...)
+		}
+	}
 	c.loaded = map[string]bool{}
 	c.permissionUpdates = map[string]bool{}
 	binary := c.State.Settings.CodexPath
 	go func() {
-		ctx, cancel := codex.Timeout()
+		defer connectionCancel()
+		ctx, cancel := context.WithTimeout(connectionCtx, 45*time.Second)
 		defer cancel()
 		client, err := codex.Start(ctx, binary, func(m codex.Message) {
 			c.post(func() {
@@ -159,6 +179,7 @@ func (c *Controller) Connect() {
 				if epoch == c.epoch {
 					c.Connection = "Disconnected"
 					c.ReportError(err.Error())
+					c.scheduleReconnect()
 				}
 			})
 			return
@@ -185,14 +206,26 @@ func (c *Controller) Connect() {
 				break
 			}
 		}
-		accountCtx, accountCancel := context.WithTimeout(context.Background(), 50*time.Second)
+		accountCtx, accountCancel := context.WithTimeout(connectionCtx, 50*time.Second)
 		account, accountErr := client.ReadAccount(accountCtx)
 		accountCancel()
+		if connectionCtx.Err() != nil {
+			client.Close()
+			return
+		}
 		version := client.Version()
+		applied := make(chan struct{})
 		c.post(func() {
-			if epoch != c.epoch {
+			defer close(applied)
+			if epoch != c.epoch || c.closed() {
 				client.Close()
 				return
+			}
+			select {
+			case <-client.Done():
+				// The transport's closure event will schedule the retry.
+				return
+			default:
 			}
 			c.client = client
 			c.Connection = "Connected"
@@ -218,7 +251,13 @@ func (c *Controller) Connect() {
 				c.State.Settings.ServiceTier = ""
 			}
 			c.Save()
+			c.resumeConnectionQueue()
 		})
+		select {
+		case <-applied:
+		case <-c.stop:
+			client.Close()
+		}
 	}()
 }
 
@@ -458,6 +497,9 @@ func (c *Controller) Send(text string, plan bool) bool {
 		t.Queue = append(t.Queue, model.QueuedMessage{ID: model.ID(), Text: text})
 		t.Draft = ""
 		c.Save()
+		if t.Driver() == "codex" && c.Connection != "Connected" {
+			c.Connect()
+		}
 		return true
 	}
 	if !c.sendThread(t, text, plan, "") {
@@ -562,7 +604,14 @@ func (c *Controller) removeRequest(id json.RawMessage) {
 
 func (c *Controller) handle(m codex.Message) {
 	if m.Method == "transport/closed" || m.Method == "transport/error" {
+		c.epoch++
+		if c.connectCancel != nil {
+			c.connectCancel()
+		}
 		c.Connection = "Disconnected"
+		if c.client != nil {
+			c.client.Close()
+		}
 		c.client = nil
 		if m.Error != nil {
 			c.ReportError(m.Error.Message)
@@ -586,6 +635,7 @@ func (c *Controller) handle(m codex.Message) {
 			}
 		}
 		c.streamDirty, c.streamFinal = true, true
+		c.scheduleReconnect()
 		return
 	}
 	native, known, err := harness.DecodeCodexEvent(m)

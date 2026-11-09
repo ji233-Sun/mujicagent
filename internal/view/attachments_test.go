@@ -226,6 +226,7 @@ func TestAttachmentOpening(t *testing.T) {
 func TestAttachmentComposer(t *testing.T) {
 	state := model.New()
 	c := controller.New(t.TempDir(), state, nil)
+	defer c.Close()
 	c.AddProject(t.TempDir())
 	thread := state.Thread(state.Selected)
 	a := model.Attachment{Kind: "file", Path: filepath.Join(t.TempDir(), "data.xyz")}
@@ -253,10 +254,13 @@ func TestAttachmentComposer(t *testing.T) {
 		t.Fatalf("copy: %s", tt.Clipboard())
 	}
 	tt.Key(0, ui.KeyRight)
+	// Installation blocks submission; an ordinary disconnection now queues it.
+	c.HarnessFor("codex").Installing = true
 	tt.Key(0, ui.KeyEnter)
 	if thread.Draft != "前文"+a.Link()+"后文" {
 		t.Fatal("failed send lost draft")
 	}
+	c.HarnessFor("codex").Installing = false
 	v.editor.SetSelection(3, 3)
 	tt.Frame()
 	tt.Key(0, ui.KeyBackspace)
@@ -272,6 +276,11 @@ func TestAttachmentComposer(t *testing.T) {
 	tt.Key(ui.Cmd, ui.KeyV)
 	if thread.Draft != "粘贴"+a.Link()+"末尾" || v.editor.Text().Len() != 5 {
 		t.Fatalf("paste: %s", thread.Draft)
+	}
+	c.Connection = "Connecting"
+	tt.Key(0, ui.KeyEnter)
+	if thread.Draft != "" || len(thread.Queue) != 1 || thread.Queue[0].Text != "粘贴"+a.Link()+"末尾" {
+		t.Fatal("offline send lost text or attachment")
 	}
 	c.NewThread(thread.ProjectID)
 	tt.Frame()

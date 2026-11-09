@@ -99,7 +99,7 @@ func (v *View) agentsPane(c *ui.Context) {
 						services.OpenURL(endpoint)
 					}
 				}
-				ui.PrimaryButton(c, label).Height(28).FontSize(12).Radius(6).Padding(0, 12).Disabled(v.C.AnyRunning() || v.C.HarnessInstalling() || u.Preparing || v.C.Connection == "Connecting").OnClick(action)
+				ui.PrimaryButton(c, label).Height(28).FontSize(12).Radius(6).Padding(0, 12).Disabled(id == "codex" && !v.C.CanConnect()).OnClick(action)
 			})
 			if u.Release.Version != "" || u.Missing || u.Installing || u.Error != "" {
 				ui.Column(c).Padding(0, 14, 10).Gap(6).Children(func() {
