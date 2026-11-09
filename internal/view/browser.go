@@ -2,8 +2,8 @@ package view
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
-	"net/url"
 	"strings"
 	"time"
 
@@ -277,8 +277,7 @@ func (v *View) browserOpen(id string) {
 		return
 	}
 	address := strings.TrimSpace(s.address)
-	u, err := url.Parse(address)
-	if err != nil || u.Hostname() == "" || u.User != nil || u.Opaque != "" || (u.Scheme != "http" && u.Scheme != "https") || strings.ContainsAny(address, "\r\n\t\\") {
+	if browser.ValidateURL(address) != nil {
 		s.err = browser.ErrInvalidArgument
 		return
 	}
@@ -314,8 +313,11 @@ func (v *View) browserResumeDialog(c *ui.Context) {
 		ui.Text(c, tx.BrowserPermissionsHint()).FontSize(12)
 		ui.Checkbox(c, &s.permissions.Navigate, tx.BrowserAllowNavigate())
 		ui.Checkbox(c, &s.permissions.Interact, tx.BrowserAllowInteract())
-		ui.Checkbox(c, &s.permissions.Capture, tx.BrowserAllowCapture())
+		ui.Checkbox(c, &s.permissions.Capture, tx.BrowserAllowCapture()).Disabled(!s.status.CaptureSupported)
 		ui.Text(c, tx.BrowserCaptureHint()).FontSize(11).TextColor(c.Theme().TextMuted)
+		if !s.status.CaptureSupported {
+			ui.Text(c, tx.BrowserCaptureUnavailable()).FontSize(11).TextColor(c.Theme().TextMuted)
+		}
 		ui.Text(c, s.status.URL).FontSize(11).SingleLine().TextColor(c.Theme().TextMuted)
 		ui.Row(c).Justify(ui.End).Gap(8).Children(func() {
 			ui.Button(c, tx.Cancel()).OnClick(func() { s.confirm = false })
@@ -384,4 +386,65 @@ func (v *View) browserError(err error) string {
 		}
 	}
 	return tx.BrowserEngineError()
+}
+
+func (v *View) browserActivityText(item *model.Item, expanded bool) (string, bool) {
+	if item.MCP == nil {
+		return "", false
+	}
+	tx := v.texts()
+	var title string
+	switch item.MCP.Tool {
+	case "browser_open":
+		title = tx.BrowserToolOpen()
+	case "browser_observe":
+		title = tx.BrowserToolObserve()
+	case "browser_click":
+		title = tx.BrowserToolClick()
+	case "browser_fill":
+		title = tx.BrowserToolFill()
+	case "browser_scroll":
+		title = tx.BrowserToolScroll()
+	case "browser_capture":
+		title = tx.BrowserToolCapture()
+	default:
+		return "", false
+	}
+	if !expanded {
+		return title, true
+	}
+	var result struct {
+		Dispatch   browser.Dispatch
+		Completion browser.Completion
+		Error      *struct{ Code string }
+	}
+	_ = json.Unmarshal([]byte(item.MCP.Result), &result)
+	if result.Error != nil {
+		classification := map[string]error{
+			"cancelled": context.Canceled, "timeout": context.DeadlineExceeded,
+			"invalid_argument": browser.ErrInvalidArgument, "not_found": browser.ErrNotFound,
+			"closed": browser.ErrClosed, "stale": browser.ErrStale, "busy": browser.ErrBusy,
+			"permission_denied": browser.ErrPermissionDenied, "unsupported": browser.ErrUnsupported,
+			"sensitive": browser.ErrSensitive, "unconfirmed": browser.ErrUnconfirmed,
+		}[result.Error.Code]
+		if classification == nil {
+			classification = browser.ErrEngine
+		}
+		title += "\n" + v.browserError(classification)
+	} else if result.Completion == browser.CompletionObserved {
+		title += "\n" + tx.BrowserObserved()
+	} else if item.Status == "completed" {
+		title += "\n" + tx.McpCompleted()
+	}
+	switch result.Dispatch {
+	case browser.DispatchNone:
+		title += "\n" + tx.BrowserNotDispatched()
+	case browser.DispatchSent:
+		if result.Completion != browser.CompletionObserved {
+			title += "\n" + tx.BrowserDispatched()
+		}
+	case browser.DispatchUnknown:
+		title += "\n" + tx.BrowserDispatchUnknown()
+	}
+	return title, true
 }

@@ -1,6 +1,6 @@
 # Codex BrowserUse 协议与装配边界
 
-本模块完成 #30 的注册与分派接口，依赖 #26 的 [browser 契约](../internal/browser/README.md)。#31 负责把这些接口接入公共入口、实际浏览器执行器和 UI 生命周期；本次不修改 `main.go`、`controller.go`、布局或 locales。
+本模块提供 #30 的注册与分派接口，依赖 #26 的 [browser 契约](../internal/browser/README.md)。生产装配位于 `main.go`、`internal/controller/browser_runtime.go`、`internal/harness/codex_session.go` 及 `internal/view/browser_runtime.go`，共用 #29 的真实执行器。使用方法、平台限制和验收证据见 [运行说明](browseruse-runtime.md)。
 
 ## 协议依据
 

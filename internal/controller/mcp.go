@@ -3,19 +3,12 @@ package controller
 import (
 	"bytes"
 	"encoding/json"
-	"regexp"
 	"strings"
+
+	"github.com/ji233-Sun/mujicagent/internal/redact"
 )
 
-const mcpRedacted = "[REDACTED]"
-
-var (
-	mcpCredentialAssignment = regexp.MustCompile(`(?i)((?:"|')?(?:[a-z0-9_.-]*(?:token|secret|password|passwd|passphrase|api[_-]?key|access[_-]?key|private[_-]?key)|authorization|proxy-authorization|credentials?)(?:"|')?\s*[:=]\s*)(?:(?:bearer|basic)\s+)?("[^"]*"|'[^']*'|[^\s,;&}\]]+)`)
-	mcpAuthorization        = regexp.MustCompile(`(?i)\b(bearer|basic)\s+[a-z0-9._~+/=-]+`)
-	mcpCookie               = regexp.MustCompile(`(?im)(\b(?:cookie|set-cookie)\s*:\s*)[^\r\n]+`)
-	mcpPrivateKey           = regexp.MustCompile(`(?s)-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----`)
-	mcpURLCredentials       = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://)[^/@\s]+:[^/@\s]+@`)
-)
+const mcpRedacted = redact.Marker
 
 func sensitiveMCPKey(key string) bool {
 	key = strings.ToLower(strings.Map(func(r rune) rune {
@@ -79,9 +72,5 @@ func redactMCPText(text string) string {
 	if (strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[")) && json.Valid([]byte(trimmed)) {
 		return redactMCPJSON(json.RawMessage(trimmed))
 	}
-	text = mcpPrivateKey.ReplaceAllString(text, mcpRedacted)
-	text = mcpURLCredentials.ReplaceAllString(text, "${1}"+mcpRedacted+"@")
-	text = mcpCookie.ReplaceAllString(text, "${1}"+mcpRedacted)
-	text = mcpCredentialAssignment.ReplaceAllString(text, "${1}"+mcpRedacted)
-	return mcpAuthorization.ReplaceAllString(text, "${1} "+mcpRedacted)
+	return redact.Text(text)
 }

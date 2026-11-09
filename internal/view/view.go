@@ -435,9 +435,14 @@ func (v *View) item(c *ui.Context, item *model.Item, key string, running bool) {
 		v.mcpItem(c, item, key, running)
 		return
 	}
+	browserActivity := false
 	if item.MCP != nil && item.Kind != "plan" {
 		display := *item
 		display.Text = toolActivityText(item, *v.openState(key))
+		if text, ok := v.browserActivityText(item, *v.openState(key)); ok {
+			display.Text = text
+			browserActivity = true
+		}
 		item = &display
 	}
 	if item.Kind == "steerMessage" {
@@ -487,6 +492,10 @@ func (v *View) item(c *ui.Context, item *model.Item, key string, running bool) {
 					label = tx.WaitingForReasoning()
 				}
 				ui.Text(c, label).FontSize(12).TextColor(c.Theme().TextMuted)
+			} else if browserActivity {
+				ui.Column(c).FillWidth().Background(c.Theme().Background).Radius(8).Padding(8).Children(func() {
+					ui.Text(c, item.Text).FontSize(12).Selectable()
+				})
 			} else if item.Kind == "commandExecution" || item.Kind == "fileChange" || item.MCP != nil && item.Kind != "plan" {
 				v.activityOutput(c, item, key)
 			} else if item.Kind == "plan" {

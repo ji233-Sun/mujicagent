@@ -139,6 +139,26 @@ type browserTestReply struct {
 	response codex.DynamicToolResponse
 }
 
+type browserTestRuntime struct{ *browserTestBackend }
+
+func (*browserTestRuntime) Shutdown() {}
+
+func TestBrowserContextIsCodexOnly(t *testing.T) {
+	c := New(t.TempDir(), model.New(), nil)
+	t.Cleanup(c.Close)
+	thread := &model.Thread{ID: "local-a"}
+	c.State.Threads = []*model.Thread{thread}
+	c.browser = &browserTestRuntime{newBrowserTestBackend(t)}
+	c.browserDispatcher = NewBrowserToolDispatcher(c.browser, c.browser, nil, nil)
+	for _, driver := range []string{"pi", "droid", "claude", "codex"} {
+		thread.Harness = driver
+		prompt, active := c.browserPrompt(thread.ID)
+		if (driver == "codex") != active || (prompt != "") != active {
+			t.Fatalf("%s received wrong browser context: active=%v", driver, active)
+		}
+	}
+}
+
 func newBrowserTestDispatcher(t *testing.T, f *browserTestBackend) (*BrowserToolDispatcher, chan browserTestReply, chan BrowserToolActivity) {
 	t.Helper()
 	replies := make(chan browserTestReply, 256)
@@ -199,6 +219,59 @@ func browserTestOutput(t *testing.T, response codex.DynamicToolResponse) browser
 		t.Fatalf("invalid dynamic tool result: %+v", response)
 	}
 	return output
+}
+
+func TestBrowserExplicitResumeRearmsOnlyCancelledOwner(t *testing.T) {
+	backend := newBrowserTestBackend(t)
+	dispatcher, replies, _ := newBrowserTestDispatcher(t, backend)
+	key := browser.PageKey{ThreadID: "local-a", PageID: "page-a"}
+	dispatcher.ClosePage(key)
+	if err := dispatcher.BindTurn(context.Background(), "server-a", "turn-a", key); !errors.Is(err, browser.ErrStale) {
+		t.Fatalf("ordinary notification revived paused owner: %v", err)
+	}
+	if err := dispatcher.ResumeTurn(context.Background(), "server-a", "turn-a", browser.PageKey{ThreadID: "local-a", PageID: "other"}); !errors.Is(err, browser.ErrStale) {
+		t.Fatalf("wrong page revived owner: %v", err)
+	}
+	if err := dispatcher.ResumeTurn(context.Background(), "server-a", "turn-a", key); err != nil {
+		t.Fatal(err)
+	}
+	message := browserTestMessage(`"resumed"`, "a", "turn-a", "after-resume", codex.BrowserObserve, `{"pageId":"page-a","navigation":1}`)
+	dispatcher.Handle(message)
+	reply := readBrowserTestReply(t, replies)
+	if !reply.response.Success {
+		t.Fatalf("explicitly resumed call failed: %+v", browserTestOutput(t, reply.response))
+	}
+	dispatcher.Handle(message)
+	select {
+	case <-replies:
+		t.Fatal("explicit resume lost request deduplication")
+	default:
+	}
+}
+
+func TestBrowserDispatchDoesNotBlockFullUIQueue(t *testing.T) {
+	backend := newBrowserTestBackend(t)
+	dispatcher, _, _ := newBrowserTestDispatcher(t, backend)
+	c := New(t.TempDir(), model.New(), nil)
+	t.Cleanup(c.Close)
+	c.browserDispatcher = dispatcher
+	for i := 0; i < cap(c.events); i++ {
+		c.events <- func() {}
+	}
+	started, finished, returned := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	dispatcher.emit = func(BrowserToolActivity) { close(started); c.post(func() {}); close(finished) }
+	message := browserTestMessage(`"full-queue"`, "a", "turn-a", "invalid-observe", codex.BrowserObserve, `{"pageId":"page-a"}`)
+	go func() { c.handle(message); close(returned) }()
+	<-started
+	select {
+	case <-returned:
+	case <-time.After(time.Second):
+		<-c.events
+		<-finished
+		t.Fatal("browser dispatch blocked the UI queue consumer")
+	}
+	<-c.events
+	<-finished
 }
 
 func TestBrowserToolsAppServerRoundTrip(t *testing.T) {

@@ -1,8 +1,8 @@
 # BrowserUse 集成验收准备（#31）
 
-本文件是 [#31](https://github.com/ji233-Sun/mujicagent/issues/31) 前置完成前的验收用例与受控测试材料，当前未完成生产装配或端到端验收。协议接线顺序见 [Codex 装配边界](codex-browser-tools.md)，执行语义见 [browser 契约](../internal/browser/README.md)。
+本文件最初由 PR #105 提供验收准备，保留完整目标的用例矩阵。2026-11-09 用户已选择受限首版，后续实现与实际验证结论见 [运行说明](browseruse-runtime.md)。下表中的历史阻塞与“待执行”不是当前进度，也不能自动视为全部通过。协议依据见 [Codex 装配边界](codex-browser-tools.md)，执行语义见 [browser 契约](../internal/browser/README.md)。
 
-## 开工条件
+## 原始开工条件（历史）
 
 2026-11-09 核对主分支 `a0050f64956cac50a773638bb8e4d9a709d2b90c` 及 Issue 讨论：
 
@@ -44,9 +44,9 @@ python3 -m http.server 0 --bind 127.0.0.1 --directory internal/browser/testdata
 | `Replace JSON.stringify` | 主动破坏 pageWorld 返回封装；最后执行并重新加载复原，不能作为权限或宿主安全判断依据 |
 | `Bottom marker` | 主视口滚动结果；边界未移动时不能假报成功 |
 
-## 集成后执行顺序与通过标准
+## 完整目标验收矩阵
 
-下表全部为待执行用例。界面入口、实际执行器或证据缺失时登记“阻塞”，不改为“通过”。
+下表按实际运行证据逐项核对；界面入口、实际执行器或证据缺失时登记“阻塞”，不改为“通过”。受限首版的正向操作链路使用 [acceptance-simple.html](../internal/browser/testdata/acceptance-simple.html)，避免把同时包含密码及 iframe 的边界测试页当作可安全截图的页面。原始 `acceptance.html` 继续用于敏感数据及不支持能力验证。
 
 | 用例 | 操作 | 必须观察到的结果 |
 | --- | --- | --- |
@@ -79,14 +79,14 @@ A5/A6/A9 必须分别记录协议等待结束与底层排空完成。夹具的 2
 
 ## 已有回归入口与后续验证
 
-现有测试仍使用页面替身/假服务，适合接线回归，不能证明真实执行器或原生输入：
+以下单元与协议回归使用页面替身/假服务；真实执行器和模型的独立入口见[运行说明](browseruse-runtime.md)，不能用这些回归替代原生验收：
 
 ```sh
 CGO_ENABLED=0 go test ./internal/view ./internal/codex ./internal/controller -run 'TestBrowser|TestDynamicTool' -count=1
 go test -race ./internal/codex ./internal/controller -run 'TestBrowser|TestDynamicTool' -count=1
 ```
 
-UI 布局证据使用直接设置状态的 `TestBrowserLayoutScreenshots`，按 [MyGo 维护规则](../.agents/skills/mygo-maintenance/SKILL.md#verification) 生成并查看本次 CPU 离屏 PNG。原生窗口、IME、实际 WebView 键盘释放和 GPU 仍需单独记录。此准备变更没有改变产品布局，无需为静态测试页补产品 UI 截图。
+UI 布局证据使用直接设置状态的 `TestBrowserLayoutScreenshots`，按 [MyGo 维护规则](../.agents/skills/mygo-maintenance/SKILL.md#verification) 生成并查看本次 CPU 离屏 PNG。当前集成已更新权限与工具摘要，并生成 40 个中英文/尺寸场景。原生窗口、IME、实际 WebView 键盘释放和 GPU 仍需单独记录。
 
 实际集成改变代码后，以[当前 CI](../.github/workflows/ci.yml)及 #31 要求执行并保存结果：
 
@@ -106,6 +106,25 @@ go tool mygo build -platform "darwin/arm64,darwin/amd64"
 
 ## 验收记录
 
+2026-11-09 当前实现的核对结果如下；更具体的命令、范围及安全限制见[运行说明](browseruse-runtime.md)。需求方随后明确选择“本次豁免剩余人工项，按现有证据合并并关闭”，授权合并 PR 与关闭关联 Issue。A5–A9/A13 中未执行的人工流程按本次豁免处理，不改写为通过；原始矩阵保留完整目标。
+
+| 用例 | 当前证据与剩余项 |
+| --- | --- |
+| A1 | 生命周期、权限及 UI 回归通过；新页 Human、权限默认关闭；支持扩展的 macOS 提供独立 Capture 授权 |
+| A2 | 原生主文档及真实 Codex 六工具链路通过，含实际视口 PNG 回传 |
+| A3 | 原生实际表单导航、代次增长、旧引用拒绝和滚动通过 |
+| A4 | 文本敏感保护、30 次独立脱敏位图对比（含 body 外可见凭据/ResizeObserver）与 13 类复杂内容拒绝通过；不承诺识别任意无标识秘密 |
+| A5 | 原生截图实际在途取消的 race 通过：立即撤权、Busy 持续至排空、不返回 PNG；人工输入过程未验收 |
+| A6 | 原生截图中关页/导航及旧代次拒绝通过；停止/删除的完整原生人工流程未验收 |
+| A7 | CPU 收起状态及原生恢复后切换撤权通过；原生层级仍未人工验收 |
+| A8 | 同源双临时 Session、关页重建的 Cookie/localStorage 隔离通过；未执行完整应用重启人工流程 |
+| A9 | 既有协议断线/注册/去重回归通过；原生活动期间断线与重连未完整验收 |
+| A10 | 协议去重及页/观察引用的单元、race、原生 DOM 变化回归通过；Capture 保持原有效引用，截图中导航返回 stale |
+| A11 | 主文档限定；iframe、弹窗和可信输入不提供自动化，不视作完整能力通过 |
+| A12 | Go 绑定拒绝、隔离 world 抵抗 main world 序列化/原型篡改、复杂页面无 PNG 拒绝通过；非扩展平台保留不可信返回边界 |
+| A13 | 人工焦点、IME、系统窗口层级检查未执行；2026-11-09 需求方明确豁免本次验收，不计为通过 |
+| A14 | 中英文 CPU 工具状态、注册错误本地化和活动脱敏回归通过；不代表原生输入验收 |
+
 每次执行复制本模板，结果填写通过/失败/阻塞/未执行，附可访问证据。协议原始正文、填充值、Cookie 和未脱敏截图不写入持久日志或 PR；证据仅使用上述合成页面数据。
 
 | 字段 | 记录 |
@@ -118,4 +137,16 @@ go tool mygo build -platform "darwin/arm64,darwin/amd64"
 | 证据类型与附件链接（CPU/原生网页/原生窗口/真实模型） | 待填写 |
 | 结果、剩余问题、清理结果与运行验证限制 | 待填写 |
 
-只有 #31 的全部验收完整满足后才使用关闭关键词，并回填 #25；本准备材料不关闭任何集成或总任务 Issue。
+按需求方最终确认的受限范围及人工项豁免记录关闭 #31，并回填 #25；不将豁免写成已执行或已通过。
+
+## 本次豁免的人工原生验收
+
+当前 #29 执行器已有实际六操作、隔离、取消与导航证据。需求方已豁免以下剩余人工流程，#29/#31/#25 可按最终确认范围随交付 PR 合并关闭。以下清单保留供后续复验，实际执行仍须人工操作，不能以 CPU PNG、DOM API 或桌面自动化冒充：
+
+1. 按前文启动 loopback 夹具；构建 helper 后使用隔离的 `MUJICAGENT_DATA_DIR` 启动应用。只访问合成页，不填写真实凭据。
+2. 在宽/窄窗口中以人工键鼠切换地址栏、聊天输入和网页输入。用中文 IME 组合并确认文字；地址栏 Enter 只导航，不能发送聊天。
+3. 打开权限弹窗和设置，检查原生网页没有遮挡浮层；关闭浮层后焦点正确。收起、再展开网页，检查层级和尺寸。
+4. 在 Agent 操作期间暂停，核对立即撤权、排空前不能输入或恢复；排空后人工输入/点击生效，再显式恢复。
+5. 连续执行停止、关页、切换对话、删除及断线重连；核对不串页、旧结果不覆盖新页、权限不自动恢复。
+6. 两个对话在同一源分别保存合成标记；关页重建及重启应用后确认临时 Session 不保留旧登录。
+7. 复验时记录 macOS build、架构、步骤、结果和原生窗口截图；发现实际失败再提报具体回归。本次豁免不等于这些项目已通过。

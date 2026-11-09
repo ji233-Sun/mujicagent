@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/egoist/mygo"
+	"github.com/ji233-Sun/mujicagent/internal/codex"
 	"github.com/ji233-Sun/mujicagent/internal/model"
 	"github.com/ji233-Sun/mujicagent/locales"
 )
@@ -59,6 +60,10 @@ func (v *View) statusText(message string) string {
 		return tx.CodexConnectionClosed()
 	case "Codex is disconnected":
 		return tx.CodexDisconnected()
+	case codex.ErrBrowserResume.Error():
+		return tx.BrowserThreadUnavailable()
+	case codex.ErrBrowserRegistration.Error():
+		return tx.BrowserRegistrationUnavailable()
 	}
 	if method, ok := strings.CutPrefix(message, "Codex requested an unsupported action: "); ok {
 		return tx.UnsupportedAction(method)

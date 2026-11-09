@@ -67,14 +67,15 @@ type Permissions struct {
 // Status is a detached snapshot. Busy also gates native human input while a
 // previously dispatched operation drains during TakeOver or Close.
 type Status struct {
-	Page        PageRef
-	State       State
-	Busy        bool
-	Loading     bool
-	URL         string // Sanitized display URL; never use it for authorization.
-	Title       string // Sanitized, untrusted page data.
-	Permissions Permissions
-	LastError   error // Safe sentinel/wrapped sentinel, not raw engine/page text.
+	Page             PageRef
+	State            State
+	Busy             bool
+	Loading          bool
+	URL              string // Sanitized display URL; never use it for authorization.
+	Title            string // Sanitized, untrusted page data.
+	Permissions      Permissions
+	LastError        error // Safe sentinel/wrapped sentinel, not raw engine/page text.
+	CaptureSupported bool  // Native capture helper is configured for this page.
 }
 
 type Actor string

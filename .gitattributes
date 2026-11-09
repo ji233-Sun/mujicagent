@@ -1,0 +1,4 @@
+# Preserve upstream source and patch context verbatim. Application code keeps
+# the normal whitespace checks; vendor is independently compared to its source.
+vendor/** -whitespace
+scripts/mygo-native-capture.patch -whitespace

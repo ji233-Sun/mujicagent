@@ -69,6 +69,16 @@ func NewBrowserToolDispatcher(tools browser.Tools, sessions browser.Sessions, re
 // BindTurn takes identities from the host's model.Thread/accepted turn, never
 // from the selected thread or tool arguments. Replacing a turn revokes the old one.
 func (d *BrowserToolDispatcher) BindTurn(ctx context.Context, serverThreadID, turnID string, page browser.PageKey) error {
+	return d.bindTurn(ctx, serverThreadID, turnID, page, false)
+}
+
+// ResumeTurn is host-only and follows a successful explicit Sessions.Resume.
+// Pending calls retain their old cancelled context and cannot reply twice.
+func (d *BrowserToolDispatcher) ResumeTurn(ctx context.Context, serverThreadID, turnID string, page browser.PageKey) error {
+	return d.bindTurn(ctx, serverThreadID, turnID, page, true)
+}
+
+func (d *BrowserToolDispatcher) bindTurn(ctx context.Context, serverThreadID, turnID string, page browser.PageKey, resume bool) error {
 	if !browserRefID(serverThreadID) || !browserRefID(turnID) || !browserRefID(page.ThreadID) || !browserRefID(page.PageID) {
 		return browser.ErrInvalidArgument
 	}
@@ -86,7 +96,7 @@ func (d *BrowserToolDispatcher) BindTurn(ctx context.Context, serverThreadID, tu
 		}
 	}
 	if old := d.turns[serverThreadID]; old != nil {
-		if old.id == turnID {
+		if old.id == turnID && (!resume || old.page != page || old.ctx.Err() == nil) {
 			return browser.ErrStale
 		}
 		old.cancel()
@@ -261,7 +271,11 @@ func (d *BrowserToolDispatcher) execute(p *browserToolPending) browserToolOutput
 		err = browser.ErrPermissionDenied
 	}
 	if err != nil {
-		return browserFailure(err, browser.DispatchNone)
+		output := browserFailure(err, browser.DispatchNone)
+		if status.Page.PageKey == page {
+			output.PageID, output.Navigation = status.Page.PageID, status.Page.Navigation
+		}
+		return output
 	}
 	d.mu.Lock()
 	err = p.ctx.Err()

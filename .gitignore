@@ -1,4 +1,6 @@
 /build/
+/resources/darwin/MujicAgentCapture.bundle/
+/locales.ts
 /.mygo/
 mygo_windows_*.syso
 *.key
