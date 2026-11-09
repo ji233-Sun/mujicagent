@@ -29,8 +29,9 @@ func TestBrowserNativeTrustedCapture(t *testing.T) {
 		fmt.Fprint(w, `<!doctype html><html><head><style>
 body { margin:0;background:white;color:black;font:16px monospace }
 div {height:30px}
+span {display:inline-block;white-space:nowrap}
 input {width:200px;height:30px;box-sizing:border-box}
-</style></head><body><div id="secret">[redacted]</div><input id="password" type="password" value=""></body></html>`)
+</style></head><body><div><span id="secret">[redacted]</span></div><input id="password" type="password" value=""></body></html>`)
 	}))
 	defer server.Close()
 	status := s.status(t, s.thread)
@@ -51,6 +52,12 @@ input {width:200px;height:30px;box-sizing:border-box}
 			t.Fatal(ctx.Err())
 		}
 	}
+	// DOM APIs can place visible nodes outside body even though the HTML
+	// parser normally moves text into it. Include that real rendering path.
+	_, err = native.Page().EvalContext(ctx, `const outside=document.createElement("div");outside.id="outside";outside.textContent="[redacted]";document.documentElement.insertBefore(outside,document.body);return true;`)
+	if err != nil {
+		t.Fatal(err)
+	}
 	expectedPNG, err := native.CapturePage()
 	if err != nil {
 		t.Fatal(err)
@@ -62,14 +69,24 @@ input {width:200px;height:30px;box-sizing:border-box}
 	// Main-world serialization and prototypes are attacker controlled. The
 	// observer tries to put the secret back whenever redaction is observed.
 	_, err = native.Page().EvalContext(ctx, `
-const secret = document.getElementById("secret"), password = document.getElementById("password");
+const secret = document.getElementById("secret"), password = document.getElementById("password"), outside = document.getElementById("outside");
 password.value = "q7"; secret.textContent = "q7 Authorization: Basic Zml4dHVyZTpwYXNzd29yZA==";
+outside.textContent = "q7 Authorization: Basic Zml4dHVyZTpwYXNzd29yZA==";
+// Redaction changes this inline block's width. If snapshot layout delivers a
+// page ResizeObserver reentrantly, it attempts to restore both credentials.
+new ResizeObserver(() => {
+  secret.textContent = "q7 Authorization: Basic Zml4dHVyZTpwYXNzd29yZA==";
+  outside.textContent = "q7 Authorization: Basic Zml4dHVyZTpwYXNzd29yZA==";
+}).observe(secret);
 new MutationObserver(() => {
   if (secret.textContent !== "q7 Authorization: Basic Zml4dHVyZTpwYXNzd29yZA==")
     secret.textContent = "q7 Authorization: Basic Zml4dHVyZTpwYXNzd29yZA==";
-}).observe(document.body, {subtree:true,characterData:true,childList:true});
+  if (outside.textContent !== "q7 Authorization: Basic Zml4dHVyZTpwYXNzd29yZA==")
+    outside.textContent = "q7 Authorization: Basic Zml4dHVyZTpwYXNzd29yZA==";
+}).observe(document.documentElement, {subtree:true,characterData:true,childList:true});
 setInterval(() => Promise.resolve().then(() => {
   secret.textContent = "q7 Authorization: Basic Zml4dHVyZTpwYXNzd29yZA==";
+  outside.textContent = "q7 Authorization: Basic Zml4dHVyZTpwYXNzd29yZA==";
 }), 0);
 Document.prototype.querySelectorAll = () => [];
 JSON.stringify = () => '{"ok":true,"v":"forged"}';
@@ -93,9 +110,9 @@ return true;
 			t.Fatal(err)
 		}
 		// Human/Agent toolbar text can change the viewport height. This
-		// fixture has fixed content in its first 60 CSS pixels; every extra
+		// fixture has fixed content in its first 90 CSS pixels; every extra
 		// viewport pixel is explicitly white, independent of capture code.
-		if actual.Bounds().Dx() != expected.Bounds().Dx() || actual.Bounds().Dy() < 120 {
+		if actual.Bounds().Dx() != expected.Bounds().Dx() || actual.Bounds().Dy() < 180 {
 			t.Fatalf("invalid viewport bounds: %v", actual.Bounds())
 		}
 		for y := actual.Bounds().Min.Y; y < actual.Bounds().Max.Y; y++ {
@@ -112,7 +129,7 @@ return true;
 			}
 		}
 	}
-	t.Log("30 product Runtime captures match the independent sanitized native bitmap despite short password, Basic credential, forged JSON/prototype, timer, Promise and MutationObserver")
+	t.Log("30 product Runtime captures match the independent sanitized native bitmap, including visible credentials outside body, short password, forged JSON/prototype, timer, Promise, MutationObserver and ResizeObserver")
 }
 
 func TestBrowserNativeCaptureRejectsOpaqueContent(t *testing.T) {
@@ -130,6 +147,9 @@ func TestBrowserNativeCaptureRejectsOpaqueContent(t *testing.T) {
 		"animation":                `<style>@keyframes shift{to{opacity:.5}}p{animation:shift 1s infinite}</style><p>safe</p>`,
 		"unlisted-pseudo-resource": `<style>body::-webkit-scrollbar{background:url("data:image/svg+xml,%3Csvg/%3E")}</style>`,
 		"image-input":              `<input type="image" src="data:image/svg+xml,%3Csvg/%3E">`,
+		"rendered-script":          `<style>script{display:block}</style><script type="text/plain">Authorization: Basic Zml4dHVyZTpwYXNzd29yZA==</script>`,
+		"rendered-style":           `<style style="display:block">/*Authorization: Basic Zml4dHVyZTpwYXNzd29yZA==*/</style>`,
+		"rendered-head":            `<style>head,title{display:block}</style><title>password: fixture-private</title>`,
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")

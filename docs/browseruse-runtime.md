@@ -88,11 +88,11 @@ CGO_ENABLED=0 go test ./internal/view -run '^TestBrowserLayoutScreenshots$' -cou
 环境为 macOS 27.2 / arm64、Go 1.27.3、MyGo v0.7.4、Codex CLI 0.167.0。
 
 - 原生受控输入、实际表单导航和滚动、引用失效、Observe→Capture→同引用 Fill、双临时 Session 同源存储隔离、关页重建、Go 绑定拒绝、历史跨源撤权和恢复后切换撤权通过。
-- 30 次产品 Runtime 截图与独立脱敏原生位图逐像素对比通过，包含短密码、Basic 凭据、序列化/原型篡改、timer、Promise 与 MutationObserver；10 类不透明/复杂内容拒绝并保持 PNG 为空。
+- 30 次产品 Runtime 截图与独立脱敏原生位图逐像素对比通过，包含 body 外可见凭据、短密码、Basic、序列化/原型篡改、timer、Promise、MutationObserver 与 ResizeObserver；13 类不透明/复杂内容拒绝并保持 PNG 为空。旧策略对 body 外文字及可显示 script/style/head 的失败先原生复现，再以相同场景确认修复。
 - 原生截图中取消、关页、导航三个场景在 race 下通过：取消后保留 Busy，关页销毁屏障，导航返回 stale，均无图片泄漏。
-- 真实 Codex 最终六工具验收通过，67.92 秒、13 条活动；模型收到实际原生截图，页面提交值和滚动结果吻合。
+- 最终策略从已打包 Resources 加载，真实 Codex 六工具验收通过，56.23 秒、12 条活动；模型收到实际原生截图，页面提交值和滚动结果吻合。包含该轮次的完整原生组合共 60.282 秒通过。
 - 全量 `CGO_ENABLED=0 go test ./...`、四包 race 已通过。初次全量检查受本地原型目录干扰并超时，隔离后完整重跑通过；首次静态检查发现 native pointer 声明告警，修正为原生指针类型。
-- 修正后 MyGo vet、Go vet、i18n、生成检查通过。最终 macOS 双架构打包 17.1 秒，两份 `.app` 的 deep/strict 签名检查通过，包内含 universal helper 和许可声明。从包内 Resources 加载的原生组合通过（4.377 秒）；bridge 夹具改为响应门控，确认阻塞请求仍实际在途后才中断，最终 race 通过（3.932 秒）。工具摘要换行已重跑 view 全包与 MyGo vet；Windows amd64/arm64 的 Go 交叉构建通过，未运行原生安装器。
+- 修正后 MyGo vet、Go vet、i18n、生成检查通过。最终 macOS 双架构打包 13.7 秒，两份 `.app` 的 deep/strict 签名检查通过，包内含 universal helper 和许可声明。bridge 夹具采用响应门控，确认阻塞请求仍实际在途后才中断，最终包内扩展 race 通过（3.165 秒）。最终策略还重跑 browser/view 全包与 MyGo/Go vet；工具摘要换行已有本次 CPU 截图。Windows amd64/arm64 的 Go 交叉构建通过。
 - CPU 共 40 张：中英文、840×560/1440×900，涵盖人工/Agent/加载/排空/错误/收起/权限/截图不可用/未连接/工具记录。
-- 历史 CI `42583794768` 的 macOS verify 通过；Windows 代码检查通过，但下载安装包遭 HTTP 504，整体未通过。它不代表本次原生扩展变更的 CI 结果。
+- CI `42599076745`（2d2d7b2）macOS verify/双架构打包及 Windows 检查/双架构安装器均通过。历史 `42583794768` 的 Windows HTTP 504 不作为通过记录；最终 document 文本范围补强仍以其后提交的 CI 为准。
 - 尚未完成人工焦点、IME、原生窗口层级、完整停止/删除/断线重连与应用重启流程；Windows/Linux 原生运行及 GPU 未验证。系统 WebKit 私有接口须按系统版本重验，跨架构构建不能替代运行证据。

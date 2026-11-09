@@ -21,6 +21,7 @@ macOS Capture 使用系统 WebKit 的进程内扩展。检查、临时脱敏和�
 - 最多 4096 元素、8192 文本节点、262144 文本字符及 262144 样式字符。
 - 拒绝 frame、闭合/自定义 shadow root、图片、canvas、SVG/Math、媒体、object/embed、select、自定义元素、动画及无法读取的样式。
 - 拒绝资源 URL/paint/image-set、自定义字体/计数器、生成内容和非空列表标记等未纳入凭据检查的渲染来源。
+- 文本遍历覆盖整个 document，包含 DOM API 插入到 body 外的可见节点。script/style/noscript 等仅在隐藏时才跳过；CSS 令 head/title/script/style/noscript 可显示时拒绝截图。
 - 输入和 textarea 的当前值与占位文字临时清空；textarea/contenteditable 正文替换。发现常见凭据格式或敏感字段值回显时，全部正文文本替换成 `[redacted]`。
 - CSS 视口每边最多 4096，scale 1–4；位图每边最多 8192 且不超过 16777216 像素，PNG 最多 4 MiB；先检查尺寸再栅格化。IPC 与固定工具返回也有界。
 - 无法识别没有任何标识的任意秘密；无法安全检查的页面返回 Sensitive，不回传部分图。
@@ -43,4 +44,4 @@ WebKit 的异步 `takeSnapshotWithConfiguration`、节点句柄或暂停 API 也
 - [BackForwardCache.cpp](https://github.com/WebKit/WebKit/blob/8e16cbe44f3a7e6aec2a641d612cba2b641cbf87/Source/WebCore/history/BackForwardCache.cpp)：暂停之前仍派发 pagehide。
 - [WebFrame.cpp](https://github.com/WebKit/WebKit/blob/8e16cbe44f3a7e6aec2a641d612cba2b641cbf87/Source/WebKit/WebProcess/WebPage/WebFrame.cpp)：后续节点快照解析活节点。
 
-实际回归包括 30 次独立位图对比、10 类复杂内容拒绝、真实原生取消/关页/导航 race，以及最终真实 Codex 六工具与图片传递。命令及验收缺口见 [运行说明](browseruse-runtime.md)。人工焦点、IME 和原生层级仍阻塞 #31/#25 的完整验收。
+实际回归包括 30 次独立位图对比（含 body 外可见凭据及 ResizeObserver）、13 类复杂内容拒绝、真实原生取消/关页/导航 race，以及真实 Codex 六工具与图片传递。body 外文字与可显示 script/style/head 的旧策略失败先在原生环境复现，修改后同一场景通过。命令及验收缺口见 [运行说明](browseruse-runtime.md)。人工焦点、IME 和原生层级仍阻塞 #31/#25 的完整验收。

@@ -36,6 +36,10 @@ for (const e of nodes) {
   // resources and paint worklets cannot be inspected by this policy.
   for (const pseudo of [null, "::before", "::after", "::marker"]) {
     const s = getComputedStyle(e, pseudo);
+    // Text in script/style/noscript is excluded below only because these
+    // metadata nodes are normally hidden. CSS can make that text visible.
+    if (pseudo === null && /^(HEAD|TITLE|SCRIPT|STYLE|NOSCRIPT)$/.test(e.tagName) &&
+        s.display !== "none") return false;
     if (s.display === "list-item" && s.listStyleType !== "none") return false;
     if (s.content && !["none", "normal", '""', "''"].includes(s.content) ||
         /url\(|paint\(/i.test(s.backgroundImage + s.borderImageSource +
@@ -47,7 +51,8 @@ const secrets = controls.filter(e => e.type === "password" || e.type === "hidden
   /password|passwd|secret|token|authorization|cookie|credit|card.number|cc-|one.time|otp|api.key/i.test(
     [e.name, e.id, e.autocomplete, e.getAttribute("aria-label")].join(" ")))
   .map(e => e.value).filter(Boolean);
-const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+// DOM APIs can insert painted text directly under html, outside body.
+const walker = document.createTreeWalker(document, NodeFilter.SHOW_TEXT);
 const text = [];
 let node, size = 0;
 while (node = walker.nextNode()) {
