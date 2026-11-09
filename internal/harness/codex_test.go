@@ -1166,7 +1166,10 @@ func TestRegisteredAgentContracts(t *testing.T) {
 	if err := a.update(json.RawMessage(`{"type":"agent_turn_completed","reason":"permission_rejected"}`)); err == nil {
 		t.Fatal("rejected turn treated as success")
 	}
-	if err := a.update(json.RawMessage(`{"type":"agent_turn_completed","reason":"completed"}`)); err != nil || !a.done {
+	if err := a.update(json.RawMessage(`{"type":"agent_turn_completed","reason":"completed"}`)); err != nil || a.done() {
+		t.Fatal("completion must wait for idle", err)
+	}
+	if err := a.update(json.RawMessage(`{"type":"droid_working_state_changed","newState":"idle"}`)); err != nil || !a.done() {
 		t.Fatal("completion missing", err)
 	}
 }
@@ -1198,6 +1201,173 @@ func TestSteerWaitsForAcknowledgment(t *testing.T) {
 		cancel()
 		reader.Close()
 		writer.Close()
+	}
+}
+
+func TestDroidBackgroundSettlement(t *testing.T) {
+	a := droidRPC{emit: func(AgentEvent) {}}
+	update := func(raw string, done bool) {
+		t.Helper()
+		if err := a.update([]byte(raw)); err != nil {
+			t.Fatal(err)
+		}
+		if a.done() != done {
+			t.Fatalf("after %s: done=%v, want %v", raw, a.done(), done)
+		}
+	}
+	update(`{"type":"droid_working_state_changed","newState":"idle","backgroundWork":0}`, false)
+	update(`{"type":"droid_working_state_changed","newState":"thinking"}`, false)
+	update(`{"type":"agent_turn_completed","reason":"completed"}`, false)
+	update(`{"type":"droid_working_state_changed","newState":"idle","backgroundWork":2}`, false)
+	update(`{"type":"droid_working_state_changed","newState":"idle"}`, false)
+	update(`{"type":"droid_working_state_changed","newState":"thinking"}`, false)
+	update(`{"type":"droid_working_state_changed","newState":"idle","backgroundWork":0}`, false)
+	update(`{"type":"agent_turn_completed","reason":"completed"}`, true)
+}
+
+// The subprocess keeps stdin open between model turns, just like droid exec.
+// A request/response barrier proves the parent survives the first completion.
+func TestDroidBackgroundProtocolChild(t *testing.T) {
+	mode := os.Getenv("MUJICAGENT_DROID_BACKGROUND_CHILD")
+	if mode == "" {
+		return
+	}
+	dec, enc := json.NewDecoder(os.Stdin), json.NewEncoder(os.Stdout)
+	notify := func(v any) {
+		_ = enc.Encode(map[string]any{"method": "droid.session_notification", "params": map[string]any{"sessionId": "background-session", "notification": v}})
+	}
+	complete := func() {
+		notify(map[string]string{"type": "agent_turn_completed", "reason": "completed"})
+	}
+	state := func(name string, background int) {
+		notify(map[string]any{"type": "droid_working_state_changed", "newState": name, "backgroundWork": background})
+	}
+	for i := 0; i < 3; i++ {
+		var req struct{ ID, Method string }
+		if dec.Decode(&req) != nil {
+			os.Exit(3)
+		}
+		method := []string{"droid.initialize_session", "droid.update_session_settings", "droid.add_user_message"}[i]
+		if i == 0 && mode == "resume" {
+			method = "droid.load_session"
+		}
+		if req.Method != method {
+			os.Exit(4)
+		}
+		if i == 0 {
+			// Historical completion/idle must not settle the submitted turn.
+			complete()
+			state("idle", 0)
+		}
+		if i == 2 && mode == "early-completion" {
+			complete()
+			state("idle", 1)
+		}
+		_ = enc.Encode(map[string]any{"id": req.ID, "result": map[string]string{"sessionId": "background-session"}})
+	}
+	state("thinking", 0)
+	for round := 0; round < 2; round++ {
+		tool := "Script"
+		if round == 1 {
+			tool = "WaitForScript"
+		}
+		id := fmt.Sprintf("call-%d", round)
+		notify(map[string]any{"type": "tool_call", "toolUse": map[string]any{"id": id, "name": tool, "input": map[string]string{"toolCallId": "script"}}})
+		notify(map[string]any{"type": "tool_result", "toolUseId": id, "content": []any{map[string]string{"type": "text", "text": `{"status":"running","toolCallId":"script"}`}}})
+		complete()
+		state("idle", 1)
+		notify(map[string]string{"type": "assistant_text_delta", "messageId": "waiting", "textDelta": "Waiting for background work"})
+		if mode == "disconnect" {
+			os.Exit(0)
+		}
+		if mode == "cancelled" || mode == "error" {
+			notify(map[string]string{"type": "agent_turn_completed", "reason": mode})
+		}
+		_ = enc.Encode(map[string]any{"id": "barrier", "method": "test.background_barrier", "params": map[string]any{}})
+		var reply struct {
+			ID    string
+			Error *struct{ Code int }
+		}
+		if dec.Decode(&reply) != nil || reply.ID != "barrier" || reply.Error == nil || reply.Error.Code != -32601 {
+			os.Exit(5)
+		}
+		state("thinking", 0)
+		// Transient idle must not reuse the preceding model turn's completion.
+		state("idle", 0)
+		state("streaming_assistant_message", 0)
+	}
+	notify(map[string]string{"type": "assistant_text_delta", "messageId": "final", "textDelta": "Finished after background work"})
+	complete()
+	state("idle", 0)
+	var next any
+	_ = dec.Decode(&next)
+	os.Exit(0)
+}
+
+func TestDroidBackgroundSessionProtocol(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX subprocess launcher")
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, mode := range []string{"turn", "resume", "early-completion", "stop", "cancelled", "error", "disconnect"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Setenv("MUJICAGENT_DROID_BACKGROUND_CHILD", mode)
+			dir := t.TempDir()
+			binary := filepath.Join(dir, "droid")
+			script := "#!/bin/sh\nexec '" + strings.ReplaceAll(exe, "'", "'\\''") + "' -test.run=^TestDroidBackgroundProtocolChild$ -- \"$@\"\n"
+			if err := os.WriteFile(binary, []byte(script), 0700); err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			opts := RunOptions{Driver: "droid", Binary: binary, Cwd: dir, Prompt: "test"}
+			if mode == "resume" {
+				opts.Session = "background-session"
+			}
+			session, err := NewSession(ctx, opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer session.Close()
+			var ends []*TurnResult
+			accepted, waits, final := 0, 0, ""
+			session.Run(func(e AgentEvent) {
+				if e.Accepted {
+					accepted++
+				}
+				if e.ID == "waiting-0" {
+					waits++
+					if mode == "stop" {
+						_ = session.Interrupt(ctx, TurnTarget{})
+					}
+				}
+				if e.ID == "final-0" {
+					final += e.Text
+				}
+				if e.End != nil {
+					ends = append(ends, e.End)
+				}
+			})
+			if ctx.Err() != nil {
+				t.Fatal("background run hung", ctx.Err())
+			}
+			want := "completed"
+			switch mode {
+			case "stop", "cancelled":
+				want = "interrupted"
+			case "error", "disconnect":
+				want = "failed"
+			}
+			if accepted != 1 || waits == 0 || len(ends) != 1 || ends[0].Status != want {
+				t.Fatalf("accepted=%d waits=%d ends=%+v, want %s", accepted, waits, ends, want)
+			}
+			if want == "completed" && (waits != 2 || final != "Finished after background work") {
+				t.Fatalf("lost background wake: waits=%d final=%q", waits, final)
+			}
+		})
 	}
 }
 
@@ -1711,7 +1881,7 @@ func TestSessionSettledAcceptanceAndCancellation(t *testing.T) {
 		name, output, status string
 		cancel               bool
 	}{
-		{"accepted", "{\"type\":\"response\",\"id\":\"prompt\",\"success\":true}\n{\"type\":\"agent_settled\"}", "completed", false},
+		{"accepted", "{\"type\":\"response\",\"id\":\"prompt\",\"success\":true}\n{\"type\":\"agent_end\"}\n{\"type\":\"message_end\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"After wake\"}]}}\n{\"type\":\"agent_settled\"}", "completed", false},
 		{"missing-ack", "{\"type\":\"agent_settled\"}", "failed", false},
 		{"native-abort", "{\"type\":\"response\",\"id\":\"prompt\",\"success\":true}\n{\"type\":\"agent_settled\",\"aborted\":true}", "interrupted", false},
 		{"local-stop", "{\"type\":\"response\",\"id\":\"prompt\",\"success\":true}", "interrupted", true},
@@ -1731,7 +1901,11 @@ func TestSessionSettledAcceptanceAndCancellation(t *testing.T) {
 			}
 			defer session.Close()
 			var ends []*TurnResult
+			var final string
 			session.Run(func(e AgentEvent) {
+				if e.Kind == "agentMessage" {
+					final += e.Text
+				}
 				if e.Accepted && tc.cancel {
 					session.Close()
 				}
@@ -1741,6 +1915,9 @@ func TestSessionSettledAcceptanceAndCancellation(t *testing.T) {
 			})
 			if len(ends) != 1 || ends[0].Status != tc.status || (tc.status == "interrupted" && ends[0].Error != "") {
 				t.Fatalf("terminal contract: %+v", ends)
+			}
+			if tc.name == "accepted" && final != "After wake" {
+				t.Fatal("Pi ended before agent_settled", final)
 			}
 		})
 	}
