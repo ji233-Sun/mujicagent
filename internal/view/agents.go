@@ -37,12 +37,12 @@ func (v *View) agentsPane(c *ui.Context) {
 							status = tx.HarnessUnchecked()
 							if u.Missing {
 								status = tx.HarnessMissing()
-							} else if u.Installation.Path != "" {
+							} else if u.Installation.Version != "" && u.Installation.UpdateIssue != "probe-failed" {
 								status = tx.AgentCLIAvailable()
 							}
 						}
 						color := c.Theme().TextMuted
-						if id == "codex" && v.C.Connection == "Connected" || id != "codex" && u.Installation.Path != "" {
+						if id == "codex" && v.C.Connection == "Connected" || id != "codex" && u.Installation.Version != "" && u.Installation.UpdateIssue != "probe-failed" {
 							color = c.Theme().Accent
 						}
 						ui.Row(c).AlignItems(ui.Center).Gap(4).Children(func() {
@@ -136,7 +136,7 @@ func (v *View) agentsPane(c *ui.Context) {
 					}
 				})
 			}
-			if u.Installation.Path != "" && !u.Installation.CanUpdate() {
+			if u.Installation.Path != "" && !u.Installation.CanUpdate() && (u.Installation.UpdateIssue != "probe-failed" || u.Installation.Method == "custom") {
 				message := tx.HarnessUnknownManager()
 				name := harness.ManagerName(u.Installation.Method)
 				if name != "" {

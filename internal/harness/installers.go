@@ -14,8 +14,6 @@ import (
 	"runtime"
 	"slices"
 	"strings"
-
-	"github.com/ji233-Sun/mujicagent/internal/codex"
 )
 
 // An installer supplies identity, real distribution channels and protocol probes.
@@ -52,6 +50,33 @@ func UpdateSource(i Installation) string {
 	return i.Source
 }
 
+// Updates follow the installed package's release channel, including Homebrew's
+// stable/latest casks, rather than comparing against an unrelated native feed.
+func LatestInstalled(ctx context.Context, current Installation) (Release, error) {
+	if current.Method == "brew" {
+		cask := installationCask(current)
+		if cask == "" {
+			return Release{}, fmt.Errorf("unsupported Homebrew cask")
+		}
+		var meta struct{ Version string }
+		if err := getJSON(ctx, "https://formulae.brew.sh/api/cask/"+cask+".json", &meta); err != nil {
+			return Release{}, err
+		}
+		if !versionPattern.MatchString(meta.Version) {
+			return Release{}, fmt.Errorf("invalid Homebrew %s version", cask)
+		}
+		return Release{Version: meta.Version}, nil
+	}
+	if current.Driver == "codex" && (current.Method == "npm" || current.Method == "bun" || current.Method == "pnpm" || current.Method == "vp") {
+		return npmRelease(ctx, packageFor(current.Driver), installerAdapters[current.Driver].entry, "npm")
+	}
+	source := UpdateSource(current)
+	if current.Driver == "codex" && source == "native-mirror" {
+		source = "cn"
+	}
+	return Latest(ctx, current.Driver, source)
+}
+
 func Latest(ctx context.Context, driver, source string) (Release, error) {
 	if source == "official" {
 		source = ""
@@ -83,12 +108,12 @@ func verify(ctx context.Context, driver, path, version string) (string, error) {
 	if driver == "" {
 		driver = "codex"
 	}
-	cmd, err := codex.Command(ctx, path, "--version")
+	cmd, err := inspectionCommand(ctx, driver, path, "--version")
 	if err != nil {
 		return "", err
 	}
 	prepareProcess(cmd)
-	out, err := cmd.Output()
+	out, err := commandOutput(cmd)
 	if err != nil {
 		return "", err
 	}
@@ -97,12 +122,12 @@ func verify(ctx context.Context, driver, path, version string) (string, error) {
 		return "", fmt.Errorf("installed %s version does not match %s", driver, version)
 	}
 	a := installerAdapters[driver]
-	cmd, err = codex.Command(ctx, path, a.helpArgs...)
+	cmd, err = inspectionCommand(ctx, driver, path, a.helpArgs...)
 	if err != nil {
 		return "", err
 	}
 	prepareProcess(cmd)
-	out, err = cmd.Output()
+	out, err = commandOutput(cmd)
 	if err != nil || !strings.Contains(string(out), a.helpContains) {
 		return "", fmt.Errorf("%s session protocol unavailable: %v", driver, err)
 	}
@@ -153,12 +178,16 @@ func inspectNative(ctx context.Context, current Installation, real string) Insta
 	if current.Driver == "claude" {
 		home, _ := os.UserHomeDir()
 		launcher := filepath.Join(home, ".local", "bin", "claude")
-		version := filepath.Join(home, ".local", "share", "claude", "versions", current.Version)
+		versionName := current.Version
+		if versionName == "" {
+			versionName = strings.TrimSuffix(filepath.Base(real), ".exe")
+		}
+		version := filepath.Join(home, ".local", "share", "claude", "versions", versionName)
 		if runtime.GOOS == "windows" {
 			launcher += ".exe"
 			version += ".exe"
 		}
-		if home != "" && filepath.Clean(current.Path) == launcher && real == version {
+		if home != "" && versionPattern.MatchString(versionName) && filepath.Clean(current.Path) == launcher && real == version {
 			current.Method = "native"
 		}
 		if strings.Contains(slash, "/Microsoft/WinGet/Packages/Anthropic.ClaudeCode_") {

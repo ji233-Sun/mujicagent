@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -13,6 +14,9 @@ import (
 	"image/color"
 	"image/png"
 	"io"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -20,7 +24,264 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/egoist/mygo/netproxy"
 )
+
+func TestNpmPrivatePrefixUpdate(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX npm layout fixture")
+	}
+	for _, driver := range []string{"codex", "pi", "droid", "claude"} {
+		t.Run(driver, func(t *testing.T) {
+			base := filepath.Join(t.TempDir(), "用户 prefix")
+			bin, root := filepath.Join(base, "bin"), filepath.Join(base, "lib", "node_modules")
+			a := installerAdapters[driver]
+			pkg := filepath.Join(root, filepath.FromSlash(a.packageName))
+			entry := filepath.Join(pkg, filepath.FromSlash(a.entry))
+			for _, dir := range []string{bin, filepath.Dir(entry)} {
+				if err := os.MkdirAll(dir, 0700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			write := func(path, body string) {
+				t.Helper()
+				if err := os.WriteFile(path, []byte(body), 0700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			version, log := filepath.Join(base, "version"), filepath.Join(base, "args")
+			t.Setenv("HARNESS_TEST_VERSION", version)
+			t.Setenv("HARNESS_TEST_ARGS", log)
+			write(version, "1.2.3")
+			program := "#!/bin/sh\nif [ \"$1\" = --version ]; then printf '" + a.versionPrefix + "'; cat \"$HARNESS_TEST_VERSION\"; printf '\\n'; else echo '--mode stream-jsonrpc --replay-user-messages'; fi\n"
+			if driver == "claude" {
+				// Official postinstall can link the main package entry to its
+				// optional platform dependency. Classifying only real misses npm.
+				native := filepath.Join(root, "@anthropic-ai", "claude-code-darwin-arm64", "claude")
+				if err := os.MkdirAll(filepath.Dir(native), 0700); err != nil {
+					t.Fatal(err)
+				}
+				write(native, program)
+				if err := os.Symlink(native, entry); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				write(entry, program)
+			}
+			data, _ := json.Marshal(map[string]any{"name": a.packageName, "bin": map[string]string{driver: a.entry}})
+			write(filepath.Join(pkg, "package.json"), string(data))
+			path := filepath.Join(bin, driver)
+			if err := os.Symlink(entry, path); err != nil {
+				t.Fatal(err)
+			}
+			// The runtime lives outside npm's custom package prefix.
+			runtimeBin := filepath.Join(t.TempDir(), "runtime")
+			if err := os.Mkdir(runtimeBin, 0700); err != nil {
+				t.Fatal(err)
+			}
+			write(filepath.Join(runtimeBin, "npm"), "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$HARNESS_TEST_ARGS\"\nprintf '1.2.4' > \"$HARNESS_TEST_VERSION\"\n")
+			write(filepath.Join(runtimeBin, "node"), "#!/bin/sh\necho v24.0.0\n")
+			write(filepath.Join(runtimeBin, "shell"), "#!/bin/sh\nprintf '\\000%s\\000' \"$PATH\"\n")
+			t.Setenv("SHELL", filepath.Join(runtimeBin, "shell"))
+			t.Setenv("PATH", runtimeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+			current, err := Inspect(t.Context(), driver, path, t.TempDir())
+			if err != nil || current.Method != "npm" || canonical(current.Prefix) != canonical(base) || !current.CanUpdate() {
+				t.Fatalf("npm ownership lost: %+v %v", current, err)
+			}
+			p, err := PrepareInstall(t.Context(), driver, t.TempDir(), "", Release{Version: "1.2.4"}, current)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if p.Command != filepath.Join(runtimeBin, "npm") || !slices.Contains(p.Args, current.Prefix) {
+				t.Fatal("did not preserve npm prefix", p)
+			}
+			if _, err := os.Stat(log); !os.IsNotExist(err) {
+				t.Fatal("preview executed update")
+			}
+			if result, err := p.Execute(t.Context()); err != nil || result != path {
+				t.Fatal("update failed", result, err)
+			}
+			args, err := os.ReadFile(log)
+			if err != nil || string(args) != strings.Join(p.Args, "\n")+"\n" {
+				t.Fatal("preview/execution differed", string(args), err)
+			}
+			// A broken prefix-local manager must not be replaced with a different
+			// npm on PATH or leave the update action enabled.
+			if err := os.WriteFile(filepath.Join(bin, "npm"), []byte("unavailable"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			unavailable, err := Inspect(t.Context(), driver, path, t.TempDir())
+			if err != nil || unavailable.Method != "npm" || unavailable.UpdateIssue != "unavailable" || unavailable.CanUpdate() {
+				t.Fatal("missing updater was offered", unavailable, err)
+			}
+		})
+	}
+}
+
+func TestInspectionFailureRetainsOwnership(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX executable fixture")
+	}
+	shell := filepath.Join(t.TempDir(), "shell")
+	if err := os.WriteFile(shell, []byte("#!/bin/sh\nprintf '\\000%s\\000' \"$PATH\"\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SHELL", shell)
+	t.Setenv("PATH", "/usr/bin:/bin")
+	for _, driver := range []string{"codex", "pi", "droid", "claude"} {
+		for _, mode := range []string{"custom", "managed", "npm", "invalid-version"} {
+			t.Run(driver+"/"+mode, func(t *testing.T) {
+				root := t.TempDir()
+				path := filepath.Join(root, "custom", driver)
+				managed := filepath.Join(root, "managed")
+				want := mode
+				if mode == "managed" {
+					path = filepath.Join(managed, "release-old", driver)
+				} else if mode == "npm" {
+					path = filepath.Join(root, "lib", "node_modules", filepath.FromSlash(packageFor(driver)), filepath.FromSlash(installerAdapters[driver].entry))
+				} else if mode == "invalid-version" {
+					want = "custom"
+				}
+				if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+					t.Fatal(err)
+				}
+				body := "#!/bin/sh\necho 'launcher runtime unavailable; ANTHROPIC_API_KEY=fixture-secret' >&2\nexit 1\n"
+				if mode == "invalid-version" {
+					body = "#!/bin/sh\necho invalid-version\n"
+				}
+				if err := os.WriteFile(path, []byte(body), 0700); err != nil {
+					t.Fatal(err)
+				}
+				if mode == "managed" {
+					if err := os.WriteFile(filepath.Join(filepath.Dir(path), "source.json"), []byte(`"cn"`), 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				current, err := Inspect(t.Context(), driver, path, managed)
+				if err == nil || current.Method != want || current.Path != path || current.CanUpdate() {
+					t.Fatalf("failure erased ownership or allowed update: %+v %v", current, err)
+				}
+				if current.UpdateIssue != "probe-failed" || mode == "managed" && current.Source != "cn" {
+					t.Fatal("failure erased source or status", current)
+				}
+				if mode != "invalid-version" && (!strings.Contains(err.Error(), "launcher runtime unavailable") || strings.Contains(err.Error(), "fixture-secret")) {
+					t.Fatal("diagnostic missing or contains credential", err)
+				}
+			})
+		}
+	}
+}
+
+func TestClaudeInspectionDisablesAutoUpdate(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX executable fixture")
+	}
+	path := filepath.Join(t.TempDir(), "claude")
+	body := "#!/bin/sh\n[ \"$DISABLE_AUTOUPDATER\" = 1 ] || exit 3\nif [ \"$1\" = --version ]; then echo '2.1.322 (Claude Code)'; else echo --replay-user-messages; fi\n"
+	if err := os.WriteFile(path, []byte(body), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DISABLE_AUTOUPDATER", "0")
+	if _, err := Inspect(t.Context(), "claude", path, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := verify(t.Context(), "claude", path, "2.1.322"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestInstallerFailureDiagnostic(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX updater fixture")
+	}
+	path := filepath.Join(t.TempDir(), "updater")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\necho 'postinstall failed; API_KEY=fixture-secret'\nexit 1\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	p := InstallPlan{Command: path}
+	if _, err := p.Execute(t.Context()); err == nil || !strings.Contains(err.Error(), "postinstall failed") || strings.Contains(err.Error(), "fixture-secret") {
+		t.Fatal("installer diagnostic unavailable or unsafe", err)
+	}
+}
+
+func TestInstallerDiagnosticOutputBound(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "output")
+	if err := os.WriteFile(path, []byte(strings.Repeat("diagnostic", 20000)), 0600); err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	var output diagnosticBuffer
+	if _, err := io.Copy(&output, file); err != nil || len(output.String()) != 64<<10 {
+		t.Fatal("installer output was not bounded", len(output.String()), err)
+	}
+}
+
+func TestClaudeNativeOwnershipWithoutVersion(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	launcher := filepath.Join(home, ".local", "bin", "claude")
+	native := filepath.Join(home, ".local", "share", "claude", "versions", "2.1.322")
+	if runtime.GOOS == "windows" {
+		launcher += ".exe"
+		native += ".exe"
+	}
+	i := inspectNative(t.Context(), Installation{Driver: "claude", Path: launcher, Method: "custom"}, native)
+	if i.Method != "native" {
+		t.Fatal("version failure hid official native layout", i)
+	}
+	i = inspectNative(t.Context(), Installation{Driver: "claude", Path: launcher + "d", Method: "custom"}, native)
+	if i.Method != "custom" {
+		t.Fatal("custom launcher incorrectly offered official updater", i)
+	}
+}
+
+func TestInstalledReleaseChannels(t *testing.T) {
+	var requests []string
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.Host+r.URL.EscapedPath())
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"version":"1.2.4","dist":{"tarball":"https://example.test/package.tgz","integrity":"sha512-fixture"}}`)
+	}))
+	defer server.Close()
+	transport := netproxy.Transport()
+	oldProxy, oldDial := transport.Proxy, transport.DialTLSContext
+	transport.CloseIdleConnections()
+	transport.Proxy = nil
+	transport.DialTLSContext = func(ctx context.Context, network, _ string) (net.Conn, error) {
+		dialer := tls.Dialer{Config: server.Client().Transport.(*http.Transport).TLSClientConfig}
+		return dialer.DialContext(ctx, network, server.Listener.Addr().String())
+	}
+	t.Cleanup(func() {
+		transport.CloseIdleConnections()
+		transport.Proxy, transport.DialTLSContext = oldProxy, oldDial
+	})
+	for _, tc := range []struct {
+		driver, method, path, endpoint string
+	}{
+		{"claude", "brew", "/opt/homebrew/Caskroom/claude-code/1.2.3/claude", "formulae.brew.sh/api/cask/claude-code.json"},
+		{"claude", "brew", "/opt/homebrew/Caskroom/claude-code@latest/1.2.3/claude", "formulae.brew.sh/api/cask/claude-code@latest.json"},
+		{"codex", "brew", "/opt/homebrew/bin/codex", "formulae.brew.sh/api/cask/codex.json"},
+		{"droid", "brew", "/opt/homebrew/bin/droid", "formulae.brew.sh/api/cask/droid.json"},
+		{"codex", "npm", "/prefix/bin/codex", "registry.npmjs.org/@openai%2Fcodex/latest"},
+		{"codex", "vp", "/prefix/bin/codex", "registry.npmjs.org/@openai%2Fcodex/latest"},
+		{"codex", "bun", "/prefix/bin/codex", "registry.npmjs.org/@openai%2Fcodex/latest"},
+		{"codex", "pnpm", "/prefix/bin/codex", "registry.npmjs.org/@openai%2Fcodex/latest"},
+	} {
+		t.Run(tc.driver+"/"+tc.method+"/"+tc.path, func(t *testing.T) {
+			before := len(requests)
+			release, err := LatestInstalled(t.Context(), Installation{Driver: tc.driver, Method: tc.method, Path: filepath.FromSlash(tc.path)})
+			if err != nil || release.Version != "1.2.4" || len(requests) != before+1 || requests[before] != tc.endpoint {
+				t.Fatal("wrong installed release feed", release, err, requests[before:])
+			}
+		})
+	}
+}
 
 func TestLocalManagerPreviewAndExecution(t *testing.T) {
 	if runtime.GOOS == "windows" {
@@ -745,7 +1006,11 @@ func TestInstalledHarnessSource(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	current, err := Inspect(ctx, driver, driver, t.TempDir())
+	binary := os.Getenv("MUJICAGENT_HARNESS_BINARY")
+	if binary == "" {
+		binary = driver
+	}
+	current, err := Inspect(ctx, driver, binary, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/ji233-Sun/mujicagent/internal/codex"
@@ -1937,6 +1938,72 @@ func TestSwitchProjectPreservesPromptAndHistory(t *testing.T) {
 			if err != nil || saved.Thread(saved.Selected).Draft != prompt {
 				t.Fatal("draft not persisted", err)
 			}
+		})
+	}
+}
+
+func TestHarnessCheckRetainsFailedCustomInstallation(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX executable fixture")
+	}
+	for _, driver := range []string{"codex", "pi", "droid", "claude"} {
+		t.Run(driver, func(t *testing.T) {
+			binary := filepath.Join(t.TempDir(), driver+"d")
+			if err := os.WriteFile(binary, []byte("#!/bin/sh\necho 'launcher runtime unavailable' >&2\nexit 1\n"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			ready := make(chan struct{}, 1)
+			c := New(t.TempDir(), model.New(), func() { ready <- struct{}{} })
+			c.setHarnessPath(driver, binary)
+			c.CheckHarness(driver)
+			select {
+			case <-ready:
+			case <-time.After(10 * time.Second):
+				t.Fatal("version check did not finish")
+			}
+			c.Drain()
+			u := c.HarnessFor(driver)
+			if u.Checking || u.Missing || u.Installation.Path != binary || u.Installation.Method != "custom" || u.Installation.CanUpdate() || !strings.Contains(u.Error, "launcher runtime unavailable") {
+				t.Fatal("controller lost failed installation or offered a fresh install", u)
+			}
+		})
+	}
+}
+
+func TestHarnessInstallCancelsAndWaitsForCatalog(t *testing.T) {
+	for _, driver := range []string{"pi", "droid", "claude"} {
+		t.Run(driver, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				c := New(t.TempDir(), model.New(), nil)
+				c.setHarnessPath(driver, filepath.Join(t.TempDir(), "missing"))
+				u := c.HarnessFor(driver)
+				u.Binary = c.State.Settings.AgentPath(driver)
+				u.Plan = &harness.InstallPlan{Driver: driver}
+				probeCtx, probeCancel := context.WithCancel(t.Context())
+				defer probeCancel()
+				done := make(chan struct{})
+				u.modelsCancel, u.modelsDone, u.ModelsLoading = probeCancel, done, true
+				c.InstallHarness(driver)
+				if probeCtx.Err() == nil || u.ModelsLoading || !u.Installing {
+					t.Fatal("installation did not cancel catalog")
+				}
+				request := u.modelsRequest
+				c.LoadAgentModels(driver, true)
+				if u.modelsRequest != request || u.ModelsLoading {
+					t.Fatal("installation allowed a new catalog")
+				}
+				synctest.Wait()
+				if len(c.events) != 0 {
+					t.Fatal("installation proceeded before catalog released its process")
+				}
+				c.CancelHarness(driver)
+				synctest.Wait()
+				c.Drain()
+				if u.Installing || u.Error == "" || c.State.Settings.AgentPath(driver) != u.Binary {
+					t.Fatal("cancelled installation changed path or remained busy", u)
+				}
+				close(done)
+			})
 		})
 	}
 }

@@ -24,7 +24,6 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/netproxy"
-	"github.com/ji233-Sun/mujicagent/internal/codex"
 )
 
 type Installation struct{ Driver, Path, Version, Method, Prefix, Source, Manager, PackageRoot, BinDir, UpdateIssue string }
@@ -46,18 +45,17 @@ func Target(goos, arch string) (string, string, error) {
 }
 
 func Inspect(ctx context.Context, driver, binary, managed string) (Installation, error) {
-	cmd, err := codex.Command(ctx, binary, "--version")
+	cmd, err := inspectionCommand(ctx, driver, binary, "--version")
 	if err != nil {
 		return Installation{}, err
 	}
 	prepareProcess(cmd)
-	out, err := cmd.Output()
-	if err != nil {
-		return Installation{}, fmt.Errorf("cannot run %s: %w", binary, err)
-	}
-	version, err := installationVersion(driver, out)
-	if err != nil {
-		return Installation{}, err
+	out, probeErr := commandOutput(cmd)
+	version := ""
+	if probeErr == nil {
+		version, probeErr = installationVersion(driver, out)
+	} else {
+		probeErr = fmt.Errorf("cannot run %s: %w", binary, probeErr)
 	}
 	path := cmd.Path
 	if runtime.GOOS == "windows" {
@@ -104,6 +102,11 @@ func Inspect(ctx context.Context, driver, binary, managed string) (Installation,
 	if current.Method == "custom" || current.Method == "npm" {
 		current = inspectPackageManager(ctx, current, real)
 	}
+	// A private npm prefix need not contain npm itself. Resolve ownership from
+	// the original launcher as native postinstall may link into a platform package.
+	if current.Method == "custom" {
+		current = inspectNpmLauncher(current, real)
+	}
 	if method == "managed" {
 		rel, _ := filepath.Rel(managed, real)
 		stage := filepath.Join(managed, strings.Split(rel, string(filepath.Separator))[0])
@@ -117,7 +120,21 @@ func Inspect(ctx context.Context, driver, binary, managed string) (Installation,
 			current.Source = "cn"
 		}
 	}
-	return current, nil
+	if probeErr != nil && current.UpdateIssue == "" {
+		current.UpdateIssue = "probe-failed"
+	}
+	if probeErr == nil && current.CanUpdate() && current.Manager == "" && current.Method != "native" {
+		if adapter, ok := managerAdapters[current.Method]; ok {
+			manager, args, err := adapter.update(current, current.Version)
+			if err == nil {
+				_, err = managerCommand(ctx, manager, args...)
+			}
+			if err != nil {
+				current.UpdateIssue = "unavailable"
+			}
+		}
+	}
+	return current, probeErr
 }
 
 func classify(path, managed string) (string, string) {

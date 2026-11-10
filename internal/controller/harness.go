@@ -17,6 +17,7 @@ type HarnessState struct {
 	ModelsError, ModelsKey       string
 	modelsRequest                uint64
 	modelsCancel                 context.CancelFunc
+	modelsDone                   <-chan struct{}
 	Checking, Installing         bool
 	Preparing, Missing           bool
 	Plan                         *harness.InstallPlan
@@ -75,11 +76,7 @@ func (c *Controller) CheckHarness(driver string) {
 		}
 		var release harness.Release
 		if err == nil && !missing {
-			lookupSource := harness.UpdateSource(current)
-			if driver == "codex" && lookupSource == "native-mirror" {
-				lookupSource = "cn"
-			}
-			release, err = harness.Latest(ctx, driver, lookupSource)
+			release, err = harness.LatestInstalled(ctx, current)
 		}
 		c.post(func() {
 			u.Checking = false
@@ -127,15 +124,12 @@ func (c *Controller) PrepareHarness(driver, source string) {
 			err = fmt.Errorf("automatic update unavailable for %s; use the original package manager", current.Method)
 		}
 		if err == nil {
-			lookup := source
-			if current.Path != "" {
-				lookup = harness.UpdateSource(current)
-			}
-			if driver == "codex" && lookup == "native-mirror" {
-				lookup = "cn"
-			}
 			var release harness.Release
-			release, err = harness.Latest(ctx, driver, lookup)
+			if current.Path != "" {
+				release, err = harness.LatestInstalled(ctx, current)
+			} else {
+				release, err = harness.Latest(ctx, driver, source)
+			}
 			if err == nil {
 				plan, err = harness.PrepareInstall(ctx, driver, root, source, release, current)
 			}
@@ -185,6 +179,15 @@ func (c *Controller) InstallHarness(driver string) {
 		return
 	}
 	u.Installing, u.Error = true, ""
+	// A catalog probe holds the same executable on Windows. Cancel it and
+	// invalidate its pending result before allowing the updater to replace files.
+	if u.modelsCancel != nil {
+		u.modelsCancel()
+		u.modelsCancel = nil
+	}
+	u.modelsRequest++
+	u.ModelsLoading, u.ModelsChecked = false, false
+	modelsDone := u.modelsDone
 	plan, binary := u.Plan, u.Binary
 	u.Plan = nil // Confirmation is single-use.
 	root := filepath.Join(c.Dir, "tools", driver)
@@ -203,6 +206,12 @@ func (c *Controller) InstallHarness(driver string) {
 	}
 	go func() {
 		defer cancel()
+		if modelsDone != nil {
+			select {
+			case <-modelsDone:
+			case <-ctx.Done():
+			}
+		}
 		current, err := harness.Inspect(ctx, driver, binary, root)
 		if errors.Is(err, exec.ErrNotFound) && binary == driver && plan.Current.Path == "" {
 			err = nil
