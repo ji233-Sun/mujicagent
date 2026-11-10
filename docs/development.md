@@ -15,8 +15,6 @@ go tool mygo dev
 
 Codex 连接配置见[使用指南](usage.md#连接-codex)。
 
-BrowserUse 使用锁定的 MyGo v0.7.4 加三个文件的原生互操作补丁，以标准 `vendor/` 维护。macOS 的构建与开发命令会执行 `mygo.json` 的 buildCommand，需 Xcode Command Line Tools 编译系统 WebKit 扩展；直接 `go run .` 或原生测试前先执行 `go run ./scripts/build-browser-capture`。补丁重建、来源与平台边界见[维护说明](../scripts/README-browser-capture.md)，真实网页及模型验收入口见[BrowserUse 运行说明](browseruse-runtime.md)。
-
 ```sh
 go test -race ./...
 go vet ./...

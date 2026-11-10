@@ -50,8 +50,6 @@ The complete upstream [ISC license and Feather-derived MIT notice](internal/view
 
 ## Dependencies
 
-MyGo and the transitive Go modules retain their respective licenses in `vendor/` as well as their module distributions. `go.mod`, `go.sum` and `vendor/modules.txt` pin the versions used to build MujicAgent. MyGo v0.7.4 has three local native interop changes, recorded in [the maintenance instructions](scripts/README-browser-capture.md) and [replayable patch](scripts/mygo-native-capture.patch); its [MIT license](vendor/github.com/egoist/mygo/LICENSE) is preserved.
-
-The capture extension uses system WebKit. Its minimal C ABI declarations are checked against WebKit commit `8e16cbe44f3a7e6aec2a641d612cba2b641cbf87`, including `WKBundle.h` and `WKGeometry.h`. The corresponding Apple copyright and BSD conditions are retained in [browser-capture-NOTICE.txt](resources/browser-capture-NOTICE.txt), also packaged as an application resource. No WebKit engine implementation is redistributed.
+MyGo and the transitive Go modules retain their respective licenses in `vendor/` as well as their module distributions. `go.mod`, `go.sum` and `vendor/modules.txt` pin the versions used to build MujicAgent.
 
 Codex, Pi, Droid and Claude Code are external executables managed through their respective distributions.

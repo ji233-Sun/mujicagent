@@ -19,6 +19,63 @@ import (
 	"github.com/ji233-Sun/mujicagent/internal/view"
 )
 
+func TestConversationLayout(t *testing.T) {
+	for _, language := range []string{"zh-Hans", "en"} {
+		for _, size := range [][2]int{{840, 560}, {1140, 780}} {
+			t.Run(fmt.Sprintf("%s-%dx%d", language, size[0], size[1]), func(t *testing.T) {
+				state := model.New()
+				state.Settings.Language = language
+				ctrl := controller.New(t.TempDir(), state, nil)
+				defer ctrl.Close()
+				state.Projects = []model.Project{{ID: "project", Name: "MujicAgent", Expanded: true}}
+				thread := state.AddThread("project", "")
+				ctrl.Connection = "Connected"
+				v := view.New(ctrl)
+				tt := ui.NewTester(v.Render, size[0], size[1])
+				tt.SetLocale(language)
+				for _, populated := range []bool{false, true} {
+					scene := "empty"
+					if populated {
+						scene = "conversation"
+						thread.Title = "MujicAgent"
+						thread.Turns = []model.Turn{{
+							Prompt: "Review the conversation layout.", Status: "completed",
+							Items: []model.Item{{ID: "reply", Kind: "agentMessage", Text: "The conversation is ready.", Status: "completed"}},
+						}}
+					}
+					tt.Frame()
+					label := "消息"
+					if language == "en" {
+						label = "Message"
+					}
+					composer, ok := tt.Find(label)
+					if !ok || composer.X < 246 || composer.W < float32(size[0]-360) || composer.Y+composer.H > float32(size[1]) {
+						t.Fatalf("conversation composer outside expected bounds: %+v", composer)
+					}
+					if populated && !tt.HasText("The conversation is ready.") {
+						t.Fatal("conversation content missing")
+					}
+					if out := os.Getenv("MUJICAGENT_LAYOUT_DIR"); out != "" {
+						if err := os.MkdirAll(out, 0755); err != nil {
+							t.Fatal(err)
+						}
+						path := filepath.Join(out, fmt.Sprintf("%s-%s-%dx%d.png", scene, language, size[0], size[1]))
+						f, err := os.Create(path)
+						if err != nil {
+							t.Fatal(err)
+						}
+						err = png.Encode(f, tt.Image())
+						closeErr := f.Close()
+						if err != nil || closeErr != nil {
+							t.Fatalf("write screenshot: %v, %v", err, closeErr)
+						}
+					}
+				}
+			})
+		}
+	}
+}
+
 func TestNativeView(t *testing.T) {
 	state := model.New()
 	ctrl := controller.New(t.TempDir(), state, nil)

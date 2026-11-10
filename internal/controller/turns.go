@@ -62,8 +62,6 @@ func (c *Controller) sendThread(t *model.Thread, text string, plan bool, queuedI
 	if !t.HandoffSent {
 		prompt = t.HandoffContext + text
 	}
-	browserPrompt, browserActive := c.browserPrompt(t.ID)
-	prompt += browserPrompt
 	o := harness.RunOptions{
 		Driver: driver.ID, Binary: c.State.Settings.AgentPath(driver.ID), Cwd: t.Cwd,
 		Session: driver.SessionID(c.Dir, t.ID, t.ServerID), Model: t.AgentModel,
@@ -72,9 +70,6 @@ func (c *Controller) sendThread(t *model.Thread, text string, plan bool, queuedI
 	turnID := model.ID()
 	if driver.Capabilities.PersistentConnection {
 		o.Client, o.Loaded = c.client, c.loaded[t.ID]
-		if browserActive {
-			o.BrowserThreads = c.browserThreads
-		}
 		if o.Model == "" {
 			o.Model = c.State.Settings.Model
 		}
@@ -162,9 +157,6 @@ func (c *Controller) applyTurnEvent(t *model.Thread, index int, e harness.AgentE
 	}
 	if e.TurnID != "" && turn.ID == "" {
 		turn.ID = e.TurnID
-	}
-	if t.Driver() == "codex" && turn.ID != "" && e.End == nil {
-		c.bindBrowserTurn(t, index)
 	}
 	if e.Accepted && run != nil {
 		// Persist delivery state promptly; ordinary acceptance can share the stream batch.
@@ -283,7 +275,6 @@ func (c *Controller) Interrupt() {
 	if t == nil || !c.Running[t.ID] {
 		return
 	}
-	c.takeOverBrowserThread(t.ID)
 	run := c.turnRuns[t.ID]
 	if run == nil {
 		return

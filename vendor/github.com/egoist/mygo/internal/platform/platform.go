@@ -325,16 +325,13 @@ type JumpListTask struct {
 // WindowOptions configures a native window and its webview. The public
 // package fills in all defaults before calling NewWindow.
 type WindowOptions struct {
-	// ConfigureWKWebView is the opt-in native configuration hook, invoked
-	// on the main thread immediately before constructing the WKWebView.
-	ConfigureWKWebView func(uintptr)
-	Title              string
-	X, Y               int
-	Width, Height      int
-	Center             bool
-	UseContentSize     bool
-	MinSize            Size
-	MaxSize            Size
+	Title          string
+	X, Y           int
+	Width, Height  int
+	Center         bool
+	UseContentSize bool
+	MinSize        Size
+	MaxSize        Size
 
 	Resizable      bool
 	Movable        bool
