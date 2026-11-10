@@ -114,7 +114,7 @@ func (v *View) composerInput(c *ui.Context, draft *string) {
 				}
 			}
 		},
-	}).Bind(&v.editorHandle).Height(90)
+	}).Bind(&v.editorHandle).Height(composerEditorHeight)
 	if input.Changed() {
 		v.syncComposer(draft)
 	}

@@ -46,15 +46,15 @@ func (v *View) modelSelector(c *ui.Context) {
 		}
 		break
 	}
-	button := ui.ButtonBase(c.Key("model-selector")).Height(30).MaxWidth(380).Shrink(1).
+	button := ui.ButtonBase(c.Key("model-selector")).Height(30).MinWidth(58).MaxWidth(380).Shrink(1).
 		Padding(0, 8).Gap(7).Radius(8).AlignItems(ui.Center).Label(tx.ModelAndEffort()).
 		Tooltip(label).Transition(hoverTransition)
 	if button.Hovered() || v.modelPicker {
-		button.Background(c.Theme().SurfaceHover).TextColor(c.Theme().Accent)
+		button.Background(c.Theme().SurfaceHover).TextColor(c.Theme().Text)
 	}
 	button.Children(func() {
 		agentGlyph(c, t.Driver())
-		ui.Text(c, label).FontSize(12).SingleLine().MinWidth(0).Shrink(1)
+		ui.Text(c, label).FontSize(13).SingleLine().Ellipsis(tailEllipsis(label, 18)).MinWidth(0).Shrink(1)
 		angle := float32(90)
 		if v.modelPicker {
 			angle = -90
@@ -161,7 +161,7 @@ func (v *View) modelChoicesPanel(c *ui.Context, catalog []modelChoice, selectedM
 				search := ui.Row(c.Key("model-search")).Width(156).Height(26).Gap(6).AlignItems(ui.Center)
 				active := search.Hovered() || search.FocusWithin()
 				search.Children(func() {
-					color := c.Theme().TextMuted
+					color := mutedIconColor
 					if active {
 						color = c.Theme().Accent
 					}
@@ -204,14 +204,39 @@ func (v *View) modelChoicesPanel(c *ui.Context, catalog []modelChoice, selectedM
 						if favorite {
 							star.TextColor(c.Theme().Accent).Background(c.Theme().Surface)
 						} else {
-							star.TextColor(c.Theme().TextMuted)
+							star.TextColor(mutedIconColor)
 						}
 					}
 				})
 			}).Children(func() {
-				if len(models) == 0 {
-					ui.Text(c, tx.NoModels()).FontSize(12).TextColor(c.Theme().TextMuted).Padding(6, 8)
+				if len(models) != 0 {
+					return
 				}
+				if v.pickerHarness == "favorites" && strings.TrimSpace(v.modelSearch) == "" {
+					ui.Text(c, tx.NoFavoriteModels()).FontSize(12).TextColor(c.Theme().TextMuted).Padding(6, 8)
+					return
+				}
+				if id := v.pickerHarness; id == "pi" || id == "droid" || id == "claude" {
+					h := v.C.HarnessFor(id)
+					switch {
+					case h.ModelsLoading:
+						ui.Row(c).Gap(7).Padding(6, 8).AlignItems(ui.Center).Children(func() {
+							ui.Spinner(c).Size(14, 14).Shrink(0).TextColor(c.Theme().Accent)
+							ui.Text(c, tx.AgentLoadingModels()).FontSize(12).TextColor(c.Theme().TextMuted)
+						})
+						return
+					case h.ModelsError != "":
+						ui.Column(c).Padding(6, 8).Gap(6).Children(func() {
+							ui.Text(c, tx.AgentModelsFailed()).FontSize(12).Bold().TextColor(c.Theme().Danger)
+							ui.Text(c, h.ModelsError).FontSize(12).TextColor(c.Theme().Text).Selectable()
+						})
+						return
+					case !h.ModelsChecked:
+						ui.Text(c, tx.HarnessUnchecked()).FontSize(12).TextColor(c.Theme().TextMuted).Padding(6, 8)
+						return
+					}
+				}
+				ui.Text(c, tx.NoModels()).FontSize(12).TextColor(c.Theme().TextMuted).Padding(6, 8)
 			})
 		})
 		if side != nil {
@@ -237,7 +262,7 @@ func (v *View) modelEffortSlider(c *ui.Context, m codex.Model, value *string) {
 	}
 	ui.Column(c.Key(m.Model)).Padding(0, 8, 6).Gap(6).Children(func() {
 		ui.Row(c).AlignItems(ui.Center).Gap(6).Children(func() {
-			ui.Icon(c, thinkingIcon).Size(14, 14).TextColor(c.Theme().TextMuted)
+			ui.Icon(c, thinkingIcon).Size(14, 14).TextColor(mutedIconColor)
 			label := efforts[int(index)].ReasoningEffort
 			if *value == "" && m.DefaultReasoningEffort == "" && len(efforts) > 1 {
 				label = v.texts().AgentDefaultEffort()
@@ -338,9 +363,11 @@ func pickerOption(c *ui.Context, label string, selected bool) ui.Element {
 	b := ui.ButtonBase(c).Height(36).Shrink(0).Padding(0, 9).Gap(9).AlignItems(ui.Center).
 		Radius(8).Label(label).Tooltip(label).Transition(hoverTransition)
 	if selected {
-		b.Background(c.Theme().Surface).TextColor(c.Theme().Accent)
+		b.Background(c.Theme().Surface).TextColor(c.Theme().Text)
 	}
-	if b.Hovered() {
+	if b.Pressed() {
+		b.Background(c.Theme().SurfacePressed)
+	} else if b.Hovered() {
 		b.Background(c.Theme().SurfaceHover)
 	}
 	return b

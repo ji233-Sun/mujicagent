@@ -1,6 +1,7 @@
 package view
 
 import (
+	"bytes"
 	"fmt"
 	"image/png"
 	"math"
@@ -58,6 +59,120 @@ func TestOutputHighlightAndUpdates(t *testing.T) {
 			t.Fatal("unchanged frame rewrote buffer")
 		}
 	}
+}
+
+// Direct state/selection changes, never input events, for scroll discovery.
+func TestOutputHorizontalDiscovery(t *testing.T) {
+	for _, language := range []string{"en", "zh-Hans"} {
+		for _, width := range []int{360, 900} {
+			for _, scene := range []string{"short", "medium", "long", "tabs", "unicode"} {
+				t.Run(fmt.Sprintf("%s-%s-%d", scene, language, width), func(t *testing.T) {
+					text := "short output END_OF_LINE"
+					switch scene {
+					case "medium":
+						text = strings.Repeat("key=value ", 6) + "END_OF_LINE"
+					case "long":
+						text = strings.Repeat("key=value ", 20) + "END_OF_LINE"
+					case "tabs":
+						text = "a\tb\tc\td\tEND_OF_LINE"
+					case "unicode":
+						text = "运行结果：完整内容保留 END_OF_LINE"
+					}
+					ctrl := controller.New(t.TempDir(), model.New(), nil)
+					defer ctrl.Close()
+					ctrl.State.Settings.Language = language
+					v := New(ctrl)
+					s := outputState{text: text, editor: editor.State{
+						Buffer: editor.NewBuffer(text), ReadOnly: true, Font: ui.Font{Family: "monospace", Size: 13},
+						LineNumbers: editor.LineNumbersOff, NoFolding: true, NoIndentGuides: true,
+						NoActiveLine: true, NoScrollPastEnd: true,
+					}}
+					s.editor.Label = v.texts().ActivityOutput()
+					tt := ui.NewTester(func(c *ui.Context) {
+						v.theme(c)
+						ui.Column(c).Fill().Padding(12).Children(func() { v.outputEditor(c, &s, 128, false) })
+					}, width, 200)
+					tt.SetLocale(language)
+					tt.Advance(time.Second)
+					tt.Frame()
+					wantHint := scene == "long" || scene == "medium" && width == 360
+					if tt.HasText(v.texts().ScrollOutputHorizontally()) != wantHint {
+						t.Fatalf("hint mismatch: want=%v widest=%.2f viewport=%+v", wantHint, s.widest, s.viewport)
+					}
+					s.editor.GoTo(editor.Pos{Line: 0, Col: 0})
+					tt.Frame()
+					tt.Frame()
+					saveDesignFrame(t, tt, fmt.Sprintf("output-%s-%s-%d-start", scene, language, width))
+					start := append([]byte(nil), tt.Image().Pix...)
+					s.editor.GoTo(editor.Pos{Line: 0, Col: len(text)})
+					tt.Frame()
+					tt.Frame()
+					saveDesignFrame(t, tt, fmt.Sprintf("output-%s-%s-%d-end", scene, language, width))
+					if wantHint && bytes.Equal(start, tt.Image().Pix) {
+						t.Fatal("revealing the line end did not move the overflowing output")
+					}
+					s.editor.Select(0, len(text))
+					if s.editor.SelectedText() != text || s.editor.Buffer.String() != text || !s.editor.ReadOnly || s.editor.SoftWrap {
+						t.Fatal("hint changed output content, structure or read-only behavior")
+					}
+					// Replacing an overflowing line must also remove its hint.
+					s.update("short")
+					tt.Frame()
+					tt.Frame()
+					if tt.HasText(v.texts().ScrollOutputHorizontally()) {
+						t.Fatal("stale overflow hint after replacement")
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestOutputHintTracksLayout(t *testing.T) {
+	ctrl := controller.New(t.TempDir(), model.New(), nil)
+	defer ctrl.Close()
+	ctrl.State.Settings.Language = "en"
+	v := New(ctrl)
+	text := strings.Repeat("key=value ", 6) + "END_OF_LINE"
+	s := outputState{text: text, editor: editor.State{
+		Buffer: editor.NewBuffer(text), ReadOnly: true, Font: ui.Font{Family: "monospace", Size: 13},
+		LineNumbers: editor.LineNumbersOff, NoFolding: true, NoIndentGuides: true,
+		NoActiveLine: true, NoScrollPastEnd: true,
+	}}
+	width := float32(330)
+	tt := ui.NewTester(func(c *ui.Context) {
+		v.theme(c)
+		ui.Column(c).Width(width).Children(func() { v.outputEditor(c, &s, 100, false) })
+	}, 900, 240)
+	tt.Advance(time.Second)
+	check := func(want bool) {
+		t.Helper()
+		tt.Frame()
+		// Let the normal invalidation path rebuild after paint/layout commits;
+		// don't force a second Frame that could conceal stale presentation.
+		tt.Advance(100 * time.Millisecond)
+		if tt.HasText(v.texts().ScrollOutputHorizontally()) != want {
+			first, last := s.editor.VisibleLines()
+			t.Fatalf("hint does not match the committed editor layout: want=%v visible=%d..%d scrollY=%.2f span=%.2f widest=%.2f width=%.2f", want, first, last, s.editor.ScrollY(), s.lineSpan, s.widest, s.viewportWidth)
+		}
+	}
+	check(true)
+	width = 850
+	check(false)
+	width = 330
+	check(true)
+	// Preserve the editor's original wrapping command, not just its option.
+	s.editor.Run(editor.ToggleSoftWrap)
+	check(false)
+	s.editor.Run(editor.ToggleSoftWrap)
+	check(true)
+	s.update(strings.Repeat("short\n", 20) + text)
+	s.editor.ScrollTo(0)
+	check(false)
+	s.editor.ScrollTo(20)
+	check(true)
+	s.editor.ScrollTo(0)
+	check(false)
 }
 
 func TestActivityOutputDisclosure(t *testing.T) {

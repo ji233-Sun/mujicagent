@@ -1093,6 +1093,31 @@ func TestAgentCompactScreenshots(t *testing.T) {
 					if scene == "picker-many" && v.modelList.AtEnd() {
 						t.Fatal("long catalog must overflow inside the scrollable list")
 					}
+					if strings.HasSuffix(scene, "-loading") {
+						if tt.HasText(v.texts().NoModels()) || !tt.HasText(v.texts().AgentLoadingModels()) {
+							t.Fatal("loading catalog must not be labelled as an empty search result")
+						}
+					}
+					if strings.HasSuffix(scene, "-error") {
+						count := 0
+						for _, text := range tt.Texts() {
+							if text == v.texts().AgentModelsFailed() {
+								count++
+							}
+						}
+						if count != 1 {
+							t.Fatalf("empty failed catalog must explain the error once, got %d", count)
+						}
+						if tt.HasText(v.texts().NoModels()) || !tt.HasText("CLI unavailable") {
+							t.Fatal("failed catalog must show its cause, not an empty search result")
+						}
+					}
+					if scene == "picker-search-empty" && !tt.HasText(v.texts().NoModels()) {
+						t.Fatal("successful catalog search must retain its empty result state")
+					}
+					if scene == "picker-favorites-empty" && (!tt.HasText(v.texts().NoFavoriteModels()) || tt.HasText(v.texts().NoModels())) {
+						t.Fatal("empty favorites must explain the collection, not imply a failed search")
+					}
 				}
 				if scene == "settings-codex-running" {
 					if !tt.HasText(v.texts().UpToDate()) || tt.HasText(v.texts().UpdateAfterConversation()) {

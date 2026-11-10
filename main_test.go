@@ -169,6 +169,7 @@ func TestNativeView(t *testing.T) {
 	if err := tt.Click("关闭设置"); err != nil {
 		t.Fatal(err)
 	}
+	tt.Advance(200 * time.Millisecond)
 	if v.Settings || tt.HasText("可执行路径") || state.Threads[0].Draft != "你好，Codex" {
 		t.Fatal("settings did not close or conversation draft was lost")
 	}
@@ -186,6 +187,7 @@ func TestNativeView(t *testing.T) {
 		t.Fatalf("settings overflowed the smallest window: %+v", panel)
 	}
 	tt.Key(0, ui.KeyEscape)
+	tt.Advance(200 * time.Millisecond)
 	if v.Settings || tt.HasText("可执行路径") {
 		t.Fatal("Escape did not close settings")
 	}
@@ -341,6 +343,7 @@ func TestManualSettleFromHover(t *testing.T) {
 	if err := tt.Click(s.Projects[0].Name); err != nil {
 		t.Fatal(err)
 	}
+	tt.Advance(200 * time.Millisecond)
 	box, ok := tt.Find(thread.Title)
 	if !ok {
 		t.Fatal("thread not visible")
@@ -583,13 +586,18 @@ func TestGroupedActivity(t *testing.T) {
 	if _, ok := tt.Find(summary); !ok || tt.HasText("PRIVATE_") || tt.HasText("$ go test") {
 		t.Fatal("activity should start as one collapsed summary")
 	}
-	// The timeline must use the available pane width, including after resizing.
+	// Wide windows keep a centered reading column; narrow panes use the
+	// available width. The composer and timeline share the same gutters.
 	for _, width := range []int{1920, 840, 1140} {
 		tt.SetSize(width, 900)
 		tt.Frame()
 		bounds, ok := tt.Find(summary)
-		if !ok || math.Abs(float64(bounds.X-275)) > 1 || math.Abs(float64(bounds.X+bounds.W-float32(width-37))) > 1 {
-			t.Fatalf("timeline at width %d does not fill its padded pane: %+v", width, bounds)
+		composer, hasComposer := tt.Find("消息")
+		paneWidth := float32(width - 256) // sidebar, outer margin and pane border
+		columnWidth := min(paneWidth, float32(916))
+		wantX := 247 + (paneWidth-columnWidth)/2 + 25 // gutter and activity border
+		if !ok || !hasComposer || math.Abs(float64(bounds.X-wantX)) > 1 || math.Abs(float64(bounds.W-(columnWidth-50))) > 1 || math.Abs(float64(composer.X-bounds.X-14)) > 1 {
+			t.Fatalf("timeline at width %d is not centered and aligned with composer: timeline=%+v composer=%+v", width, bounds, composer)
 		}
 	}
 	if err := tt.Click(summary); err != nil {
@@ -1103,6 +1111,7 @@ func TestProjectFoldersPersistExpandedState(t *testing.T) {
 	if err := tt.Click("First project"); err != nil {
 		t.Fatal(err)
 	}
+	tt.Advance(200 * time.Millisecond)
 	if !s.Projects[0].Expanded || s.Projects[1].Expanded || !tt.HasText("Saved conversation") {
 		t.Fatal("expanding a project must reveal only its conversations")
 	}
@@ -1174,6 +1183,7 @@ func TestSidebarVirtualProjectAndSettledLists(t *testing.T) {
 	if err := tt.Click("Project"); err != nil {
 		t.Fatal(err)
 	}
+	tt.Advance(200 * time.Millisecond)
 	header, _ := tt.Find("Project")
 	next, _ := tt.Find("Other project")
 	if math.Abs(float64(next.Y-header.Y-header.H-10*34-14)) > 1 {
@@ -1217,7 +1227,7 @@ func TestSidebarVirtualProjectAndSettledLists(t *testing.T) {
 	if err := tt.Click("Project"); err != nil {
 		t.Fatal(err)
 	}
-	tt.Frame()
+	tt.Advance(200 * time.Millisecond)
 	if tt.HasText("Active row ") {
 		t.Fatal("collapsing a project must release its virtual rows")
 	}
@@ -1534,6 +1544,7 @@ func TestConversationContextMenuAndDeleteConfirmation(t *testing.T) {
 	if err := tt.Click(s.Projects[0].Name); err != nil {
 		t.Fatal(err)
 	}
+	tt.Advance(200 * time.Millisecond)
 	openDelete := func() {
 		t.Helper()
 		if err := tt.RightClick(thread.Title); err != nil {
@@ -1657,6 +1668,7 @@ func TestNoProjectGroup(t *testing.T) {
 	if err := tt.Click("无项目"); err != nil {
 		t.Fatal(err)
 	}
+	tt.Advance(200 * time.Millisecond)
 	if tt.HasText(thread.Title) || state.NoProjectExpanded {
 		t.Fatal("collapse failed")
 	}

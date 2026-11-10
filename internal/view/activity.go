@@ -61,21 +61,21 @@ func (v *View) activityGroup(c *ui.Context, items []model.Item, key string, runn
 		labels = append(labels, fmt.Sprintf("%s × %d", label, counts[kind]))
 	}
 	summary := strings.Join(labels, " · ")
+	open := v.openState("activity-" + key)
 	ui.Column(c.Key("activity-"+key)).Radius(10).Border(1, c.Theme().Border).Background(c.Theme().Surface).Children(func() {
-		p := ui.CollapsibleBase(c, v.openState("activity-"+key))
+		p := ui.CollapsibleBase(c, open)
 		p.Trigger.Padding(10, 12).Gap(10).AlignItems(ui.Center).Radius(10).Label(summary).Tooltip(summary).Transition(hoverTransition)
 		if p.Trigger.Hovered() {
 			p.Trigger.Background(c.Theme().SurfaceHover)
 		}
 		p.Trigger.Children(func() {
-			ui.Icon(c, chevron).Size(14, 14).Rotate(90 * p.Progress()).Shrink(0).TextColor(c.Theme().TextMuted)
 			ui.Row(c).Grow(1).MinWidth(0).Gap(12).Wrap().Children(func() {
 				for _, kind := range kinds {
 					label, icon := v.activityKind(kind)
 					ui.Row(c).Gap(5).AlignItems(ui.Center).Children(func() {
-						ui.Icon(c, icon).Size(14, 14).TextColor(c.Theme().TextMuted).Shrink(0)
-						ui.Text(c, label).FontSize(12)
-						ui.Textf(c, "× %d", counts[kind]).FontSize(12).ContentTransition(ui.ContentTransition{Numeric: true})
+						ui.Icon(c, icon).Size(16, 16).TextColor(mutedIconColor).Shrink(0)
+						ui.Text(c, label).FontSize(13).Bold()
+						ui.Textf(c, "× %d", counts[kind]).FontSize(13).ContentTransition(ui.ContentTransition{Numeric: true})
 					})
 				}
 			})
@@ -85,9 +85,12 @@ func (v *View) activityGroup(c *ui.Context, items []model.Item, key string, runn
 					ui.Textf(c, "%d", failed).FontSize(11)
 				})
 			}
-			if active {
-				ui.Spinner(c).Size(13, 13)
+			if active && !*open {
+				ui.Spinner(c).Size(14, 14).Shrink(0).TextColor(c.Theme().Accent)
 			}
+			// The group disclosure sits on its outer edge; nested tool
+			// disclosures keep their leading arrow and indentation.
+			ui.Icon(c, chevron).Size(16, 16).Rotate(90 * p.Progress()).Shrink(0).TextColor(mutedIconColor)
 		})
 		p.Panel(func() {
 			ui.Divider(c).Margin(0, 8, 4)
