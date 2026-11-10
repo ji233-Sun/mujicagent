@@ -23,7 +23,6 @@ import (
 type View struct {
 	C                           *controller.Controller
 	Window                      *mygo.Window
-	Browser                     BrowserPanel
 	Settings                    bool
 	section                     string
 	agentSection, pickerHarness string
@@ -93,7 +92,6 @@ func (v *View) theme(c *ui.Context) {
 func (v *View) Render(c *ui.Context) {
 	tx := v.texts()
 	v.C.Drain()
-	v.Browser.selectThread(v.C.State.Selected)
 	for id, end := range v.settling {
 		thread := v.C.State.Thread(id)
 		if thread == nil || !thread.Settled || !c.Now().Before(end) || c.Preferences().ReduceMotion {
@@ -138,7 +136,6 @@ func (v *View) Render(c *ui.Context) {
 	v.harnessInstallDialog(c)
 	v.attachmentDialog(c)
 	v.imageLightboxDialog(c)
-	v.browserResumeDialog(c)
 	warning := tx.FullAccessWarning()
 	if v.defaultPermissionHarness != "" {
 		warning = tx.FullAccessDefaultWarning()
@@ -343,24 +340,8 @@ func (v *View) conversation(c *ui.Context) {
 		if t != nil && t.Settled {
 			ui.Button(c, tx.Restore()).OnClick(func() { v.C.Settle(t.ID, false) })
 		}
-		v.browserToggle(c, t)
 	})
 	ui.Divider(c)
-	wide, _ := c.Size()
-	if t != nil && v.Browser.thread(t.ID).visible {
-		if wide >= 1120 {
-			ui.Row(c.Key("browser-workspace")).Grow(1).MinHeight(0).AlignItems(ui.Stretch).Children(func() {
-				ui.Column(c).Grow(1).MinWidth(0).Children(func() { v.conversationBody(c, t) })
-				ui.Column(c).WidthPercent(44).MinWidth(360).MaxWidth(620).Shrink(0).BorderWidth(0, 0, 0, 1).BorderColor(c.Theme().Border).Children(func() { v.browserPane(c, t.ID) })
-			})
-		} else {
-			ui.Column(c.Key("browser-workspace")).Grow(1).MinHeight(0).Children(func() {
-				ui.Column(c).Grow(1).MinHeight(0).Children(func() { v.conversationBody(c, t) })
-				ui.Column(c).HeightPercent(46).Shrink(0).BorderWidth(1, 0, 0, 0).BorderColor(c.Theme().Border).Children(func() { v.browserPane(c, t.ID) })
-			})
-		}
-		return
-	}
 	v.conversationBody(c, t)
 }
 
@@ -435,14 +416,9 @@ func (v *View) item(c *ui.Context, item *model.Item, key string, running bool) {
 		v.mcpItem(c, item, key, running)
 		return
 	}
-	browserActivity := false
 	if item.MCP != nil && item.Kind != "plan" {
 		display := *item
 		display.Text = toolActivityText(item, *v.openState(key))
-		if text, ok := v.browserActivityText(item, *v.openState(key)); ok {
-			display.Text = text
-			browserActivity = true
-		}
 		item = &display
 	}
 	if item.Kind == "steerMessage" {
@@ -492,10 +468,6 @@ func (v *View) item(c *ui.Context, item *model.Item, key string, running bool) {
 					label = tx.WaitingForReasoning()
 				}
 				ui.Text(c, label).FontSize(12).TextColor(c.Theme().TextMuted)
-			} else if browserActivity {
-				ui.Column(c).FillWidth().Background(c.Theme().Background).Radius(8).Padding(8).Children(func() {
-					ui.Text(c, item.Text).FontSize(12).Selectable()
-				})
 			} else if item.Kind == "commandExecution" || item.Kind == "fileChange" || item.MCP != nil && item.Kind != "plan" {
 				v.activityOutput(c, item, key)
 			} else if item.Kind == "plan" {

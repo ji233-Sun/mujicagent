@@ -49,31 +49,17 @@ func runCodex(ctx context.Context, o RunOptions, _ []string, emit func(AgentEven
 		params["model"] = o.Model
 	}
 	session := o.Session
-	if o.BrowserThreads != nil && session != "" && !o.BrowserThreads.Registered(session) {
-		return codex.ErrBrowserResume
-	}
 	if !o.Loaded {
-		if o.BrowserThreads != nil {
-			if session == "" {
-				session, err = o.BrowserThreads.Start(ctx, params)
-			} else {
-				session, err = o.BrowserThreads.Resume(ctx, session, params)
-			}
-			if err != nil {
-				return err
-			}
-		} else {
-			method := "thread/start"
-			if session != "" {
-				method = "thread/resume"
-				params["threadId"] = session
-			}
-			var result struct{ Thread struct{ ID string } }
-			if err := o.Client.Call(ctx, method, params, &result); err != nil {
-				return err
-			}
-			session = result.Thread.ID
+		method := "thread/start"
+		if session != "" {
+			method = "thread/resume"
+			params["threadId"] = session
 		}
+		var result struct{ Thread struct{ ID string } }
+		if err := o.Client.Call(ctx, method, params, &result); err != nil {
+			return err
+		}
+		session = result.Thread.ID
 		if session == "" {
 			return fmt.Errorf("Codex returned no thread ID")
 		}
@@ -179,7 +165,7 @@ func DecodeCodexEvent(m codex.Message) (CodexEvent, bool, error) {
 			ID, Type, Text, Status, Command, AggregatedOutput string
 			Summary, Content                                  []string
 			Changes                                           []struct{ Path, Diff string }
-			Query, Path, Server, Tool, Namespace              string
+			Query, Path, Server, Tool                         string
 			Arguments, Result                                 json.RawMessage
 			Error                                             *struct{ Message string }
 		}
@@ -187,11 +173,6 @@ func DecodeCodexEvent(m codex.Message) (CodexEvent, bool, error) {
 			return event, false, err
 		}
 		if v.ID == "" || v.Type == "userMessage" {
-			return event, false, nil
-		}
-		if v.Type == "dynamicToolCall" && v.Namespace == "" && codex.IsBrowserTool(v.Tool) {
-			// The browser dispatcher publishes safe activity. Native snapshots can
-			// contain fill values and screenshots, and cannot overwrite its result.
 			return event, false, nil
 		}
 		e.ID, e.Kind, e.Status, e.Text = v.ID, v.Type, v.Status, v.Text

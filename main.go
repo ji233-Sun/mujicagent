@@ -1,14 +1,12 @@
 package main
 
 import (
-	"context"
 	"log"
 	"os"
 	"path/filepath"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
-	"github.com/ji233-Sun/mujicagent/internal/browser"
 	"github.com/ji233-Sun/mujicagent/internal/controller"
 	"github.com/ji233-Sun/mujicagent/internal/model"
 	"github.com/ji233-Sun/mujicagent/internal/view"
@@ -45,22 +43,6 @@ func main() {
 			Vibrancy: mygo.VibrancySidebar, Content: ui.View(v.Render),
 		})
 		v.Window = win
-		var runtime *browser.Runtime
-		runtime = browser.New(win, func(snapshot browser.Status) {
-			win.Update(func() {
-				if ctrl.State.Thread(snapshot.Page.ThreadID) == nil {
-					return
-				}
-				// Fetch authoritative state here: queued worker notifications
-				// can otherwise apply a snapshot after a newer lifecycle event.
-				status, err := runtime.Status(context.Background(), snapshot.Page.ThreadID)
-				if err == nil {
-					v.Browser.SetStatus(status)
-				}
-			})
-		})
-		ctrl.ConfigureBrowser(runtime)
-		v.AttachBrowser(runtime)
 		mygo.App.OnQuit(ctrl.Close)
 		ctrl.Connect()
 		ctrl.StartAppUpdates()

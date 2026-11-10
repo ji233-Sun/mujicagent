@@ -18,13 +18,9 @@ func TestProtocolChild(t *testing.T) {
 	if os.Getenv("MUJICAGENT_PROTOCOL_CHILD") != "1" {
 		return
 	}
-	if browserTestSchemaCommand(t) {
-		os.Exit(0)
-	}
 	dec, enc := json.NewDecoder(os.Stdin), json.NewEncoder(os.Stdout)
 	initialized := false
 	project := ""
-	var browserRequests []Message
 	for {
 		var m Message
 		if dec.Decode(&m) != nil {
@@ -45,22 +41,6 @@ func TestProtocolChild(t *testing.T) {
 			enc.Encode(map[string]any{"id": m.ID, "result": map[string]string{"userAgent": "test/1"}})
 		case "initialized":
 			initialized = true
-		case "thread/start", "thread/resume":
-			browserRequests = append(browserRequests, m)
-			if !initialized {
-				os.Exit(6)
-			}
-			if os.Getenv("MUJICAGENT_BROWSER_REGISTRATION") == "reject" {
-				enc.Encode(map[string]any{"id": m.ID, "error": RPCError{Code: -32602, Message: "unsupported dynamicTools password=do-not-log"}})
-				continue
-			}
-			id := "browser-thread"
-			if m.Method == "thread/resume" && os.Getenv("MUJICAGENT_BROWSER_REGISTRATION") == "wrong-resume" {
-				id = "different-thread"
-			}
-			enc.Encode(map[string]any{"id": m.ID, "result": map[string]any{"thread": map[string]string{"id": id}}})
-		case "browser/audit":
-			enc.Encode(map[string]any{"id": m.ID, "result": browserRequests})
 		case "permissionProfile/list":
 			var p struct {
 				Cursor *string

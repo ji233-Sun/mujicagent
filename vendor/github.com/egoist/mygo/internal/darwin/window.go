@@ -512,9 +512,6 @@ func (w *window) createWebView(content NSRect) {
 		send(cfg, "setApplicationNameForUserAgent:", uintptr(appName))
 	}
 
-	if o.ConfigureWKWebView != nil {
-		o.ConfigureWKWebView(uintptr(cfg))
-	}
 	w.web = msgInitRectID(send(class("MyGoWebView"), "alloc"), sel("initWithFrame:configuration:"), NSRect{Size: content.Size}, cfg)
 	release(cfg)
 	send(w.web, "setNavigationDelegate:", uintptr(w.delegate))

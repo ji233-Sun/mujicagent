@@ -51,9 +51,6 @@ type Controller struct {
 	reconnectTimer                      *time.Timer
 	reconnectGeneration                 uint64
 	connectionQueue                     map[string]bool
-	browser                             browserRuntime
-	browserThreads                      *codex.BrowserThreads
-	browserDispatcher                   *BrowserToolDispatcher
 }
 
 func New(dir string, s *model.State, wake func()) *Controller {
@@ -100,10 +97,6 @@ func (c *Controller) Save() {
 }
 func (c *Controller) Close() {
 	c.once.Do(func() {
-		c.disconnectBrowser()
-		if c.browser != nil {
-			c.browser.Shutdown()
-		}
 		close(c.stop)
 		c.epoch++
 		c.cancelReconnect()
@@ -155,7 +148,6 @@ func (c *Controller) Connect() {
 	connectionCtx, connectionCancel := context.WithCancel(context.Background())
 	c.connectCancel = connectionCancel
 	c.epoch++
-	c.disconnectBrowser()
 	if c.client != nil {
 		c.client.Close()
 		c.client = nil
@@ -236,7 +228,6 @@ func (c *Controller) Connect() {
 			default:
 			}
 			c.client = client
-			c.connectBrowser(client)
 			c.Connection = "Connected"
 			c.Models = models
 			c.Version = version
@@ -451,7 +442,6 @@ func (c *Controller) DeleteThread(id string) {
 			return
 		}
 		delete(c.loaded, id)
-		c.closeBrowserThread(t)
 		delete(c.Running, id)
 		c.CancelQueueEdit(id)
 		return
@@ -614,7 +604,6 @@ func (c *Controller) removeRequest(id json.RawMessage) {
 
 func (c *Controller) handle(m codex.Message) {
 	if m.Method == "transport/closed" || m.Method == "transport/error" {
-		c.disconnectBrowser()
 		c.epoch++
 		if c.connectCancel != nil {
 			c.connectCancel()
@@ -647,13 +636,6 @@ func (c *Controller) handle(m codex.Message) {
 		}
 		c.streamDirty, c.streamFinal = true, true
 		c.scheduleReconnect()
-		return
-	}
-	if c.browserDispatcher != nil && m.Method == "item/tool/call" {
-		dispatcher := c.browserDispatcher
-		// Dispatch can publish onto the bounded UI queue or write a reply.
-		// Never make that queue's only consumer wait for either operation.
-		go dispatcher.Handle(m)
 		return
 	}
 	native, known, err := harness.DecodeCodexEvent(m)
