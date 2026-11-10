@@ -154,6 +154,16 @@ func (msgs Messages) ActivityOutput() string {
 	return Catalog.Format(msgs.locale, "activityOutput", nil)
 }
 
+// ScrollOutputHorizontally says "横向滚动查看完整行"
+// in the language the app shows.
+func ScrollOutputHorizontally() string { return In(i18n.Locale()).ScrollOutputHorizontally() }
+
+// ScrollOutputHorizontally says "横向滚动查看完整行"
+// in the language of msgs.
+func (msgs Messages) ScrollOutputHorizontally() string {
+	return Catalog.Format(msgs.locale, "scrollOutputHorizontally", nil)
+}
+
 // ExpandOutput says "展开输出"
 // in the language the app shows.
 func ExpandOutput() string { return In(i18n.Locale()).ExpandOutput() }
@@ -1732,6 +1742,16 @@ func (msgs Messages) McpRunning() string {
 	return Catalog.Format(msgs.locale, "mcpRunning", nil)
 }
 
+// ResponseRequired says "需要你的答复"
+// in the language the app shows.
+func ResponseRequired() string { return In(i18n.Locale()).ResponseRequired() }
+
+// ResponseRequired says "需要你的答复"
+// in the language of msgs.
+func (msgs Messages) ResponseRequired() string {
+	return Catalog.Format(msgs.locale, "responseRequired", nil)
+}
+
 // McpCompleted says "已完成"
 // in the language the app shows.
 func McpCompleted() string { return In(i18n.Locale()).McpCompleted() }
@@ -2752,6 +2772,16 @@ func FavoriteModels() string { return In(i18n.Locale()).FavoriteModels() }
 // in the language of msgs.
 func (msgs Messages) FavoriteModels() string {
 	return Catalog.Format(msgs.locale, "favoriteModels", nil)
+}
+
+// NoFavoriteModels says "还没有收藏模型。点击模型旁的星标即可收藏。"
+// in the language the app shows.
+func NoFavoriteModels() string { return In(i18n.Locale()).NoFavoriteModels() }
+
+// NoFavoriteModels says "还没有收藏模型。点击模型旁的星标即可收藏。"
+// in the language of msgs.
+func (msgs Messages) NoFavoriteModels() string {
+	return Catalog.Format(msgs.locale, "noFavoriteModels", nil)
 }
 
 // FavoriteModel says "收藏"

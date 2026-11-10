@@ -7,13 +7,26 @@ import (
 )
 
 func (v *View) settingsDialog(c *ui.Context) {
-	dialog := ui.DialogBase(c.Key("settings-dialog"), &v.Settings, func(backdrop, panel ui.Element) {
-		backdrop.Background(ui.RGBA(0, 0, 0, 0.18))
+	// Keep one animation channel alive through dismissal and reversal. Reveal
+	// text only after its surface is opaque, and hide it before that surface
+	// fades, so foreground and background text never cross-fade together.
+	target, duration := float32(0), 160*time.Millisecond
+	if v.Settings {
+		target, duration = 1, 180*time.Millisecond
+	}
+	shown := target
+	ui.Overlay(c, func() {
+		shown = ui.Box(c.Key("settings-motion")).Absolute().Size(0, 0).IgnoreInput(true).
+			Animate("visible", target, duration)
+	})
+	visible := v.Settings || shown > 0
+	dialog := ui.DialogBase(c.Key("settings-dialog"), &visible, func(backdrop, panel ui.Element) {
+		backdrop.Background(ui.RGBA(0, 0, 0, 0.18*shown)).IgnoreInput(!v.Settings)
 		panel.WidthPercent(96).HeightPercent(90).MaxWidth(1200).MaxHeight(720).
 			Radius(18).Border(1, c.Theme().Border).Background(c.Theme().Background).
 			Shadow(0, 16, 50, 0, ui.RGBA(0, 0, 0, 0.22)).Clip().Label(v.texts().SettingsPanel()).
-			Transition(ui.ElementTransition{Duration: 180 * time.Millisecond, Enter: &ui.Motion{Y: 8, Scale: 0.98}})
-		ui.Row(c).Fill().AlignItems(ui.Stretch).Children(func() {
+			Opacity(min(1, 2*shown)).Translate(0, 8*(1-shown))
+		ui.Row(c).Fill().Opacity(max(0, 2*shown-1)).AlignItems(ui.Stretch).Children(func() {
 			ui.Column(c).Width(140).Shrink(0).Padding(12, 8).Background(c.Theme().Surface).Children(func() {
 				v.settingsSidebar(c)
 			})
@@ -23,6 +36,7 @@ func (v *View) settingsDialog(c *ui.Context) {
 		})
 	})
 	if dialog.Dismissed() {
+		v.Settings = false
 		v.dismissHarnessInstall()
 		v.C.Save()
 	}

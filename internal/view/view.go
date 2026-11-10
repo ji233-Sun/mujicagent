@@ -20,6 +20,15 @@ import (
 	"github.com/ji233-Sun/mujicagent/internal/model"
 )
 
+// Shared reading column, including the 24-DIP gutters on either side.
+const conversationMaxWidth = 916
+const conversationBodyWidth = 760
+const composerEditorHeight = 56
+
+// Subdued graphics keep the original tint; ordinary secondary text uses a
+// darker shade of the same palette so small labels remain readable.
+var mutedIconColor = ui.Hex("#74877f")
+
 type View struct {
 	C                           *controller.Controller
 	Window                      *mygo.Window
@@ -79,11 +88,14 @@ func (v *View) theme(c *ui.Context) {
 	t.SurfaceHover = ui.Hex("#dce7e3")
 	t.Border = ui.Hex("#d5dfdb")
 	t.Text = ui.Hex("#28413a")
-	t.TextMuted = ui.Hex("#74877f")
+	t.TextMuted = mutedIconColor.Mix(t.Text, 0.5)
 	t.Accent = ui.Hex("#07896d")
 	t.AccentText = ui.Hex("#ffffff")
-	t.AccentHover = t.Accent
-	t.AccentPressed = t.Accent
+	t.AccentHover = t.Accent.Mix(t.Text, 0.12)
+	t.AccentPressed = t.Accent.Mix(t.Text, 0.26)
+	t.SurfacePressed = t.SurfaceHover.Mix(t.Text, 0.08)
+	t.Focus = t.Accent.Alpha(0.65)
+	t.Selection = t.Accent.Alpha(0.20)
 	t.Radius = 8
 	t.FontSize = 13
 	c.SetTheme(t)
@@ -199,14 +211,14 @@ func (v *View) group(c *ui.Context, p model.Project) {
 				if p.ID == "" {
 					icon = noProjectFolder
 				}
-				ui.Icon(c, icon).Size(16, 16).Shrink(0).TextColor(c.Theme().TextMuted)
-				ui.Text(c, p.Name).FontSize(12).Grow(1).MinWidth(0).SingleLine()
+				ui.Icon(c, icon).Size(16, 16).Shrink(0).TextColor(mutedIconColor)
+				ui.Text(c, p.Name).FontSize(12).Bold().TextColor(c.Theme().TextMuted).Grow(1).MinWidth(0).SingleLine()
 				ui.Box(c).Width(26).Shrink(0)
 				angle := float32(0)
 				if p.Expanded {
 					angle = 90
 				}
-				arrow := ui.Icon(c, chevron).Size(14, 14).Shrink(0).TextColor(c.Theme().TextMuted)
+				arrow := ui.Icon(c, chevron).Size(14, 14).Shrink(0).TextColor(mutedIconColor)
 				arrow.Rotate(arrow.Animate("rotation", angle, 180*time.Millisecond))
 			}).OnClick(func() { v.C.SetProjectExpanded(p.ID, !p.Expanded) })
 			if hovered {
@@ -219,9 +231,6 @@ func (v *View) group(c *ui.Context, p model.Project) {
 				}).Absolute().Top(3).Right(28)
 			}
 		})
-		if !p.Expanded {
-			return
-		}
 		threads := make([]*model.Thread, 0)
 		height := float32(0)
 		for _, t := range v.C.State.Threads {
@@ -250,8 +259,20 @@ func (v *View) group(c *ui.Context, p model.Project) {
 			list = &ui.ListState{}
 			v.projectLists[p.ID] = list
 		}
-		ui.List(c.Key("threads"), list, len(threads)).Height(min(10*threadHeight, height)).Shrink(0).Margin(0, 0, 0, 14).Label(p.Name).
-			ItemKey(func(i int) any { return threads[i].ID }).Rows(func(row ui.ListRow) { v.threadRow(row.Context, threads[row.Index], true) })
+		clip := ui.Column(c.Key("threads-clip")).Shrink(0).Clip().IgnoreInput(!p.Expanded)
+		target := float32(0)
+		if p.Expanded {
+			target = 1
+		}
+		progress := clip.Animate("expanded", target, 180*time.Millisecond)
+		listHeight := min(10*threadHeight, height)
+		clip.Height(listHeight * progress).Children(func() {
+			if progress <= 0 {
+				return
+			}
+			ui.List(c.Key("threads"), list, len(threads)).Height(listHeight).Shrink(0).Margin(0, 0, 0, 14).Label(p.Name).
+				ItemKey(func(i int) any { return threads[i].ID }).Rows(func(row ui.ListRow) { v.threadRow(row.Context, threads[row.Index], true) })
+		})
 	})
 }
 func (v *View) threadRow(c *ui.Context, t *model.Thread, activeList bool) {
@@ -310,9 +331,9 @@ func (v *View) threadRow(c *ui.Context, t *model.Thread, activeList bool) {
 				if len(t.Turns) == 0 {
 					icon = unsentChat
 				}
-				ui.Icon(c, icon).Size(16, 16).TextColor(c.Theme().TextMuted)
+				ui.Icon(c, icon).Size(16, 16).TextColor(mutedIconColor)
 			}
-			ui.Text(c, title).SingleLine().Grow(1).MinWidth(0).FontSize(12)
+			ui.Text(c, title).SingleLine().Ellipsis(tailEllipsis(title, 18)).Grow(1).MinWidth(0).FontSize(13)
 		})
 		button.OnClick(func() { v.C.Select(t.ID) })
 		if show && !v.C.Running[t.ID] {
@@ -332,8 +353,8 @@ func (v *View) conversation(c *ui.Context) {
 	t := v.C.State.Thread(v.C.State.Selected)
 	title := v.threadTitle(t)
 	ui.Row(c).Height(50).Shrink(0).Padding(0, 18).Gap(9).AlignItems(ui.Center).DragWindow().Children(func() {
-		ui.Icon(c, chat).Size(18, 18).TextColor(c.Theme().TextMuted)
-		ui.Text(c, title).Bold().SingleLine().Grow(1).MinWidth(0)
+		ui.Icon(c, chat).Size(18, 18).TextColor(mutedIconColor)
+		ui.Text(c, title).FontSize(14).Bold().SingleLine().Grow(1).MinWidth(0)
 		if t != nil && t.HandoffFrom != "" {
 			ui.Button(c, tx.HandoffSource()).Height(26).FontSize(11).OnClick(func() { v.C.Select(t.HandoffFrom) })
 		}
@@ -349,7 +370,7 @@ func (v *View) conversationBody(c *ui.Context, t *model.Thread) {
 	tx := v.texts()
 	if t == nil || len(t.Turns) == 0 {
 		ui.Column(c).Grow(1).Center().Gap(14).Children(func() {
-			ui.Icon(c, spark).Size(36, 36).TextColor(c.Theme().TextMuted)
+			ui.Icon(c, spark).Size(36, 36).TextColor(mutedIconColor)
 			ui.Text(c, tx.StartIdea()).FontSize(22).Bold()
 			if t.Driver() == "codex" && v.C.Connection != "Connected" {
 				ui.Button(c, tx.ConnectCodex()).OnClick(func() { v.Settings = true; v.section = "Agents" })
@@ -370,7 +391,8 @@ func (v *View) timeline(c *ui.Context, t *model.Thread) {
 	if s.Y >= s.MaxY-2 {
 		s.Y = math.MaxFloat32
 	}
-	ui.Scroll(c.Key("timeline-"+t.ID)).Grow(1).MinHeight(0).TrackScroll(s).Padding(26, 28).Gap(30).Children(func() {
+	ui.Scroll(c.Key("timeline-" + t.ID)).Grow(1).MinHeight(0).FillWidth().MaxWidth(conversationMaxWidth).AlignSelf(ui.Center).
+		TrackScroll(s).Padding(24).Gap(28).Children(func() {
 		for i := range t.Turns {
 			turn := &t.Turns[i]
 			ui.Column(c.Key(i)).Gap(20).FillWidth().Children(func() {
@@ -388,12 +410,6 @@ func (v *View) timeline(c *ui.Context, t *model.Thread) {
 							j++
 						}
 						v.activityGroup(c, turn.Items[start:j], key, turn.Status == "inProgress")
-					}
-					if turn.Status == "inProgress" && !compactionRunning(turn) {
-						ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-							ui.Spinner(c).Size(13, 13)
-							ui.Text(c, agentName(t.Driver())).FontSize(12).TextColor(c.Theme().TextMuted)
-						})
 					}
 					if turn.Error != "" {
 						ui.Text(c, v.statusText(turn.Error)).FontSize(12).TextColor(c.Theme().Danger).Selectable()
@@ -429,9 +445,9 @@ func (v *View) item(c *ui.Context, item *model.Item, key string, running bool) {
 	}
 	if item.Kind == "agentMessage" {
 		if running && item.Status != "completed" {
-			markdown.Stream(c.Key(key), item.Text, &v.md)
+			markdown.Stream(c.Key(key), item.Text, &v.md).MaxWidth(conversationBodyWidth)
 		} else {
-			markdown.View(c.Key(key), item.Text, &v.md)
+			markdown.View(c.Key(key), item.Text, &v.md).MaxWidth(conversationBodyWidth)
 		}
 		return
 	}
@@ -442,6 +458,7 @@ func (v *View) item(c *ui.Context, item *model.Item, key string, running bool) {
 	if (item.Kind == "commandExecution" || item.Kind == "fileChange" || item.MCP != nil) && item.Text != "" {
 		label = strings.SplitN(item.Text, "\n", 2)[0]
 	}
+	ellipsis := activityEllipsis(item, label)
 	ui.Column(c.Key(key)).Children(func() {
 		p := ui.CollapsibleBase(c, v.openState(key))
 		p.Trigger.Padding(8, 10).Gap(8).AlignItems(ui.Center).Radius(7).Label(label).Tooltip(label).Transition(hoverTransition)
@@ -454,9 +471,20 @@ func (v *View) item(c *ui.Context, item *model.Item, key string, running bool) {
 		p.Trigger.Children(func() {
 			ui.Icon(c, chevron).Size(12, 12).Rotate(90 * p.Progress()).Shrink(0)
 			ui.Icon(c, icon).Size(15, 15).Shrink(0)
-			ui.Text(c, label).FontSize(12).SingleLine().Grow(1).MinWidth(0)
-			if item.Status == "failed" {
-				ui.Icon(c, failureIcon).Size(14, 14).TextColor(c.Theme().Danger).Tooltip(tx.Failed())
+			ui.Text(c, label).FontSize(13).SingleLine().Ellipsis(ellipsis).Grow(1).MinWidth(0)
+			switch item.Status {
+			case "completed":
+				ui.Icon(c, checkIcon).Size(14, 14).Shrink(0).TextColor(c.Theme().Accent).Label(tx.McpCompleted()).Tooltip(tx.McpCompleted())
+			case "failed":
+				ui.Icon(c, failureIcon).Size(14, 14).Shrink(0).TextColor(c.Theme().Danger).Label(tx.Failed()).Tooltip(tx.Failed())
+			case "inProgress":
+				if running {
+					ui.Spinner(c).Size(14, 14).Shrink(0).TextColor(c.Theme().Accent).Label(tx.McpRunning()).Tooltip(tx.McpRunning())
+				} else {
+					ui.Icon(c, stopIcon).Size(14, 14).Shrink(0).TextColor(c.Theme().TextMuted).Label(tx.Stopped()).Tooltip(tx.Stopped())
+				}
+			case "interrupted":
+				ui.Icon(c, stopIcon).Size(14, 14).Shrink(0).TextColor(c.Theme().TextMuted).Label(tx.Stopped()).Tooltip(tx.Stopped())
 			}
 		})
 		p.Panel(func() {
@@ -469,19 +497,25 @@ func (v *View) item(c *ui.Context, item *model.Item, key string, running bool) {
 				}
 				ui.Text(c, label).FontSize(12).TextColor(c.Theme().TextMuted)
 			} else if item.Kind == "commandExecution" || item.Kind == "fileChange" || item.MCP != nil && item.Kind != "plan" {
-				v.activityOutput(c, item, key)
+				output := *item
+				if nativeTool(item) && item.Kind != "commandExecution" {
+					// The disclosure already names this tool and target. Keep command
+					// prompts, diffs and actual result content in the output viewer.
+					_, output.Text, _ = strings.Cut(item.Text, "\n")
+				}
+				v.activityOutput(c, &output, key)
 			} else if item.Kind == "plan" {
 				markdown.View(c, strings.ReplaceAll(item.Text, "\n", "  \n"), &v.md)
 			} else {
 				markdown.View(c, item.Text, &v.md)
 			}
-		}).Padding(4, 12, 12)
+		}).Padding(4, 12, 8)
 	})
 }
 
 func (v *View) composer(c *ui.Context, t *model.Thread) {
 	tx := v.texts()
-	ui.Column(c).Shrink(0).Padding(8, 24, 16).Gap(8).Children(func() {
+	ui.Column(c).Shrink(0).FillWidth().MaxWidth(conversationMaxWidth).AlignSelf(ui.Center).Padding(8, 24, 16).Gap(8).Children(func() {
 		var requests []*codex.Request
 		for _, r := range v.C.Requests {
 			if t != nil && (r.ThreadID == t.ServerID || r.ThreadID == t.ID) {
@@ -512,10 +546,45 @@ func (v *View) composer(c *ui.Context, t *model.Thread) {
 		}
 		if busy {
 			v.projectPicker = false
+			if len(requests) > 0 || len(t.Turns) == 0 || !compactionRunning(&t.Turns[len(t.Turns)-1]) {
+				ui.Row(c.Key("running-status")).Height(26).Shrink(0).Gap(7).AlignItems(ui.Center).TextColor(c.Theme().Text).Children(func() {
+					if len(requests) > 0 {
+						ui.Icon(c, thinkingIcon).Size(14, 14).Shrink(0).TextColor(c.Theme().Accent)
+						ui.Text(c, tx.ResponseRequired()).FontSize(13).Bold()
+						return
+					}
+					ui.Spinner(c).Size(14, 14).Shrink(0).TextColor(c.Theme().Accent)
+					ui.Text(c, agentName(t.Driver())).FontSize(12).Shrink(0).TextColor(c.Theme().TextMuted)
+					ui.Text(c, "· "+tx.McpRunning()).FontSize(13).Bold().Shrink(0)
+					if len(t.Turns) > 0 {
+						items := t.Turns[len(t.Turns)-1].Items
+						for i := len(items) - 1; i >= 0; i-- {
+							item := &items[i]
+							if item.Status != "inProgress" || (item.Kind != "commandExecution" && item.Kind != "fileChange" && item.Kind != "toolCall" && item.Kind != "mcpToolCall") {
+								continue
+							}
+							label, _ := v.activityKind(item.Kind)
+							if nativeTool(item) {
+								label = toolActivityText(item, false)
+							} else if item.MCP != nil && item.MCP.Tool != "" {
+								label = item.MCP.Tool
+							} else if item.Text != "" {
+								label = strings.SplitN(item.Text, "\n", 2)[0]
+							}
+							ui.Text(c, label).FontSize(13).SingleLine().Ellipsis(activityEllipsis(item, label)).MinWidth(0).Grow(1).TextColor(c.Theme().Text).Tooltip(label)
+							break
+						}
+					}
+				})
+			}
 		} else {
 			v.projectSelector(c, t)
 		}
-		ui.Column(c).Radius(14).Border(1, c.Theme().Border).Background(c.Theme().Surface).Padding(12, 14, 8).Gap(8).Children(func() {
+		border := c.Theme().Border
+		if v.editorHandle.Focused(c) {
+			border = c.Theme().Accent
+		}
+		ui.Column(c).Radius(14).Border(1, border).Background(c.Theme().Surface).Padding(12, 14, 8).Gap(8).Children(func() {
 			editing := t != nil && v.C.QueueEdit(t.ID) != nil
 			if editing {
 				ui.Row(c.Key("queue-edit-banner")).AlignItems(ui.Center).Gap(8).Transition(hoverTransition).Children(func() {
@@ -524,7 +593,7 @@ func (v *View) composer(c *ui.Context, t *model.Thread) {
 				})
 			}
 			// Clip the editor's custom painting at the input viewport.
-			ui.Box(c).Height(90).Shrink(0).Clip().Children(func() {
+			ui.Box(c).Height(composerEditorHeight).Shrink(0).Clip().Children(func() {
 				v.composerInput(c, draft)
 			})
 			ui.Row(c).AlignItems(ui.Center).Gap(6).Children(func() {
@@ -537,7 +606,14 @@ func (v *View) composer(c *ui.Context, t *model.Thread) {
 				ui.Box(c).Grow(1)
 				iconButton(c, tx.AttachFile(), plus, v.pickAttachments).Disabled(t == nil)
 				if busy {
-					iconButton(c, tx.Stop(), stopIcon, v.C.Interrupt)
+					stop := ui.ButtonBase(c.Key("stop")).Label(tx.Stop()).Tooltip(tx.Stop()).Size(30, 30).Padding(0).Center().Radius(15).
+						Background(c.Theme().Text).TextColor(c.Theme().Background).Transition(hoverTransition)
+					if stop.Pressed() {
+						stop.Background(c.Theme().AccentPressed)
+					} else if stop.Hovered() {
+						stop.Background(c.Theme().AccentHover)
+					}
+					stop.Children(func() { ui.Icon(c, stopIcon).Size(16, 16).Shrink(0) }).OnClick(v.C.Interrupt)
 				}
 				{
 					label := tx.Send()
@@ -547,7 +623,20 @@ func (v *View) composer(c *ui.Context, t *model.Thread) {
 					if editing {
 						label = tx.QueueSave()
 					}
-					ui.PrimaryButton(c, "").Label(label).Tooltip(label).Size(30, 30).Padding(0).Gap(0).Center().Radius(15).Disabled(t == nil || strings.TrimSpace(*draft) == "").Children(func() { ui.Icon(c, arrow).Size(16, 16).Shrink(0) }).OnClick(func() {
+					var action ui.Element
+					if busy && !editing {
+						// Queueing is a different existing action from sending now;
+						// expose that distinction without requiring a tooltip.
+						action = ui.Button(c, tx.QueueAdd()).Height(30).Padding(0, 10).Radius(15).Shrink(0)
+					} else {
+						icon := arrow
+						if editing {
+							icon = checkIcon
+						}
+						action = ui.PrimaryButton(c, "").Size(30, 30).Padding(0).Gap(0).Center().Radius(15).
+							Children(func() { ui.Icon(c, icon).Size(16, 16).Shrink(0) })
+					}
+					action.Label(label).Tooltip(label).Disabled(t == nil || strings.TrimSpace(*draft) == "").OnClick(func() {
 						if v.C.Send(*draft, false) {
 							v.draft = ""
 						}
@@ -662,11 +751,66 @@ func (v *View) pickProject() {
 	}()
 }
 func dot(c *ui.Context, connected bool) {
-	color := c.Theme().TextMuted
+	color := mutedIconColor
 	if connected {
 		color = c.Theme().Accent
 	}
 	ui.Box(c).Size(5, 5).Radius(3).Background(color).Margin(0, 8)
+}
+
+func activityEllipsis(item *model.Item, label string) string {
+	path := ""
+	if item.Kind == "fileChange" {
+		path = label
+	} else if nativeTool(item) {
+		var args struct {
+			Path     string `json:"path"`
+			FilePath string `json:"file_path"`
+			File     string `json:"file"`
+		}
+		if json.Unmarshal([]byte(item.MCP.Arguments), &args) == nil {
+			path = args.Path
+			if path == "" {
+				path = args.FilePath
+			}
+			if path == "" {
+				path = args.File
+			}
+		}
+	}
+	if path == "" {
+		return "…"
+	}
+	base := filepath.Base(strings.ReplaceAll(path, "\\", "/"))
+	return "…/" + compactTail(base, 40)
+}
+
+// Keep distinguishing suffixes visible while the full value remains in the
+// control's accessible label and tooltip. The renderer fits the leading text.
+func compactTail(value string, count int) string {
+	runes := []rune(value)
+	return string(runes[max(0, len(runes)-count):])
+}
+
+func tailEllipsis(value string, count int) string {
+	if count < 1 || len([]rune(value)) <= count {
+		return "…"
+	}
+	tail := compactTail(value, count)
+	const separators = " /\\_-"
+	start := len(value) - len(tail)
+	// Preserve all complete trailing words in the budget, not just the last
+	// one: a shared platform suffix must not hide the distinguishing word.
+	if start > 0 && !strings.ContainsRune(separators, rune(value[start-1])) && !strings.ContainsRune(separators, []rune(tail)[0]) {
+		if i := strings.IndexAny(tail, separators); i >= 0 {
+			tail = tail[i:]
+		}
+	}
+	tail = strings.TrimLeft(tail, separators)
+	if tail == "" {
+		tail = compactTail(value, count)
+	}
+	return "…" + tail
 }
 
 var hoverTransition = ui.ElementTransition{Colors: true, Duration: 120 * time.Millisecond}
@@ -674,7 +818,9 @@ var hoverTransition = ui.ElementTransition{Colors: true, Duration: 120 * time.Mi
 func iconButton(c *ui.Context, label string, icon *ui.SVG, fn func()) ui.Element {
 	b := ui.ButtonBase(c.Key(label)).Label(label).Tooltip(label).Size(26, 26).Radius(7).Center().TextColor(c.Theme().TextMuted)
 	b.Transition(hoverTransition)
-	if b.Hovered() {
+	if b.Pressed() {
+		b.Background(c.Theme().SurfacePressed).TextColor(c.Theme().Accent)
+	} else if b.Hovered() {
 		b.Background(c.Theme().SurfaceHover).TextColor(c.Theme().Text)
 	}
 	return b.Children(func() { ui.Icon(c, icon).Size(16, 16) }).OnClick(fn)

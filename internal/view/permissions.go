@@ -46,11 +46,11 @@ func (v *View) permissionSelector(c *ui.Context) {
 		label += " → " + v.permissionName(v.C.NextPermissionID())
 	}
 	button := pickerOption(c.Key("permission-selector"), tx.Permissions(), v.permissionPicker).
-		Height(30).MaxWidth(170).Shrink(1).Tooltip(label).
+		Height(30).MaxWidth(170).Shrink(0).Tooltip(label).
 		Disabled(v.C.Connection != "Connected" || v.C.PermissionUpdating())
 	button.Children(func() {
 		ui.Icon(c, permissionIcon(v.C.PermissionID())).Size(15, 15).Shrink(0)
-		ui.Text(c, label).FontSize(12).SingleLine().Shrink(1).MinWidth(0)
+		ui.Text(c, label).FontSize(13).SingleLine().Shrink(1).MinWidth(0)
 	})
 	button.OnClick(func() {
 		v.permissionPicker = !v.permissionPicker

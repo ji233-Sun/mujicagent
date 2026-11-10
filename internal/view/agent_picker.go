@@ -109,7 +109,9 @@ func (v *View) agentModelPanel(c *ui.Context) {
 			label = tx.AgentLoadingModels()
 		}
 		ui.Button(c, label).Height(24).FontSize(11).Disabled(h.ModelsLoading).OnClick(func() { v.C.LoadAgentModels(id, true) })
-		if h.ModelsError != "" {
+		// An empty failed catalog already owns the complete error explanation.
+		// Retain the footer warning when stale models are still available.
+		if h.ModelsError != "" && len(h.Models) > 0 {
 			ui.Text(c, tx.AgentModelsFailed()).FontSize(11).TextColor(c.Theme().Danger).Tooltip(h.ModelsError)
 		}
 	})
@@ -138,10 +140,10 @@ func (v *View) agentPermissions(c *ui.Context, t *model.Thread) {
 	if v.C.NextPermissionID() != v.C.PermissionID() {
 		label += " → " + permissionName(v.C.NextPermissionID())
 	}
-	button := pickerOption(c.Key("agent-permission-selector"), tx.Permissions(), v.permissionPicker).Height(30).MaxWidth(170).Shrink(1).Tooltip(label)
+	button := pickerOption(c.Key("agent-permission-selector"), tx.Permissions(), v.permissionPicker).Height(30).MaxWidth(170).Shrink(0).Tooltip(label)
 	button.Children(func() {
 		ui.Icon(c, permissionIcon(current.icon)).Size(15, 15).Shrink(0)
-		ui.Text(c, label).FontSize(12).SingleLine().Shrink(1).MinWidth(0)
+		ui.Text(c, label).FontSize(13).SingleLine().Shrink(1).MinWidth(0)
 	})
 	button.OnClick(func() { v.permissionPicker = !v.permissionPicker; v.modelPicker = false; v.permissionTarget = t.ID })
 	pickerPopover(c.Key("agent-permission-picker"), button, &v.permissionPicker, tx.PermissionPicker(), 290, func() {
