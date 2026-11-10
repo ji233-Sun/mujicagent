@@ -56,19 +56,54 @@ var managerAdapters = map[string]managerAdapter{
 			node, cli, err := windowsNpmRuntime(i.Prefix)
 			return node, append([]string{cli}, args...), err
 		}
-		return filepath.Join(i.Prefix, "bin", "npm"), args, nil
+		manager := filepath.Join(i.Prefix, "bin", "npm")
+		if info, err := os.Stat(manager); err != nil || info.IsDir() {
+			manager = "npm"
+		}
+		return manager, args, nil
 	}},
 	"brew": {name: "Homebrew", update: func(i Installation, v string) (string, []string, error) {
-		cask := installerAdapters[driverID(i.Driver)].cask
-		if i.Driver == "claude" && strings.Contains(filepath.ToSlash(canonical(i.Path)), "/Caskroom/claude-code@latest/") {
-			cask = "claude-code@latest"
-		}
+		cask := installationCask(i)
 		return filepath.Join(i.Prefix, "bin", "brew"), []string{"upgrade", "--cask", cask}, nil
 	}},
 	"bun": {name: "Bun", rootArgs: []string{"pm", "--global", "ls"}, binArgs: []string{"pm", "bin", "--global"},
 		update: globalPackageUpdate},
 	"pnpm": {name: "pnpm", rootArgs: []string{"root", "--global"}, binArgs: []string{"bin", "--global"},
 		update: globalPackageUpdate},
+}
+
+func installationCask(i Installation) string {
+	cask := installerAdapters[driverID(i.Driver)].cask
+	if i.Driver == "claude" && strings.Contains(filepath.ToSlash(canonical(i.Path)), "/Caskroom/claude-code@latest/") {
+		cask = "claude-code@latest"
+	}
+	return cask
+}
+
+func inspectNpmLauncher(current Installation, real string) Installation {
+	bin := filepath.Dir(current.Path)
+	prefix := filepath.Dir(bin)
+	root := filepath.Join(prefix, "lib", "node_modules")
+	if runtime.GOOS == "windows" {
+		prefix, root = bin, filepath.Join(bin, "node_modules")
+	} else if filepath.Base(bin) != "bin" {
+		return current
+	}
+	if ownsLauncher(current.Driver, current.Path, real, root, bin) {
+		owner := packageOwner(filepath.Join(root, filepath.FromSlash(packageFor(current.Driver))))
+		if owner != "" && owner != "npm" {
+			current.Method, current.UpdateIssue = owner, "unverified"
+			if owner == "ambiguous" {
+				current.UpdateIssue = "ambiguous"
+			}
+			if _, ok := managerAdapters[owner]; !ok && owner != "ambiguous" {
+				current.UpdateIssue = "unsupported"
+			}
+			return current
+		}
+		current.Method, current.Prefix = "npm", prefix
+	}
+	return current
 }
 
 func ManagerName(method string) string {

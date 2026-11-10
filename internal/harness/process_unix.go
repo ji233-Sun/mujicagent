@@ -22,8 +22,3 @@ func prepareProcess(cmd *exec.Cmd) {
 		return err
 	}
 }
-
-func runInstaller(cmd *exec.Cmd) error {
-	prepareProcess(cmd)
-	return cmd.Run()
-}

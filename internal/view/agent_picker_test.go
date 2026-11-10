@@ -678,6 +678,7 @@ func TestHarnessInstallScreenshots(t *testing.T) {
 		"unknown", "missing", "install-official", "install-npm", "install-mirror", "install-npm-fallback",
 		"preparing", "preview-error", "installing", "install-error", "cancelled", "running",
 		"bun-confirm", "pnpm-confirm", "unsupported-manager", "manager-unavailable", "manager-unverified", "manager-ambiguous",
+		"probe-failed", "custom-probe-failed", "npm-unavailable",
 	}
 	for _, driver := range []string{"codex", "pi", "droid", "claude"} {
 		for _, lang := range []string{"zh-Hans", "en"} {
@@ -730,6 +731,18 @@ func TestHarnessInstallScreenshots(t *testing.T) {
 						c.Connection = "Disconnected"
 					}
 					switch scene {
+					case "npm-unavailable":
+						u.Installation.Method, u.Installation.UpdateIssue = "npm", "unavailable"
+						u.Installation.Path = "/Users/demo/custom-prefix/bin/" + driver
+					case "probe-failed", "custom-probe-failed":
+						u.Release = harness.Release{}
+						u.Installation.Version = ""
+						u.Installation.Method, u.Installation.UpdateIssue = "npm", "probe-failed"
+						u.Error = "cannot run " + driver + ": exit status 1: launcher runtime unavailable"
+						if scene == "custom-probe-failed" {
+							u.Installation.Method = "custom"
+							u.Installation.Path = "/Users/demo/.local/bin/" + driver + "d"
+						}
 					case "bun-unsupported", "pnpm-unsupported", "winget-unsupported":
 						u.Installation.Method = strings.TrimSuffix(scene, "-unsupported")
 						if scene == "winget-unsupported" {
@@ -918,7 +931,12 @@ func TestHarnessInstallScreenshots(t *testing.T) {
 					if scene == "unknown" && !tt.HasText(tx.HarnessUnknownManager()) {
 						t.Fatal("unknown manager missing guidance")
 					}
-					if u.Installation.Path != "" && !u.Installation.CanUpdate() {
+					if scene == "probe-failed" || scene == "custom-probe-failed" {
+						if !tt.HasText(u.Error) || slices.Contains(tt.Texts(), tx.HarnessUpdate()) || driver != "codex" && tt.HasText(tx.AgentCLIAvailable()) {
+							t.Fatal("failed probe hid the error or advertised an available CLI/update")
+						}
+					}
+					if u.Installation.Path != "" && !u.Installation.CanUpdate() && scene != "probe-failed" {
 						if slices.Contains(tt.Texts(), tx.HarnessUpdate()) {
 							t.Fatal("unsupported installation offers an update")
 						}
@@ -928,10 +946,12 @@ func TestHarnessInstallScreenshots(t *testing.T) {
 							message = tx.HarnessUnsupportedManager(harness.ManagerName(u.Installation.Method))
 						case "app-managed":
 							message = tx.HarnessUnsupportedManager("Factory.app")
-						case "unknown":
+						case "unknown", "custom-probe-failed":
 							message = tx.HarnessUnknownManager()
 						case "manager-unavailable":
 							message = tx.HarnessManagerUnavailable("pnpm")
+						case "npm-unavailable":
+							message = tx.HarnessManagerUnavailable("npm")
 						case "manager-unverified":
 							message = tx.HarnessManagerUnverified("pnpm")
 						case "manager-ambiguous":

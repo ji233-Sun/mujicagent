@@ -75,6 +75,9 @@ func (c *Controller) LoadAgentModels(id string, force bool) {
 		return
 	}
 	h := c.HarnessFor(id)
+	if h.Installing {
+		return
+	}
 	cwd := c.Dir
 	if t := c.State.Thread(c.State.Selected); t != nil && t.Cwd != "" {
 		cwd = t.Cwd
@@ -96,8 +99,17 @@ func (c *Controller) LoadAgentModels(id string, force bool) {
 	h.Models = nil
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	h.modelsCancel = cancel
+	done := make(chan struct{})
+	previous := h.modelsDone
+	h.modelsDone = done
 	go func() {
+		defer close(done)
 		defer cancel()
+		// Serialize replacement probes so installation can await all handles,
+		// including a cancelled catalog whose process has not exited yet.
+		if previous != nil {
+			<-previous
+		}
 		models, err := harness.DiscoverModels(ctx, id, binary, cwd)
 		c.post(func() {
 			if request != h.modelsRequest {
