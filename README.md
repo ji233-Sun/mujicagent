@@ -80,6 +80,7 @@ MujicAgent 使用 Go 和 [MyGo](https://github.com/egoist/mygo) 构建，界面�
 
 ## 致谢
 
+- Cindy：协助项目开发与 UI 设计迭代。
 - [Codex](https://github.com/openai/codex)：提供本地 Agent 能力与 App Server。
 - [MyGo](https://github.com/egoist/mygo)：提供原生 UI、桌面能力与打包工具。
 - [T3 Code](https://github.com/pingdotgg/t3code)：启发了项目与会话组织、手动收纳和 Agent 管理的交互。
