@@ -19,7 +19,7 @@ const nsModalResponseOK = 1
 // runPanel shows a panel or alert as a sheet of parent when possible, else
 // application modal, and calls done with the modal response.
 func runPanel(obj id, parent *window, sheetSel string, done func(resp int)) {
-	if parent != nil && !parent.closed && parent.IsVisible() {
+	if parent != nil && !parent.closed && sendBool(parent.win, "isVisible") { // not in the Dock
 		retain(obj)
 		blk := newBlock(func(_ objc.Block, resp int) {
 			withPool(func() { done(resp) })
@@ -64,7 +64,7 @@ func setupSavePanel(panel id, title, message, button, defaultPath string, filter
 			send(panel, "setNameFieldStringValue:", uintptr(nsString(filepath.Base(defaultPath))))
 		}
 	}
-	var exts []string
+	var exts, mimes []string
 	for _, f := range filters {
 		for _, e := range f.Extensions {
 			if e == "*" {
@@ -72,8 +72,14 @@ func setupSavePanel(panel id, title, message, button, defaultPath string, filter
 			}
 			exts = append(exts, strings.TrimPrefix(e, "."))
 		}
+		for _, m := range f.MIMETypes {
+			if m == "*/*" || m == "*" {
+				return
+			}
+			mimes = append(mimes, strings.ToLower(m))
+		}
 	}
-	if len(exts) == 0 {
+	if len(exts) == 0 && len(mimes) == 0 {
 		return
 	}
 	if hasClass("UTType") {
@@ -83,14 +89,44 @@ func setupSavePanel(panel id, title, message, button, defaultPath string, filter
 				types = append(types, t)
 			}
 		}
+		for _, m := range mimes {
+			var t id
+			if kind := mimeKinds[m]; kind != "" {
+				t = send(class("UTType"), "typeWithIdentifier:", uintptr(nsString(kind)))
+			} else {
+				t = send(class("UTType"), "typeWithMIMEType:", uintptr(nsString(m)))
+			}
+			if t != 0 {
+				types = append(types, t)
+			}
+		}
 		send(panel, "setAllowedContentTypes:", uintptr(nsArray(types...)))
 		return
 	}
+	// Before macOS 11, file types are extensions or identifiers of types:
+	// those of the kinds of MIME types.
 	var names []id
 	for _, e := range exts {
 		names = append(names, nsString(e))
 	}
-	send(panel, "setAllowedFileTypes:", uintptr(nsArray(names...)))
+	for _, m := range mimes {
+		if kind := mimeKinds[m]; kind != "" {
+			names = append(names, nsString(kind))
+		}
+	}
+	if len(names) > 0 {
+		send(panel, "setAllowedFileTypes:", uintptr(nsArray(names...)))
+	}
+}
+
+// mimeKinds are the types of files (UTTypes) that MIME types of a kind
+// are, as WebKit takes them for an input's accept.
+var mimeKinds = map[string]string{
+	"image/*": "public.image",
+	"audio/*": "public.audio",
+	"video/*": "public.movie",
+	"text/*":  "public.text",
+	"font/*":  "public.font",
 }
 
 func (d dialogs) ShowOpenDialog(parent platform.Window, o *platform.OpenDialogOptions, cb func([]string, error)) {

@@ -243,7 +243,8 @@ type TestAccessNode struct {
 
 var uiaControlTypeNames = map[int32]string{50000: "Button", 50002: "CheckBox", 50003: "ComboBox", 50004: "Edit",
 	50005: "Hyperlink", 50006: "Image", 50008: "List", 50012: "ProgressBar", 50013: "RadioButton", 50015: "Slider",
-	50020: "Text", 50022: "ToolTip", 50026: "Group", 50033: "Pane", 50007: "ListItem", 50029: "DataItem", 50036: "Table"}
+	50020: "Text", 50022: "ToolTip", 50026: "Group", 50033: "Pane", 50007: "ListItem", 50028: "DataGrid", 50029: "DataItem", 50036: "Table",
+	50035: "HeaderItem", 50038: "Separator"}
 
 // uiaPattern returns an element's provider of a pattern, or 0.
 func uiaPattern(simple uintptr, pattern int) uintptr {
@@ -440,6 +441,30 @@ func TestCloaked(hwnd uintptr) (cloaked, drawn bool) {
 	procDwmGetWindowAttribute.Call(hwnd, dwmwaCloaked, uintptr(unsafe.Pointer(&v)), unsafe.Sizeof(v))
 	s := surfaceByHandle(hwnd)
 	return v != 0, s != nil && s.drawn
+}
+
+// TestSurfaceComposed reports whether the frames of the native UI in the window
+// hwnd show through DirectComposition: in a window without a redirection
+// bitmap, as a flyout's, and over web views.
+func TestSurfaceComposed(hwnd uintptr) bool {
+	s := surfaceByHandle(hwnd)
+	return s != nil && s.viaComposition()
+}
+
+// TestHoldReveal has the windows of native UI whose frames show through
+// DirectComposition stay cloaked after their first frame, as though DWM
+// had not composed it yet (reveal), until release, which restores the
+// wait: those shown meanwhile do not show when timerUncloak would fire
+// either. Both are called on the main thread.
+func TestHoldReveal() (release func()) {
+	held := make(chan struct{})
+	prevWait, prevAfter := awaitComposition, uncloakAfter
+	awaitComposition = func() { <-held }
+	uncloakAfter = time.Minute
+	return func() {
+		awaitComposition, uncloakAfter = prevWait, prevAfter
+		close(held)
+	}
 }
 
 // TestUndrawnCloaked reports how many windows of native UI have not had

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -64,6 +65,9 @@ type Backend struct {
 	// announceCSD tells a Wayland compositor that a window decorates
 	// itself, so that it draws no title bar (gdk_wayland_window_announce_csd).
 	announceCSD func(window ptr)
+	// waylandSurface returns a GdkWindow's wl_surface on Wayland
+	// (gdk_wayland_window_get_wl_surface; see damageGLPaint).
+	waylandSurface func(window ptr) ptr
 
 	// What the launcher entry shows (Window.SetProgressBar, badges).
 	launcher struct {
@@ -109,14 +113,23 @@ func (b *Backend) Init(h platform.AppHandler, opts platform.AppOptions) error {
 	if err := load(); err != nil {
 		return err
 	}
-	if os.Getenv("WEBKIT_DISABLE_DMABUF_RENDERER") == "" {
-		// Avoid blank windows on setups where WebKitGTK's DMA-BUF renderer
-		// fails (NVIDIA, VMs, containers).
+	if disableDMABUF(opts.DMABUFRenderer, os.Getenv, "/") {
 		_ = os.Setenv("WEBKIT_DISABLE_DMABUF_RENDERER", "1")
+	}
+	// The program is its executable, by whichever name started it, as a
+	// link in /usr/bin of another name (linux.command): GTK names the class
+	// of the windows and the app id after the program, which the desktop
+	// entry names too (StartupWMClass), and WebKitGTK the directories of
+	// the pages' data.
+	if exe, err := os.Executable(); err == nil {
+		gSetPrgname(cs(filepath.Base(exe)))
 	}
 	if !gtkInitCheck(0, 0) {
 		return errors.New("mygo: cannot open display (is DISPLAY or WAYLAND_DISPLAY set?)")
 	}
+	// Before any page loads, so that the first already has the desktop's
+	// prefers-color-scheme; Run then applies a source the app set.
+	followSystemScheme(gtkSettingsGetDefault())
 	var x11Type func() uintptr
 	b.onX11 = bind(libGDK, &x11Type, "gdk_x11_display_get_type") && gTypeCheckInstanceIsA(gdkDisplayGetDefault(), x11Type()) &&
 		bind(libGDK, &b.wmName, "gdk_x11_screen_get_window_manager_name")
@@ -130,6 +143,7 @@ func (b *Backend) Init(h platform.AppHandler, opts platform.AppOptions) error {
 		bind(libGDK, &prefersSSD, "gdk_wayland_display_prefers_ssd") && prefersSSD(gdkDisplayGetDefault())
 	if onWayland {
 		bind(libGDK, &b.announceCSD, "gdk_wayland_window_announce_csd")
+		bind(libGDK, &b.waylandSurface, "gdk_wayland_window_get_wl_surface")
 	}
 	initCallbacks()
 	return nil
