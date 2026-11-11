@@ -27,6 +27,7 @@ package gpu
 
 import (
 	"fmt"
+	"image"
 	"math"
 	"slices"
 	"strings"
@@ -92,7 +93,8 @@ type Instance struct {
 	// markFill): the shaders then skip computing it.
 	// Transform2 holds the projective row's g and h, the frame point of
 	// local (x, y) being Transform0's and Transform1's dot products with
-	// (x, y, 1) over g*x + h*y + 1: shaders interpolate in perspective.
+	// (x, y, 1) over g*x + h*y + 1, or g*x + h*y - 1 when Transform2.z is
+	// 1 (scene.Affine.Behind): shaders interpolate in perspective.
 	Transform0, Transform1, Transform2 [4]float32
 }
 
@@ -116,8 +118,12 @@ func (s Scissor) Empty() bool { return s.Right <= s.Left || s.Bottom <= s.Top }
 type Batch struct {
 	Start, Count int
 	Scissor      Scissor
-	// Image is the renderer's texture of the batch's image, or 0.
-	Image uintptr
+	// Image is the renderer's texture of the batch's image, or 0, and
+	// Chroma, for a video frame in NV12 (scene.SurfaceNV12), the texture of
+	// its chroma, whose luma Image is: the shaders sample it as their
+	// image's second plane (texture 3), and convert what they sample with
+	// the matrix the instance says (ImageYUV).
+	Image, Chroma uintptr
 	// ClipMask is a cached nested clip texture, sampled in frame coordinates.
 	ClipMask uintptr
 	// Effect is the effect of the batch's one instance, drawn with a
@@ -250,12 +256,17 @@ type Builder struct {
 	// instance (see addCorners), for tests that compare the two.
 	NoCornerSplit bool
 	cutCorners    func(b *Builder, in Instance, image uintptr, m scene.Affine)
+	// contClips tells that the renderer's shader cuts a clip with
+	// continuous corners (SplitCorners), which analyticClip may then
+	// leave to it rather than to a mask.
+	contClips bool
 	// bands are the bands planBands planned last, and bandsTry its scratch.
 	bands, bandsTry []band
 	// NoClasses puts every batch in ClassGeneral, for tests and
 	// measurements that compare the specialized shaders with the general one.
 	NoClasses bool
-	// Classes separates batches for renderers with specialized fragment shaders.
+	// Classes separates batches for renderers with specialized fragment shaders
+	// (Metal's and Direct3D 11's).
 	Classes bool
 	// GeneralClasses has a bit (1 << Class) for each class that draws with the
 	// general shader, for tests that find which specialized one differs.
@@ -297,8 +308,14 @@ type Builder struct {
 	splitScissor        Scissor
 	stack               []clip
 	// encloses tells, for each op of the scene, that it pushes a clip with
-	// a transformed op or glyph inside it.
-	encloses     []bool
+	// an op or glyph inside it that a transform does more than move
+	// (scene.Reshaped).
+	encloses []bool
+	// cuts tells, for each op of the scene, that it pushes a clip that
+	// reaches into the rounded corners of a clip around it
+	// (scene.ClipCorners), which the scissor rectangles don't cut.
+	cuts         []bool
+	corners      scene.ClipCorners
 	pushes       []int
 	clipShapes   []scene.ClipShape
 	maskSlots    []clipMaskSlot
@@ -306,7 +323,25 @@ type Builder struct {
 	frame        uint64
 	imageTexture func(*scene.Image) uintptr
 	preparedMask uintptr
+	// Chroma, unless nil, returns the texture of the chroma of an image
+	// showing a frame in NV12 (scene.SurfaceNV12), after the image's
+	// texture, its luma, was asked for: renderers that sample such frames
+	// set it. Without it, or where it returns 0, the image draws from its
+	// pixels in RGBA, as other images do.
+	Chroma func(*scene.Image) uintptr
+	// chroma is the chroma texture of the image an instance being added
+	// draws, for its batch.
+	chroma uintptr
 }
+
+// ImageYUV is the code an image instance's Params[1] holds for a frame of
+// NV12, plus its matrix (scene.YUVMatrix), plus ImageYUVGray for one in
+// grayscale: the shaders sample its chroma from texture 3 and convert.
+// Params[1] is otherwise 1 for grayscale, or 0.
+const (
+	ImageYUV     = 2
+	ImageYUVGray = 8
+)
 
 // Pass is what a pass computing a backdrop reads, the layout of the
 // shaders' Pass: down reads the area from Origin to Limit, frame pixels,
@@ -389,24 +424,33 @@ type clip struct {
 	scissor Scissor
 	shape   scene.ClipShape
 	// moved tells that this clip or one it is nested in is transformed,
-	// which the scissor rectangles don't follow.
-	moved       bool
-	masked      bool
-	maskSlot    int
-	maskTexture uintptr
+	// which the scissor rectangles don't follow, and masks that this clip
+	// or one it is nested in is masked by a gradient or an image
+	// (scene.ClipShape.Masks), which the shaders don't evaluate.
+	moved, masks bool
+	masked       bool
+	maskSlot     int
+	maskTexture  uintptr
+	// maskArea are the frame pixels the clip's mask covers, with
+	// maskTexture.
+	maskArea image.Rectangle
 }
 
-// pushed returns the clip that op (an OpPushClip) makes within top, without
-// a mask slot or texture.
-func (b *Builder) pushed(top *clip, op *scene.Op, encloses bool) clip {
-	rect, transform := scene.MovedClip(op.Rect, op.Transform)
+// pushed returns the clip that op (an OpPushClip) of s makes within top,
+// without a mask slot or texture.
+func (b *Builder) pushed(s *scene.Scene, top *clip, op *scene.Op, i int) clip {
+	shape := scene.ClipShapeOf(op, s.Stops)
+	rect, transform := shape.Rect, shape.Transform
 	bounds := top.bounds.Intersect(transform.Bounds(rect))
 	// The innermost clip shapes its edges in the shader, the others cut
-	// with the scissor rectangle.
-	c := clip{rect: rect, radii: scene.Corners(rect, op.Radii, op.Continuous), bounds: bounds,
-		shape: scene.ClipShape{Rect: rect, Radii: op.Radii, Transform: transform, Continuous: op.Continuous}, maskSlot: -1}
+	// with the scissor rectangle; a clip masked by a gradient or an image,
+	// and those inside it, with a mask of the clips, as a clip reaching
+	// into the rounded corners of one around it, which is then masked too
+	// (markEnclosing).
+	c := clip{rect: rect, radii: scene.Corners(rect, op.Radii, op.Continuous), bounds: bounds, shape: shape, maskSlot: -1}
 	c.moved = top.moved || transform.Set
-	c.masked = c.moved || encloses && (top.masked || c.radii != [4]float32{})
+	c.masks = top.masks || shape.Masks()
+	c.masked = c.moved || c.masks || b.cuts[i] || b.encloses[i] && (top.masked || c.radii != [4]float32{})
 	if bounds.W > 0 && bounds.H > 0 {
 		c.scissor = Scissor{int32(math.Floor(float64(bounds.X))), int32(math.Floor(float64(bounds.Y))),
 			int32(math.Ceil(float64(bounds.X + bounds.W))), int32(math.Ceil(float64(bounds.Y + bounds.H)))}
@@ -418,8 +462,10 @@ func (b *Builder) pushed(top *clip, op *scene.Op, encloses bool) clip {
 // and composing transforms in the vertex shader. Nested affine clips use
 // cached masks; stationary clipping never rasterizes again as content moves.
 // A clip is masked only when it is transformed, nested in a transformed
-// clip, or rounded (or masked) with transformed content inside: the others
-// cut in the shader as in a scene without transforms.
+// clip, rounded (or masked) with content inside that a transform scales,
+// turns, skews or shows in perspective, or reaches into the rounded
+// corners of a clip around it: the others, and those holding content
+// only moved, cut in the shader as in a scene without transforms.
 func (b *Builder) Build(s *scene.Scene, image func(*scene.Image) uintptr) *scene.Scene {
 	if !b.NoFold {
 		s = b.fold.Fold(s)
@@ -448,7 +494,7 @@ func (b *Builder) Build(s *scene.Scene, image func(*scene.Image) uintptr) *scene
 		}
 		switch op.Kind {
 		case scene.OpPushClip:
-			c := b.pushed(&b.stack[len(b.stack)-1], op, b.encloses[i])
+			c := b.pushed(s, &b.stack[len(b.stack)-1], op, i)
 			if c.masked {
 				c.maskSlot = b.maskUsed
 				b.maskUsed++
@@ -587,7 +633,10 @@ func (b *Builder) Build(s *scene.Scene, image func(*scene.Image) uintptr) *scene
 			src := op.Src
 			iw, ih := float32(img.W), float32(img.H)
 			var tex uintptr
-			if op.Blur > 0 && b.BlurredImage != nil {
+			// A video frame sampled as its planes draws unblurred: the
+			// passes blurring an image read its texture as RGBA.
+			yuv := img.Surface != nil && img.Surface.Format == scene.SurfaceNV12 && b.Chroma != nil
+			if op.Blur > 0 && b.BlurredImage != nil && !yuv {
 				// The image's area blurred, which the op samples.
 				bk := scene.ImageBlur(scene.ImageArea(op.Src, img.W, img.H), op.Blur)
 				w, h := bk.Size()
@@ -606,6 +655,12 @@ func (b *Builder) Build(s *scene.Scene, image func(*scene.Image) uintptr) *scene
 			if op.Grayscale {
 				gray = 1
 			}
+			b.chroma = 0
+			if yuv {
+				if b.chroma = b.Chroma(img); b.chroma != 0 {
+					gray = ImageYUV + float32(img.Surface.Matrix) + ImageYUVGray*gray
+				}
+			}
 			if op.Pixelated {
 				nearest = 1
 			}
@@ -621,6 +676,7 @@ func (b *Builder) Build(s *scene.Scene, image func(*scene.Image) uintptr) *scene
 				Params: [4]float32{4, gray, nearest, opacity(op.Opacity)},
 			}
 			b.addCut(in, tex, op.Transform)
+			b.chroma = 0
 		}
 	}
 
@@ -677,6 +733,7 @@ func (b *Builder) joinLast() {
 		last.Count += bt.Count
 		last.Continuous = last.Continuous || bt.Continuous
 		last.Image |= bt.Image
+		last.Chroma |= bt.Chroma
 		b.Batches = b.Batches[:n-1]
 	}
 	b.joinSmall = fits
@@ -720,36 +777,48 @@ func (b *Builder) StopsSize() (w, h int) {
 	return StopsWidth, (n + StopsWidth - 1) / StopsWidth
 }
 
-// markEnclosing sets b.encloses for the ops of s.
+// markEnclosing sets b.encloses and b.cuts for the ops of s.
 func (b *Builder) markEnclosing(s *scene.Scene) {
 	b.encloses = slices.Grow(b.encloses[:0], len(s.Ops))[:len(s.Ops)]
 	clear(b.encloses)
+	b.cuts = slices.Grow(b.cuts[:0], len(s.Ops))[:len(s.Ops)]
+	clear(b.cuts)
 	b.pushes = b.pushes[:0]
+	b.corners.Reset()
 	for i := range s.Ops {
 		op := &s.Ops[i]
 		if op.Kind == scene.OpPopClip {
 			if n := len(b.pushes); n > 0 {
 				b.pushes = b.pushes[:n-1]
 			}
+			b.corners.Pop()
 			continue
 		}
-		transformed := op.Transform.Set
-		if op.Kind == scene.OpPushClip {
-			// A clip only moved is cut as any other: no mask around it.
-			_, m := scene.MovedClip(op.Rect, op.Transform)
-			transformed = m.Set
-		}
-		if op.Kind == scene.OpGlyphs {
-			for _, g := range s.Glyphs[op.Start:op.End] {
-				transformed = transformed || g.Transform.Set
-			}
-		}
+		// The shaders cut the innermost clip in the frame's coordinates,
+		// whatever transform the drawing has, and the clips around it with
+		// the scissor rectangle; their masks keep the rounded ones' corners
+		// for drawing that is scaled, turned, skewed or in perspective
+		// (zoomed content filling a card). Drawing or a clip only moved,
+		// as a label by a fraction of a pixel, which glyphs are not folded
+		// by, is cut as drawing that is not: no mask around it (#1002).
+		transformed := scene.Reshaped(s, op)
 		// Every clip open around it encloses it, from the innermost out to
 		// the first already marked, whose own are.
 		for j := len(b.pushes) - 1; transformed && j >= 0 && !b.encloses[b.pushes[j]]; j-- {
 			b.encloses[b.pushes[j]] = true
 		}
 		if op.Kind == scene.OpPushClip {
+			// A clip reaching into the rounded corners of one around it
+			// (#1418), which the scissor rectangles don't cut: what it
+			// holds is cut with a mask of the clips, a rectangle's being
+			// that of the clip it is in, so the clips around it are
+			// masked as for drawing transformed.
+			if b.corners.Push(op) >= 0 {
+				b.cuts[i] = true
+				for j := len(b.pushes) - 1; j >= 0 && !b.encloses[b.pushes[j]]; j-- {
+					b.encloses[b.pushes[j]] = true
+				}
+			}
 			b.pushes = append(b.pushes, i)
 		}
 	}
@@ -785,6 +854,7 @@ func (b *Builder) add(in Instance, image uintptr, m scene.Affine) {
 	}
 	if image != 0 {
 		b.Batches[n-1].Image = image
+		b.Batches[n-1].Chroma = b.chroma
 	}
 	b.Instances = append(b.Instances, in)
 	b.Batches[n-1].Count++

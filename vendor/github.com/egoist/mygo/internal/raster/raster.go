@@ -9,6 +9,7 @@ import (
 	"math"
 	"runtime"
 	"slices"
+	"sync"
 
 	"github.com/egoist/mygo/internal/scene"
 )
@@ -54,6 +55,9 @@ type clip struct {
 	transform, inverse scene.Affine
 	valid              bool
 	round              bool
+	// masked tells that mask masks the clip too (scene.ClipShape.Masks).
+	masked bool
+	mask   clipMasking
 	// spans is where in spanBuf the clip, with continuous corners, keeps
 	// the spans clipSolid found for the rows of the area, lo and hi a row
 	// (noSpan until found), or -1.
@@ -297,11 +301,14 @@ func (r *renderer) render(dst *Image, s *scene.Scene, area image.Rectangle, boun
 				}
 			}
 		case scene.OpPushClip:
-			rect, transform := scene.MovedClip(op.Rect, op.Transform)
-			radii := scene.Corners(rect, op.Radii, op.Continuous)
-			c := clip{shape: newShape(rect, radii), round: hasRadii(radii), spans: -1}
-			c.transform = transform
-			c.inverse, c.valid = transform.Inverse()
+			cs := scene.ClipShapeOf(op, s.Stops)
+			radii := scene.Corners(cs.Rect, cs.Radii, cs.Continuous)
+			c := clip{shape: newShape(cs.Rect, radii), round: hasRadii(radii), spans: -1}
+			c.transform = cs.Transform
+			c.inverse, c.valid = cs.Transform.Inverse()
+			if c.masked = cs.Masks(); c.masked {
+				c.mask = newClipMasking(&cs)
+			}
 			if c.continuous && !c.transform.Set {
 				// Continuous corners take long to find the spans of, which
 				// every operation within the clip needs.
@@ -381,6 +388,9 @@ func (r *renderer) clipCoverage(x, y int) float32 {
 			// Partial pixels at fractional clip edges.
 			cov *= clamp01(min(px-c.r.X, c.r.X+c.r.W-px)+0.5) * clamp01(min(py-c.r.Y, c.r.Y+c.r.H-py)+0.5)
 		}
+		if c.masked && cov > 0 {
+			cov *= c.mask.atFrame(c.transform, c.inverse, px, py)
+		}
 		if cov == 0 {
 			return 0
 		}
@@ -394,7 +404,7 @@ func (r *renderer) clipSolid(y int) (lo, hi int) {
 	lo, hi = r.x0, r.x1
 	for i := range r.clips {
 		c := &r.clips[i]
-		if c.transform.Set {
+		if c.transform.Set || c.masked {
 			return lo, lo
 		}
 		var l, h int
@@ -598,6 +608,25 @@ func blend(p []byte, c [4]float32, cov float32) {
 	p[1] = to8(c[1]*cov + float32(p[1])/255*inv)
 	p[2] = to8(c[0]*cov + float32(p[2])/255*inv)
 	p[3] = to8(a + float32(p[3])/255*inv)
+}
+
+// blendFilled composites a fill of color f covering fc of a pixel and a
+// border over it of color b covering bc, times the clips' coverage clip,
+// as one color, which the shaders blend: under a clip that lets a part
+// through, as a mask's gradient does, the fill does not show through the
+// border.
+func blendFilled(p []byte, f [4]float32, fc float32, b [4]float32, bc, clip float32) {
+	if clip >= 1 {
+		blend(p, f, fc)
+		blend(p, b, bc)
+		return
+	}
+	k := 1 - b[3]*bc
+	var c [4]float32
+	for i := range c {
+		c[i] = f[i]*fc*k + b[i]*bc
+	}
+	blend(p, c, clip)
 }
 
 // blendSubpixel composites a straight color c over a pixel with the
@@ -839,6 +868,40 @@ func toSRGB(c float32) float32 {
 	return 1.055*float32(math.Pow(float64(max(c, 0)), 1/2.4)) - 0.055
 }
 
+// srgbSteps is the resolution of sRGBTable, the 16 bits of a linear
+// light's fraction above 0.0031308.
+const srgbSteps = 1 << 16
+
+var (
+	srgbOnce  sync.Once
+	srgbTable *[srgbSteps + 1]float32 // table[i] is toSRGB(i / srgbSteps)
+)
+
+// srgb converts linear light to sRGB as toSRGB does, between two entries
+// of a table that is built the first time one is needed: a gradient mixed
+// in Oklab converts three components a pixel, and math.Pow costs more
+// than the rest of the pixel. Its worst error from toSRGB is 0.000127 of
+// 255.
+func srgb(c float32) float32 {
+	if c <= 0.0031308 {
+		return c * 12.92
+	}
+	srgbOnce.Do(func() {
+		t := &[srgbSteps + 1]float32{}
+		for i := range t {
+			t[i] = toSRGB(float32(i) / srgbSteps)
+		}
+		srgbTable = t
+	})
+	if c >= 1 {
+		return srgbTable[srgbSteps] // white, which light above it clamps to
+	}
+	x := c * srgbSteps // above 0.0031308, and below 1
+	i := int(x)
+	a, b := srgbTable[i], srgbTable[i+1]
+	return a + (b-a)*(x-float32(i))
+}
+
 // oklab converts an sRGB color to Oklab, as the shaders do.
 func oklab(c scene.Color) [3]float32 { return scene.Oklab(c) }
 
@@ -849,9 +912,9 @@ func fromOklab(lab [3]float32) [3]float32 {
 	s := lab[0] - 0.0894841775*lab[1] - 1.2914855480*lab[2]
 	l, m, s = l*l*l, m*m*m, s*s*s
 	return [3]float32{
-		toSRGB(4.0767416621*l - 3.3077115913*m + 0.2309699292*s),
-		toSRGB(-1.2684380046*l + 2.6097574011*m - 0.3413193965*s),
-		toSRGB(-0.0041960863*l - 0.7034186147*m + 1.7076147010*s),
+		srgb(4.0767416621*l - 3.3077115913*m + 0.2309699292*s),
+		srgb(-1.2684380046*l + 2.6097574011*m - 0.3413193965*s),
+		srgb(-0.0041960863*l - 0.7034186147*m + 1.7076147010*s),
 	}
 }
 
@@ -957,22 +1020,27 @@ func (r *renderer) fill(op *scene.Op) {
 				}
 			}
 			p := row[4*x : 4*x+4]
+			var fc [4]float32
 			if hasFill {
-				blend(p, pt.at(px, py), oc*clipCov)
+				fc = pt.at(px, py)
 			}
-			if hasBorder {
-				ic := float32(0)
-				if !inner.r.Empty() {
-					ic = coverage(&inner, px, py)
-				}
-				bc := oc - ic
-				if bc > 0 && op.Dashed {
-					bc *= dash(op.Rect, bw, px, py)
-				}
-				if bc > 0 {
-					blend(p, borderAt(bp, border, op.BorderColor, px, py), bc*clipCov)
-				}
+			if !hasBorder {
+				blend(p, fc, oc*clipCov)
+				continue
 			}
+			ic := float32(0)
+			if !inner.r.Empty() {
+				ic = coverage(&inner, px, py)
+			}
+			bc := oc - ic
+			if bc > 0 && op.Dashed {
+				bc *= dash(op.Rect, bw, px, py)
+			}
+			var bcol [4]float32
+			if bc > 0 {
+				bcol = borderAt(bp, border, op.BorderColor, px, py)
+			}
+			blendFilled(p, fc, oc, bcol, max(bc, 0), clipCov)
 		}
 	}
 }
@@ -1499,7 +1567,12 @@ func sampleOp(op *scene.Op, u, v, du, dv float32) [4]float32 {
 	if op.Pixelated {
 		u, v = pixelated(u, du), pixelated(v, dv)
 	}
-	c := sample(op.Image, u, v, unflipped(op.Src))
+	var c [4]float32
+	if s := op.Image.Surface; s != nil && s.Format == scene.SurfaceNV12 && s.Planes[1].Pix != nil {
+		c = sampleNV12(op.Image, s, u, v, unflipped(op.Src))
+	} else {
+		c = sample(op.Image, u, v, unflipped(op.Src))
+	}
 	if op.Grayscale {
 		l := 0.2126*c[0] + 0.7152*c[1] + 0.0722*c[2]
 		c[0], c[1], c[2] = l, l, l
@@ -1539,6 +1612,34 @@ func pixelated(t, d float32) float32 {
 }
 
 func abs32(v float32) float32 { return float32(math.Abs(float64(v))) }
+
+// sampleNV12 reads a frame of video in NV12 at (u, v) as the GPU
+// renderers' shaders do: its luma and its chroma each with bilinear
+// filtering, clamped to src, the chroma covering twice its size in luma,
+// then converted to RGB (scene.YUVMatrix.YUVToRGB).
+func sampleNV12(img *scene.Image, s *scene.Surface, u, v float32, src scene.Rect) [4]float32 {
+	cw, ch := (img.W+1)/2, (img.H+1)/2
+	plane := func(p scene.Plane, w, h, bpp, k int, u, v float32, src scene.Rect) float32 {
+		// Clamped to the centers of the texels at src's edges.
+		u = min(max(u-0.5, src.X), src.X+src.W-1)
+		v = min(max(v-0.5, src.Y), src.Y+src.H-1)
+		x0, y0 := int(math.Floor(float64(u))), int(math.Floor(float64(v)))
+		tx, ty := u-float32(x0), v-float32(y0)
+		at := func(x, y int) float32 {
+			x, y = max(0, min(x, w-1)), max(0, min(y, h-1))
+			return float32(p.Pix[y*p.Stride+bpp*x+k])
+		}
+		top := at(x0, y0)*(1-tx) + at(x0+1, y0)*tx
+		bot := at(x0, y0+1)*(1-tx) + at(x0+1, y0+1)*tx
+		return (top*(1-ty) + bot*ty) / 255
+	}
+	y := plane(s.Planes[0], img.W, img.H, 1, 0, u, v, src)
+	csrc := scene.Rect{X: src.X / 2, Y: src.Y / 2, W: src.W / 2, H: src.H / 2}
+	cb := plane(s.Planes[1], cw, ch, 2, 0, u/2, v/2, csrc)
+	cr := plane(s.Planes[1], cw, ch, 2, 1, u/2, v/2, csrc)
+	r, g, b := s.Matrix.YUVToRGB(y, cb, cr)
+	return [4]float32{r, g, b, 1}
+}
 
 // sample reads a premultiplied pixel at (u, v) with bilinear filtering,
 // clamped to src.

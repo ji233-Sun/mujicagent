@@ -3,7 +3,11 @@
 package linux
 
 import (
+	"bytes"
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"os"
 	"path/filepath"
 	"strings"
@@ -227,11 +231,11 @@ func buildItem(it *platform.MenuItem, accel ptr, owner, windowID int, bar bool) 
 	case platform.MenuItemSeparator:
 		item = gtkSeparatorMenuItemNew()
 	case platform.MenuItemCheckbox, platform.MenuItemRadio:
-		item = gtkCheckMenuItemNewWithLabel(cs(it.Label))
+		item = gtkCheckMenuItemNewWithLabel(cs(it.LabelWithSubtitle()))
 		gtkCheckMenuItemSetDrawAsRadio(item, it.Type == platform.MenuItemRadio)
 		check = true
 	default:
-		item = gtkMenuItemNewWithLabel(cs(it.Label))
+		item = gtkMenuItemNewWithLabel(cs(it.LabelWithSubtitle()))
 	}
 	if it.Submenu != nil {
 		sub := gtkMenuNew()
@@ -435,9 +439,9 @@ func (b *Backend) UpdateMenuItem(it *platform.MenuItem) {
 		n := &itemsByID[it.ID][i]
 		if it.Type != platform.MenuItemSeparator {
 			if n.label != 0 {
-				gtkLabelSetLabel(n.label, cs(it.Label))
+				gtkLabelSetLabel(n.label, cs(it.LabelWithSubtitle()))
 			} else {
-				gtkMenuItemSetLabel(n.item, cs(it.Label))
+				gtkMenuItemSetLabel(n.item, cs(it.LabelWithSubtitle()))
 			}
 			if it.Icon != n.icon && !n.bar && setMenuItemIcon != nil {
 				n.icon = it.Icon
@@ -549,14 +553,22 @@ type tray struct {
 	// activate is the handler of the "activate" signal, 0 while the icon
 	// does not answer activation.
 	activate uint64
+	// dark is the desktop's color scheme, as last told. image is the PNG
+	// the icon shows, and template whether it is black and transparent,
+	// which the icon shows white while the desktop prefers dark, as macOS
+	// tints a template image.
+	dark     bool
+	image    []byte
+	template bool
 }
 
 func (b *Backend) NewTray(h platform.TrayHandler) (platform.Tray, error) {
 	if appIndicatorNew == nil {
 		return nil, fmt.Errorf("mygo: tray icons need libayatana-appindicator3: %w", platform.ErrUnsupported)
 	}
+	traysAppearanceChanged = b.traysAppearance
 	b.nextTray++
-	t := &tray{b: b, h: h, id: b.nextTray}
+	t := &tray{b: b, h: h, id: b.nextTray, dark: desktopDark()}
 	name := fmt.Sprintf("mygo-%d-%d", os.Getpid(), t.id)
 	t.ind = appIndicatorNew(cs(name), cs("application-x-executable"), 0) // APPLICATION_STATUS
 	appIndicatorSetStatus(t.ind, 1)                                      // ACTIVE
@@ -566,7 +578,14 @@ func (b *Backend) NewTray(h platform.TrayHandler) (platform.Tray, error) {
 	return t, nil
 }
 
-func (t *tray) SetImage(png []byte, template bool) error {
+func (t *tray) SetImage(data []byte, template bool) error {
+	img := data
+	if template && t.dark {
+		var err error
+		if img, err = whiten(data); err != nil {
+			return err
+		}
+	}
 	if t.iconDir == "" {
 		dir, err := os.MkdirTemp("", "mygo-tray-")
 		if err != nil {
@@ -574,20 +593,81 @@ func (t *tray) SetImage(png []byte, template bool) error {
 		}
 		t.iconDir = dir
 	}
-	// A new file name makes the indicator host reload the icon.
+	// A new file name makes the indicator host reload the icon. The icon
+	// goes by its absolute path, not by a name in IconThemePath: KDE looks
+	// a name up in the icon theme first, falling back from "icon-1" to
+	// "icon", and showed a theme's icon in place of the app's.
 	t.icons++
-	name := fmt.Sprintf("icon-%d", t.icons)
-	if err := os.WriteFile(filepath.Join(t.iconDir, name+".png"), png, 0o644); err != nil {
+	file := filepath.Join(t.iconDir, fmt.Sprintf("icon-%d.png", t.icons))
+	if err := os.WriteFile(file, img, 0o644); err != nil {
 		return err
 	}
-	appIndicatorSetIconThemePath(t.ind, cs(t.iconDir))
-	appIndicatorSetIconFull(t.ind, cs(name), cs(""))
+	appIndicatorSetIconFull(t.ind, cs(file), cs(""))
+	t.image, t.template = data, template
 	return nil
 }
 
-// Dark reports false: AppIndicator tells nothing of the panel, whose
-// icon theme draws the icon in its own colors.
-func (t *tray) Dark() bool { return false }
+// Dark reports whether the desktop prefers dark. AppIndicator tells
+// nothing of the panel itself, whose theme can differ from the desktop's.
+func (t *tray) Dark() bool { return desktopDark() }
+
+// desktopDark reads the desktop's color scheme from the settings portal:
+// the system's, not the app's own (Theme.SetSource), which the panel does
+// not follow. Without a portal it is false.
+func desktopDark() bool {
+	scheme, ok := portalColorScheme()
+	return ok && scheme == 1
+}
+
+// traysAppearance tells the icons that the desktop turned dark or light.
+func (b *Backend) traysAppearance() {
+	if len(b.trays) == 0 {
+		return
+	}
+	dark := desktopDark()
+	for _, t := range b.trays {
+		t.appearanceChanged(dark)
+	}
+}
+
+func (t *tray) appearanceChanged(dark bool) {
+	if dark == t.dark {
+		return
+	}
+	t.dark = dark
+	if t.template && t.image != nil {
+		_ = t.SetImage(t.image, true)
+	}
+	if t.h != nil {
+		t.h.AppearanceChanged()
+	}
+}
+
+// traysAppearanceChanged is linked by NewTray: portal settings changes
+// reach every app, but only those with a tray need its image code.
+var traysAppearanceChanged func()
+
+// whiten draws a template image white, keeping its alpha, as the Windows
+// backend does on a dark taskbar.
+func whiten(data []byte) ([]byte, error) {
+	src, err := png.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	r := src.Bounds()
+	dst := image.NewNRGBA(r)
+	for y := r.Min.Y; y < r.Max.Y; y++ {
+		for x := r.Min.X; x < r.Max.X; x++ {
+			_, _, _, a := src.At(x, y).RGBA()
+			dst.SetNRGBA(x, y, color.NRGBA{255, 255, 255, uint8(a >> 8)})
+		}
+	}
+	var b bytes.Buffer
+	if err := png.Encode(&b, dst); err != nil {
+		return nil, err
+	}
+	return b.Bytes(), nil
+}
 
 // SetID does nothing: the indicator's ID is given as it is made, and
 // panels place indicators themselves.
@@ -595,9 +675,17 @@ func (t *tray) SetID(string) {}
 
 func (t *tray) SetTitle(title string) { appIndicatorSetLabel(t.ind, cs(title), cs(title)) }
 
+// SetToolTip sets the hover text. The title is what panels show when they
+// fall back to it, and setting it announces NewTitle alone: a host that
+// caches the ToolTip property, such as quickshell, would go on showing the
+// text it read when the icon appeared. Setting the tooltip as well announces
+// NewToolTip, so both stay in step.
 func (t *tray) SetToolTip(tip string) {
 	if appIndicatorSetTitle != nil {
 		appIndicatorSetTitle(t.ind, cs(tip))
+	}
+	if appIndicatorSetTooltipFull != nil {
+		appIndicatorSetTooltipFull(t.ind, nil, cs(tip), nil)
 	}
 }
 
