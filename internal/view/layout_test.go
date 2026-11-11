@@ -78,6 +78,59 @@ func TestFooterPermissionLegibility(t *testing.T) {
 }
 
 // Visual acceptance uses direct state only, never input simulation or a live CLI.
+func TestComposerActionLayout(t *testing.T) {
+	for _, language := range []string{"en", "zh-Hans"} {
+		for _, size := range [][2]int{{1140, 780}, {840, 560}} {
+			for _, scene := range []string{"idle", "running-empty", "running-draft"} {
+				t.Run(fmt.Sprintf("%s-%s-%dx%d", scene, language, size[0], size[1]), func(t *testing.T) {
+					s := model.New()
+					s.Settings.Language = language
+					s.Settings.Model, s.Settings.Effort = "magpie/workbuddy/hy4free", "high"
+					thread := s.AddThread("", "")
+					thread.Harness, thread.PermissionProfile = "pi", ":danger-full-access"
+					thread.Title = "Composer actions"
+					if scene != "running-empty" {
+						thread.Draft = "Review the next change."
+					}
+					ctrl := controller.New(t.TempDir(), s, nil)
+					defer ctrl.Close()
+					ctrl.Connection = "Connected"
+					ctrl.Running[thread.ID] = scene != "idle"
+					if scene != "idle" {
+						thread.Turns = []model.Turn{{ID: "turn", Prompt: "Review this change.", Status: "inProgress"}}
+					}
+					v := New(ctrl)
+					tt := ui.NewTester(v.Render, size[0], size[1])
+					tt.SetLocale(language)
+					tt.SetDark(false)
+					tt.Frame()
+					tt.Advance(time.Second)
+					tx := v.texts()
+					labels := []string{tx.AttachFile(), tx.Send()}
+					if scene != "idle" {
+						labels = []string{tx.AttachFile(), tx.Stop(), tx.QueueAdd()}
+					}
+					var previous ui.Rect
+					for i, label := range labels {
+						bounds, ok := tt.Find(label)
+						if !ok || bounds.H != 30 || bounds.X+bounds.W > float32(size[0])-24 || bounds.Y+bounds.H > float32(size[1]) {
+							t.Fatalf("composer action missing, clipped or inconsistent height: %s %+v", label, bounds)
+						}
+						if i > 0 && (bounds.Y != previous.Y || bounds.X-previous.X-previous.W != 6) {
+							t.Fatalf("composer actions must align with equal spacing: %+v %+v", previous, bounds)
+						}
+						if bounds.W != 30 {
+							t.Fatalf("icon action must be square: %s %+v", label, bounds)
+						}
+						previous = bounds
+					}
+					saveDesignFrame(t, tt, fmt.Sprintf("composer-%s-%s-%dx%d", scene, language, size[0], size[1]))
+				})
+			}
+		}
+	}
+}
+
 func TestWorkspaceLayout(t *testing.T) {
 	for _, language := range []string{"en", "zh-Hans"} {
 		for _, size := range [][2]int{{1366, 858}, {1140, 780}, {840, 560}} {
@@ -177,8 +230,8 @@ func TestWorkspaceLayout(t *testing.T) {
 					}
 					if scene == "running" {
 						queue, ok := tt.Find(tx.QueueAdd())
-						if !ok || queue.W <= 30 {
-							t.Fatalf("queue action needs a visible text label, not the idle send icon: %+v", queue)
+						if !ok || queue.W != 30 || queue.H != 30 {
+							t.Fatalf("queue action must match the other icon buttons: %+v", queue)
 						}
 						stop, ok := tt.Find(tx.Stop())
 						if !ok || stop.W != 30 || stop.H != 30 || !tt.HasText("· "+tx.McpRunning()) || !tt.HasText("$ go test ./internal/view") {

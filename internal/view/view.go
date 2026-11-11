@@ -604,16 +604,9 @@ func (v *View) composer(c *ui.Context, t *model.Thread) {
 					v.agentPermissions(c, t)
 				}
 				ui.Box(c).Grow(1)
-				iconButton(c, tx.AttachFile(), plus, v.pickAttachments).Disabled(t == nil)
+				composerButton(c, tx.AttachFile(), plus).OnClick(v.pickAttachments).Disabled(t == nil)
 				if busy {
-					stop := ui.ButtonBase(c.Key("stop")).Label(tx.Stop()).Tooltip(tx.Stop()).Size(30, 30).Padding(0).Center().Radius(15).
-						Background(c.Theme().Text).TextColor(c.Theme().Background).Transition(hoverTransition)
-					if stop.Pressed() {
-						stop.Background(c.Theme().AccentPressed)
-					} else if stop.Hovered() {
-						stop.Background(c.Theme().AccentHover)
-					}
-					stop.Children(func() { ui.Icon(c, stopIcon).Size(16, 16).Shrink(0) }).OnClick(v.C.Interrupt)
+					composerButton(c, tx.Stop(), stopIcon).OnClick(v.C.Interrupt)
 				}
 				{
 					label := tx.Send()
@@ -625,9 +618,7 @@ func (v *View) composer(c *ui.Context, t *model.Thread) {
 					}
 					var action ui.Element
 					if busy && !editing {
-						// Queueing is a different existing action from sending now;
-						// expose that distinction without requiring a tooltip.
-						action = ui.Button(c, tx.QueueAdd()).Height(30).Padding(0, 10).Radius(15).Shrink(0)
+						action = composerButton(c, tx.QueueAdd(), activityIcon)
 					} else {
 						icon := arrow
 						if editing {
@@ -814,6 +805,17 @@ func tailEllipsis(value string, count int) string {
 }
 
 var hoverTransition = ui.ElementTransition{Colors: true, Duration: 120 * time.Millisecond}
+
+func composerButton(c *ui.Context, label string, icon *ui.SVG) ui.Element {
+	b := ui.ButtonBase(c.Key(label)).Label(label).Tooltip(label).Size(30, 30).Shrink(0).
+		Padding(0).Radius(15).Center().TextColor(c.Theme().TextMuted).Transition(hoverTransition)
+	if b.Pressed() {
+		b.Background(c.Theme().SurfacePressed).TextColor(c.Theme().Accent)
+	} else if b.Hovered() {
+		b.Background(c.Theme().SurfaceHover).TextColor(c.Theme().Text)
+	}
+	return b.Children(func() { ui.Icon(c, icon).Size(16, 16).Shrink(0) })
+}
 
 func iconButton(c *ui.Context, label string, icon *ui.SVG, fn func()) ui.Element {
 	b := ui.ButtonBase(c.Key(label)).Label(label).Tooltip(label).Size(26, 26).Radius(7).Center().TextColor(c.Theme().TextMuted)
